@@ -1,0 +1,21 @@
+{
+    "Profile": "Quick",
+    "DatabaseList": null,
+    "BackupHoursSLA": 24,
+    "RegressionPctThreshold": 50,
+    "Sections": {
+        "Inventory": true,
+        "HealthCheck": true,
+        "Waits": true,
+        "Backup": true,
+        "Security": true,
+        "Config": true,
+        "DiskLatency": true,
+        "TempDb": true,
+        "QueryStore": true,
+        "IndexDeep": false
+    },
+    "PersistToRepository": false,
+    "OutputFormat": "HTML",
+    "IncludeDeepDive": false
+}

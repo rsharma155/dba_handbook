@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SQL Server AG/WSFC Deployment Checklist</title>
+<style>
+  :root {
+    --primary: #1a5276;
+    --primary-light: #2980b9;
+    --success: #27ae60;
+    --warning: #f39c12;
+    --danger: #e74c3c;
+    --bg: #f0f2f5;
+    --card: #ffffff;
+    --text: #2c3e50;
+    --text-light: #7f8c8d;
+    --border: #dce1e6;
+    --checked-bg: #eafaf1;
+    --phase-header: linear-gradient(135deg, #1a5276, #2980b9);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.5;
+    font-size: 13px;
+  }
+
+  /* Top bar */
+  .topbar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    background: var(--primary); color: white; padding: 12px 24px;
+    display: flex; justify-content: space-between; align-items: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2); height: 50px;
+  }
+  .topbar h1 { font-size: 22px; font-weight: 700; letter-spacing: 0.3px; }
+  .topbar .meta { font-size: 14px; opacity: 0.9; margin-top: 2px; }
+  .topbar .actions { display: flex; gap: 8px; }
+  .topbar button {
+    padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer;
+    font-size: 12px; font-weight: 600;
+  }
+  .btn-reset { background: var(--danger); color: white; }
+  .btn-print { background: var(--primary-light); color: white; }
+
+  /* Progress bar */
+  .progress-bar {
+    position: fixed; top: 50px; left: 0; right: 0; z-index: 99;
+    background: #ecf0f1; height: 6px;
+  }
+  .progress-fill {
+    height: 100%; background: var(--success); width: 0%;
+    transition: width 0.4s ease;
+  }
+
+  /* Stats strip */
+  .stats {
+    position: fixed; top: 56px; left: 0; right: 0; z-index: 98;
+    background: white; border-bottom: 1px solid var(--border);
+    padding: 10px 24px; display: flex; gap: 24px; font-size: 13px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+  .stat-item { display: flex; align-items: center; gap: 6px; }
+  .stat-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .stat-dot.done { background: var(--success); }
+  .stat-dot.pending { background: var(--border); }
+  .stat-dot.total { background: var(--primary-light); }
+
+  /* Content */
+  .container { max-width: 1100px; margin: 0 auto; padding: 110px 20px 40px; }
+
+  /* Phase card */
+  .phase {
+    background: var(--card); border-radius: 8px; margin-bottom: 16px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06); overflow: hidden;
+  }
+  .phase-header {
+    background: var(--phase-header); color: white; padding: 10px 16px;
+    display: flex; justify-content: space-between; align-items: center;
+    cursor: pointer; user-select: none;
+  }
+  .phase-header h2 { font-size: 14px; font-weight: 600; }
+  .phase-header .badge {
+    background: rgba(255,255,255,0.2); padding: 2px 10px; border-radius: 12px;
+    font-size: 11px;
+  }
+  .phase-header .toggle { font-size: 18px; transition: transform 0.2s; }
+  .phase.collapsed .phase-header .toggle { transform: rotate(-90deg); }
+  .phase-body { padding: 0; }
+  .phase.collapsed .phase-body { display: none; }
+
+  /* Checklist item */
+  .check-item {
+    display: flex; align-items: flex-start; padding: 8px 16px;
+    border-bottom: 1px solid #f0f2f5; gap: 10px;
+    transition: background 0.2s;
+  }
+  .check-item:last-child { border-bottom: none; }
+  .check-item:hover { background: #f8f9fa; }
+  .check-item.checked { background: var(--checked-bg); }
+  .check-item.checked .step-text { text-decoration: line-through; color: var(--text-light); }
+
+  /* Custom checkbox */
+  .cb-wrap { flex-shrink: 0; padding-top: 2px; }
+  .cb-wrap input[type="checkbox"] { display: none; }
+  .cb-wrap label {
+    display: block; width: 20px; height: 20px; border: 2px solid var(--border);
+    border-radius: 4px; cursor: pointer; position: relative;
+    transition: all 0.2s;
+  }
+  .cb-wrap input:checked + label {
+    background: var(--success); border-color: var(--success);
+  }
+  .cb-wrap input:checked + label::after {
+    content: '\2713'; position: absolute; top: -1px; left: 3px;
+    color: white; font-size: 14px; font-weight: 700;
+  }
+
+  /* Step content */
+  .step-content { flex: 1; min-width: 0; }
+  .step-header { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+  .step-id {
+    font-size: 10px; font-weight: 700; color: var(--primary-light);
+    background: #ebf5fb; padding: 1px 6px; border-radius: 3px;
+    white-space: nowrap;
+  }
+  .step-text { font-size: 13px; font-weight: 500; }
+  .step-detail { font-size: 12px; color: var(--text-light); margin-top: 2px; }
+  .step-cmd {
+    font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+    font-size: 11px; background: #2c3e50; color: #ecf0f1;
+    padding: 4px 8px; border-radius: 4px; margin-top: 4px;
+    white-space: pre-wrap; word-break: break-all;
+  }
+  .step-why {
+    font-size: 11px; color: var(--warning); font-style: italic; margin-top: 2px;
+  }
+  .step-warning {
+    font-size: 11px; color: var(--danger); font-weight: 600; margin-top: 2px;
+    padding: 3px 6px; background: #fdedec; border-radius: 3px;
+  }
+  .step-time { display: none; }
+
+  /* Phase gate */
+  .phase-gate {
+    background: #fef9e7; border: 1px dashed var(--warning);
+    padding: 8px 16px; margin: 0 16px 8px; border-radius: 4px;
+    font-size: 12px; color: #7d6608;
+  }
+  .phase-gate strong { color: var(--warning); }
+
+  /* Footer */
+  .footer {
+    text-align: center; padding: 20px; color: var(--text-light);
+    font-size: 11px; border-top: 1px solid var(--border); margin-top: 20px;
+  }
+
+  /* Print */
+  @media print {
+    .topbar, .progress-bar, .stats, .btn-save, .btn-reset, .btn-print { display: none !important; }
+    .container { padding-top: 10px; }
+    .phase.collapsed .phase-body { display: block !important; }
+    body { font-size: 11px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div>
+    <h1>SQL Server AG/WSFC Deployment Checklist</h1>
+    <div class="meta">Always On Availability Groups &bull; 2-Node WSFC &bull; SYNCHRONOUS_COMMIT</div>
+  </div>
+  <div class="actions">
+    <button class="btn-print" onclick="try{window.print()}catch(e){alert('Use Ctrl+P to print')}">Print / Save PDF</button>
+    <button class="btn-reset" onclick="resetAll()">Reset All</button>
+  </div>
+</div>
+<div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+<div class="stats">
+  <div class="stat-item"><div class="stat-dot done"></div> Done: <strong id="statDone">0</strong></div>
+  <div class="stat-item"><div class="stat-dot pending"></div> Pending: <strong id="statPending">0</strong></div>
+  <div class="stat-item"><div class="stat-dot total"></div> Total: <strong id="statTotal">0</strong></div>
+  <div class="stat-item" style="margin-left:auto;"></div>
+</div>
+
+<div class="container" id="checklist"></div>
+
+<div class="footer">
+  SQL Server DBA Essential Scripts &bull; HADR Deployment Checklist &bull; Generated from HADR_handbook.md<br>
+  WARNING: This is a working copy. Original template remains unchanged. Save as new file to preserve progress.
+</div>
+
+<script>
+const PHASES = [
+  {
+    id: 1, title: "Infrastructure Planning",
+    items: [
+      { id:"1.1", text:"Verify both SQL nodes have identical SQL Server version and edition", detail:"Same build number, same edition (Enterprise required for advanced AG features)" },
+      { id:"1.2", text:"Verify both SQL nodes have same collation", detail:"Check: SERVERPROPERTY('Collation'). Mismatch causes join failures." },
+      { id:"1.3", text:"Verify drive layout matches on both nodes", detail:"C: OS, D: Data, L: Log, B: Backup, T: TempDB" },
+      { id:"1.4", text:"Verify both nodes have adequate RAM and CPU", detail:"Minimum 8GB RAM recommended for production. CPU cores should match." },
+      { id:"1.5", text:"Verify network connectivity between all servers", detail:"Ping, DNS resolution, and port connectivity (1433, 5022, 445, 135)" },
+      { id:"1.6", text:"Document server inventory: hostname, IP, role, SQL version", why:"Required for incident response and change management" }
+    ]
+  },
+  {
+    id: 2, title: "Configure Domain Controller",
+    items: [
+      { id:"2.1", text:"Install AD DS role on DC01", cmd:"Install-WindowsFeature AD-Domain-Services -IncludeManagementTools" },
+      { id:"2.2", text:"Install DNS Server role on DC01", cmd:"Install-WindowsFeature DNS -IncludeManagementTools" },
+      { id:"2.3", text:"Promote server to Domain Controller", cmd:"Install-ADDSForest -DomainName corp.local -InstallDNS", why:"Creates the forest and DNS zone" },
+      { id:"2.4", text:"Reboot DC01 after promotion", detail:"Server will restart automatically" },
+      { id:"2.5", text:"Verify AD DS and DNS services are running", cmd:"Get-Service NTDS, DNS | Select Name,Status" },
+      { id:"2.6", text:"Verify DNS forward lookup zone exists", cmd:"Get-DnsServerZone | Where ZoneName -like '*corp*'" },
+      { id:"2.7", text:"Deploy second DC (DC02) in different physical location", warning:"SPOF risk: Single DC means no DNS/AD if DC01 fails" }
+    ]
+  },
+  {
+    id: 3, title: "Create Service Accounts",
+    items: [
+      { id:"3.1", text:"Create SQL Service account (svc_sql)", cmd:"New-ADUser -Name svc_sql -Path 'OU=ServiceAccounts,DC=corp,DC=local' -Enabled $true -PasswordNeverExpires $true -AccountPassword (ConvertTo-SecureString 'P@ssw0rd!' -AsPlainText -Force)" },
+      { id:"3.2", text:"Create SQL Agent account (svc_sqlagent)", detail:"Same OU, same password policy" },
+      { id:"3.3", text:"Create Cluster admin account (svc_cluster)", detail:"Must have 'Create Computer Child Objects' on the OU for CNO" },
+      { id:"3.4", text:"Verify all accounts are enabled", cmd:"Get-ADUser -Filter 'Name -like \"svc_*\"' | Select Name,Enabled" },
+      { id:"3.5", text:"Document passwords in secure vault", warning:"For production use gMSA instead of regular service accounts" },
+      { id:"3.6", text:"Delegate CNO permissions on target OU", cmd:"dsacls 'OU=ClusterNodes,DC=corp,DC=local' /G 'CORP\svc_cluster:CCDC;Computer' /I:S", why:"Cluster service account needs to create/update Computer objects for CNO" }
+    ]
+  },
+  {
+    id: 4, title: "Configure DNS",
+    items: [
+      { id:"4.1", text:"Verify forward lookup zone corp.local exists", cmd:"Get-DnsServerZone -Name corp.local" },
+      { id:"4.2", text:"Add A records for SQL01 and SQL02 if not auto-registered", cmd:"Add-DnsServerResourceRecordA -ZoneName corp.local -Name SQL01 -IPv4Address 10.10.10.11" },
+      { id:"4.3", text:"Verify DNS resolution from all servers", cmd:"nslookup sql01.corp.local\nnslookup sql02.corp.local\nnslookup dc01.corp.local" },
+      { id:"4.4", text:"Set DNS server on SQL01 and SQL02 to DC01 (10.10.10.10)", detail:"Primary DNS must point to domain controller" }
+    ]
+  },
+  {
+    id: 5, title: "Configure Network",
+    items: [
+      { id:"5.1", text:"Set static IP on SQL01: 10.10.10.11/24, GW: 10.10.10.1, DNS: 10.10.10.10", cmd:"New-NetIPAddress -InterfaceAlias 'Ethernet' -IPAddress 10.10.10.11 -PrefixLength 24 -DefaultGateway 10.10.10.1\nSet-DnsClientServerAddress -InterfaceAlias 'Ethernet' -ServerAddresses 10.10.10.10" },
+      { id:"5.2", text:"Set static IP on SQL02: 10.10.10.12/24", detail:"Same gateway and DNS as SQL01" },
+      { id:"5.3", text:"Verify connectivity: ping dc01, sql01, sql02", cmd:"Test-Connection -ComputerName dc01,sql01,sql02 -Count 2" },
+      { id:"5.4", text:"Verify DNS resolution from both SQL nodes", cmd:"Resolve-DnsName sql01.corp.local\nResolve-DnsName sql02.corp.local" },
+      { id:"5.5", text:"Disable IPv6 on both SQL nodes (if not required)", warning:"Verify with app team first. Some Azure/cloud environments require IPv6." },
+      { id:"5.6", text:"Disable NetBIOS over TCP/IP on both SQL nodes", detail:"Reduces attack surface. AG uses DNS, not NetBIOS." },
+      { id:"5.7", text:"Measure network latency between SQL01 and SQL02", cmd:"ping sql02 -n 20", why:"SYNCHRONOUS_COMMIT requires <5ms round-trip" }
+    ]
+  },
+  {
+    id: 6, title: "Join SQL Servers to Domain",
+    items: [
+      { id:"6.1", text:"Join SQL01 to corp.local domain", cmd:"Add-Computer -DomainName corp.local -Credential (Get-Credential) -Restart" },
+      { id:"6.2", text:"Join SQL02 to corp.local domain", detail:"Same process as SQL01" },
+      { id:"6.3", text:"Verify domain membership on both nodes", cmd:"systeminfo | findstr /B /C:'Domain'" },
+      { id:"6.4", text:"Verify AD replication is healthy", cmd:"repadmin /replsum" }
+    ],
+    gate: "PHASE GATE: Manager/Architect sign-off before proceeding to SQL installation"
+  },
+  {
+    id: 7, title: "Install SQL Server",
+    items: [
+      { id:"7.1", text:"Mount SQL Server 2022 Enterprise ISO on SQL01", detail:"Ensure identical media on both nodes" },
+      { id:"7.2", text:"Run setup.exe, select 'New SQL Server stand-alone installation'", detail:"Choose 'New SQL Server stand-alone installation'" },
+      { id:"7.3", text:"Enter product key and accept license terms" },
+      { id:"7.4", text:"Select features: Database Engine, SQL Server Agent", detail:"Do NOT install Reporting Services or Analysis Services unless needed" },
+      { id:"7.5", text:"Set instance to default (MSSQLSERVER)", detail:"Using named instances adds complexity to AG endpoints" },
+      { id:"7.6", text:"Set service accounts: svc_sql for SQL Server, svc_sqlagent for Agent", detail:"Use 'Browse' to find AD accounts. Do NOT use LOCAL SYSTEM." },
+      { id:"7.7", text:"Set Mixed Mode authentication, configure sa password", detail:"Minimum 12 chars, upper+lower+digit+special. Test login after install." },
+      { id:"7.8", text:"Add current user as SQL Server admin", detail:"Also add svc_sql and svc_sqlagent as sysadmin" },
+      { id:"7.9", text:"Set data directories: D:\, L:\, B:\, T:\ per drive layout", warning:"SQL Server service account must have Full Control on D:\, L:\, B:\, T:\ drive roots" },
+      { id:"7.10", text:"Complete installation on SQL01", detail:"Review summary, fix any failed items" },
+      { id:"7.11", text:"Repeat steps 7.1-7.10 on SQL02", detail:"Identical configuration on second node" },
+      { id:"7.12", text:"Verify SQL Server services running on both nodes", cmd:"Get-Service MSSQLSERVER, SQLSERVERAGENT | Select Name,Status" },
+      { id:"7.13", text:"Set max error log count to 99 on both nodes", cmd:"EXEC xp_instance_regwrite N'HKEY_LOCAL_MACHINE', N'Software\\Microsoft\\MSSQLServer\\MSSQLServer', N'NumErrorLogs', REG_DWORD, 99", why:"Default 6 fills fast during AG troubleshooting" }
+    ]
+  },
+  {
+    id: 8, title: "Enable Always On Feature",
+    items: [
+      { id:"8.1", text:"Open SQL Server Configuration Manager on SQL01", detail:"SQL Server Configuration Manager (not Services)" },
+      { id:"8.2", text:"Navigate to SQL Server Services > SQL Server (MSSQLSERVER) > Properties" },
+      { id:"8.3", text:"Go to 'Always On High Availability' tab, check 'Enable Always On Availability Groups'", warning:"Node must be in WSFC first (Phase 9-11), or use PowerShell to enable before cluster" },
+      { id:"8.4", text:"Restart SQL Server service on SQL01", cmd:"Restart-Service MSSQLSERVER -Force" },
+      { id:"8.5", text:"Repeat steps 8.1-8.4 on SQL02", detail:"Enable BEFORE SQL02 joins any AG" },
+      { id:"8.6", text:"Verify Always On is enabled", cmd:"SELECT SERVERPROPERTY('IsHadrEnabled');" }
+    ]
+  },
+  {
+    id: 9, title: "Install WSFC Feature",
+    items: [
+      { id:"9.1", text:"Install Failover Clustering feature on SQL01", cmd:"Install-WindowsFeature Failover-Clustering -IncludeManagementTools" },
+      { id:"9.2", text:"Install Failover Clustering feature on SQL02", detail:"Same command on second node" },
+      { id:"9.3", text:"Verify feature installed", cmd:"Get-WindowsFeature Failover-Clustering | Select Name,Installed" }
+    ]
+  },
+  {
+    id: 10, title: "Validate Cluster",
+    items: [
+      { id:"10.1", text:"Run cluster validation from SQL01", cmd:"Test-Cluster -Node SQL01,SQL02" },
+      { id:"10.2", text:"Review validation report - all tests must pass", detail:"Warnings are acceptable, Errors are not" },
+      { id:"10.3", text:"Fix any errors before proceeding", warning:"Do NOT create cluster with validation errors" }
+    ]
+  },
+  {
+    id: 11, title: "Create WSFC Cluster",
+    items: [
+      { id:"11.1", text:"Create cluster with static IP", cmd:"New-Cluster -Name SQLCLUSTER -Node SQL01,SQL02 -StaticAddress 10.10.10.15 -NoStorage", why:"-NoStorage prevents disk claims; we use shared nothing for AG" },
+      { id:"11.2", text:"Verify cluster creation", cmd:"Get-Cluster | Select Name,State,Node" },
+      { id:"11.3", text:"Verify both nodes are 'Up' in cluster", cmd:"Get-ClusterNode | Select Name,State" },
+      { id:"11.4", text:"Verify cluster name registered in DNS", cmd:"nslookup SQLCLUSTER.corp.local" }
+    ]
+  },
+  {
+    id: 12, title: "Configure Cluster Quorum",
+    items: [
+      { id:"12.1", text:"Create witness folder on DC01", cmd:"New-Item -Path 'D:\\ClusterWitness' -ItemType Directory" },
+      { id:"12.2", text:"Share the folder: \\DC01\\ClusterWitness", detail:"Share name must be ClusterWitness. Grant Full Control to Cluster Computer Object (SQLCLUSTER$)." },
+      { id:"12.3", text:"Configure file share witness", cmd:"Set-ClusterQuorum -NodeMajority -FileShareWitness '\\\\DC01\\ClusterWitness'" },
+      { id:"12.4", text:"Verify quorum configuration", cmd:"Get-ClusterQuorum | Select QuorumResource,QuorumType" },
+      { id:"12.5", text:"Test witness accessibility from both SQL nodes", cmd:"Test-Path '\\\\DC01\\ClusterWitness'" }
+    ],
+    gate: "PHASE GATE: Manager/Architect sign-off before SQL-level configuration"
+  },
+  {
+    id: 13, title: "Configure SQL Endpoints",
+    items: [
+      { id:"13.1", text:"Create Hadr_endpoint on SQL01", cmd:"CREATE ENDPOINT Hadr_endpoint\nSTATE = STARTED\nAS TCP ( LISTENER_PORT = 5022 )\nFOR DATABASE_MIRRORING ( ROLE = ALL );" },
+      { id:"13.2", text:"Grant CONNECT permission on endpoint to svc_sql", cmd:"GRANT CONNECT ON ENDPOINT::Hadr_endpoint TO [CORP\\svc_sql];" },
+      { id:"13.3", text:"Repeat endpoint creation and GRANT on SQL02", detail:"Identical commands on second node" },
+      { id:"13.4", text:"Verify endpoints are started", cmd:"SELECT name, state_desc FROM sys.tcp_endpoints;" },
+      { id:"13.5", text:"Test endpoint connectivity between nodes", cmd:"-- On SQL02, test SQL01 endpoint:\nSELECT * FROM sys.dm_hadr_availability_replica_states;" }
+    ]
+  },
+  {
+    id: 14, title: "Firewall Configuration",
+    items: [
+      { id:"14.1", text:"Allow port 1433 (SQL) on both nodes", cmd:"New-NetFirewallRule -DisplayName 'SQL Server' -Direction Inbound -Protocol TCP -LocalPort 1433 -Action Allow" },
+      { id:"14.2", text:"Allow port 5022 (AG Endpoint) on both nodes", cmd:"New-NetFirewallRule -DisplayName 'AG Endpoint' -Direction Inbound -Protocol TCP -LocalPort 5022 -Action Allow" },
+      { id:"14.3", text:"Allow port 3343 (WSFC) on both nodes", detail:"Used by cluster service" },
+      { id:"14.4", text:"Allow port 445 (SMB) on DC01 for witness share", detail:"Required for file share witness" },
+      { id:"14.5", text:"Allow port 135 (RPC) and dynamic RPC range", detail:"Used by cluster communication" },
+      { id:"14.6", text:"Allow port 53 (DNS) on DC01", detail:"DNS resolution" },
+      { id:"14.7", text:"Verify all ports are reachable", cmd:"Test-NetConnection SQL01 -Port 1433\nTest-NetConnection SQL01 -Port 5022\nTest-NetConnection SQL02 -Port 1433\nTest-NetConnection SQL02 -Port 5022" }
+    ]
+  },
+  {
+    id: 15, title: "Create Test Database",
+    items: [
+      { id:"15.1", text:"Create SalesDB on SQL01", cmd:"CREATE DATABASE SalesDB;" },
+      { id:"15.2", text:"Set recovery model to FULL", cmd:"ALTER DATABASE SalesDB SET RECOVERY FULL;", warning:"Must take log backup immediately after switching to FULL to initialize log chain" },
+      { id:"15.3", text:"Add test data", cmd:"USE SalesDB;\nCREATE TABLE TestLog (ID INT IDENTITY, CreatedAt DATETIME2 DEFAULT SYSUTCDATETIME());\nINSERT INTO TestLog DEFAULT VALUES;\nGO 1000" }
+    ]
+  },
+  {
+    id: 16, title: "Backup and Restore",
+    items: [
+      { id:"16.1", text:"Take FULL backup of SalesDB on SQL01", cmd:"BACKUP DATABASE SalesDB TO DISK = 'D:\\Backup\\SalesDB_Full.bak' WITH INIT, CHECKSUM;" },
+      { id:"16.2", text:"Take LOG backup of SalesDB on SQL01", cmd:"BACKUP LOG SalesDB TO DISK = 'D:\\Backup\\SalesDB_Log1.trn' WITH INIT, CHECKSUM;" },
+      { id:"16.3", text:"Copy backup files to SQL02 (or shared accessible path)", detail:"Use copy or shared backup location" },
+      { id:"16.4", text:"Verify RESTORE FILELISTONLY to check logical names", cmd:"RESTORE FILELISTONLY FROM DISK = 'D:\\Backup\\SalesDB_Full.bak';", why:"MOVE clause in restore needs correct logical names" },
+      { id:"16.5", text:"Restore FULL backup on SQL02 WITH NORECOVERY", cmd:"RESTORE DATABASE SalesDB FROM DISK = 'D:\\Backup\\SalesDB_Full.bak'\nWITH NORECOVERY, MOVE 'SalesDB' TO 'D:\\Data\\SalesDB.mdf',\nMOVE 'SalesDB_log' TO 'L:\\Log\\SalesDB_log.ldf';" },
+      { id:"16.6", text:"Restore LOG backup on SQL02 WITH NORECOVERY", cmd:"RESTORE LOG SalesDB FROM DISK = 'D:\\Backup\\SalesDB_Log1.trn' WITH NORECOVERY;" },
+      { id:"16.7", text:"Verify database is in RESTORING state on SQL02", cmd:"SELECT name, state_desc FROM sys.databases WHERE name = 'SalesDB';", why:"NORECOVERY keeps database ready for AG join" }
+    ]
+  },
+  {
+    id: 17, title: "Create Availability Group",
+    items: [
+      { id:"17.1", text:"Create AG_PROD on SQL01 (primary)", cmd:"CREATE AVAILABILITY GROUP AG_PROD\nFOR DATABASE SalesDB\nREPLICA ON\nN'SQL01' WITH (\n  ENDPOINT_URL = 'TCP://SQL01.corp.local:5022',\n  FAILOVER_MODE = AUTOMATIC,\n  AVAILABILITY_MODE = SYNCHRONOUS_COMMIT,\n  SEEDING_MODE = MANUAL\n),\nN'SQL02' WITH (\n  ENDPOINT_URL = 'TCP://SQL02.corp.local:5022',\n  FAILOVER_MODE = AUTOMATIC,\n  AVAILABILITY_MODE = SYNCHRONOUS_COMMIT,\n  SEEDING_MODE = MANUAL\n);" },
+      { id:"17.2", text:"Verify AG was created", cmd:"SELECT name, group_id FROM sys.availability_groups;" }
+    ]
+  },
+  {
+    id: 18, title: "Join Secondary Replica",
+    items: [
+      { id:"18.1", text:"Join AG on SQL02", cmd:"ALTER AVAILABILITY GROUP AG_PROD JOIN;" },
+      { id:"18.2", text:"Join database to AG on SQL02", cmd:"ALTER DATABASE SalesDB SET HADR AVAILABILITY GROUP = AG_PROD;", warning:"If this fails: (1) DB must be in RESTORING state, (2) Endpoint must be STARTED, (3) Port 5022 must be open, (4) Service account needs CONNECT on endpoint" },
+      { id:"18.3", text:"Verify database synchronization state", cmd:"SELECT database_name, synchronization_state_desc, synchronization_health_desc\nFROM sys.dm_hadr_database_replica_states;" }
+    ]
+  },
+  {
+    id: 19, title: "Create Listener",
+    items: [
+      { id:"19.1", text:"Create listener SQLPROD-LSN", cmd:"ALTER AVAILABILITY GROUP AG_PROD\nADD LISTENER 'SQLPROD-LSN' (\n  WITH IP (('10.10.10.20','255.255.255.0')),\n  PORT = 1433\n);" },
+      { id:"19.2", text:"Verify listener is online", cmd:"SELECT dns_name, ip_address, is_converged FROM sys.availability_group_listener_ip_addresses;" },
+      { id:"19.3", text:"Test connection to listener", cmd:"sqlcmd -S SQLPROD-LSN -Q 'SELECT @@SERVERNAME'" },
+      { id:"19.4", text:"Pre-stage SPN for listener", cmd:"setspn -A MSSQLSvc/SQLPROD-LSN.corp.local:1433 CORP\\svc_sql\nsetspn -A MSSQLSvc/SQLPROD-LSN.corp.local CORP\\svc_sql", why:"Without SPN, Kerberos fails and apps fall back to NTLM" }
+    ]
+  },
+  {
+    id: 20, title: "Test Failover",
+    items: [
+      { id:"20.1", text:"Verify AG is SYNCHRONIZED/HEALTHY before failover", cmd:"SELECT synchronization_state_desc, synchronization_health_desc FROM sys.dm_hadr_database_replica_states;" },
+      { id:"20.2", text:"Test manual failover: SQL01 -> SQL02", cmd:"-- Connect to SQL02 and execute:\nALTER AVAILABILITY GROUP AG_PROD FAILOVER;" },
+      { id:"20.3", text:"Verify SQL02 is now primary", cmd:"SELECT @@SERVERNAME, SERVERPROPERTY('IsHadrEnabled');" },
+      { id:"20.4", text:"Fail back: SQL02 -> SQL01", detail:"Repeat failover from SQL01" },
+      { id:"20.5", text:"Test automatic failover: stop SQL Server on primary", cmd:"Stop-Service MSSQLSERVER -Force", warning:"FORCE_FAILOVER_ALLOW_DATA_LOSS can cause data loss. Only use in emergencies. Always attempt graceful failover first." },
+      { id:"20.6", text:"Verify secondary takes over automatically within 30 seconds", detail:"Check @@SERVERNAME on secondary" },
+      { id:"20.7", text:"Restart SQL Server on old primary, verify it rejoins as secondary" }
+    ],
+    gate: "PHASE GATE: Manager/Architect sign-off before production deployment"
+  },
+  {
+    id: 21, title: "Monitoring & Alerts",
+    items: [
+      { id:"21.1", text:"Configure Database Mail profile", cmd:"EXEC msdb.dbo.sysmail_add_profile_sp @profile_name = 'DBA Profile';\nEXEC msdb.dbo.sysmail_add_account_sp @account_name = 'DBA Alert', @email_address = 'dba@corp.local', @mailserver_name = 'mail.corp.local';\nEXEC msdb.dbo.sysmail_add_profileaccount_sp @profile_name = 'DBA Profile', @account_name = 'DBA Alert';" },
+      { id:"21.2", text:"Send test email to verify Database Mail works", cmd:"EXEC msdb.dbo.sp_send_dbmail @profile_name='DBA Profile', @recipients='dba@corp.local', @subject='AG Checklist Test', @body='Test email from AG deployment checklist.';" },
+      { id:"21.3", text:"Create SQL Agent alert for AG state changes", detail:"Alert on severity 14, error 1480 (AG failover)" },
+      { id:"21.4", text:"Create SQL Agent job for daily AG health check", detail:"Query sys.dm_hadr_availability_replica_states, email if unhealthy" },
+      { id:"21.5", text:"Configure backup monitoring alert", detail:"Alert if backup fails for 2 consecutive days" },
+      { id:"21.6", text:"Document monitoring DMVs for daily checks", cmd:"-- Key DMVs:\nSELECT * FROM sys.dm_hadr_availability_replica_states;\nSELECT * FROM sys.dm_hadr_database_replica_states;\nSELECT * FROM sys.availability_groups;\nSELECT * FROM sys.dm_hadr_cluster;" }
+    ]
+  },
+  {
+    id: 22, title: "Documentation & Handoff",
+    items: [
+      { id:"22.1", text:"Document server inventory with IPs, hostnames, roles", detail:"Include SQL version, edition, build number, collation" },
+      { id:"22.2", text:"Document service accounts and password locations", detail:"Reference secure vault, not actual passwords" },
+      { id:"22.3", text:"Document AG configuration: replicas, modes, listener", detail:"SYNCHRONOUS_COMMIT, AUTOMATIC failover" },
+      { id:"22.4", text:"Document backup strategy and schedule", detail:"Full daily, diff every 6h, log every 15min" },
+      { id:"22.5", text:"Document failover procedures (manual and automatic)", detail:"Step-by-step for on-call DBA" },
+      { id:"22.6", text:"Document rollback procedures per phase", warning:"CRITICAL: Every phase should have a documented undo path" },
+      { id:"22.7", text:"Document Kerberos SPN registrations", detail:"setspn -L CORP\\svc_sql" },
+      { id:"22.8", text:"Document DNS TTL settings for listener", detail:"Recommended: 300 seconds for faster failover DNS propagation" },
+      { id:"22.9", text:"Document cluster event log locations", detail:"Event Viewer > Applications and Services Logs > Microsoft > Windows > FailoverCluster" },
+      { id:"22.10", text:"Document restore testing procedure", detail:"Monthly: restore backup from secondary to test server, verify data" },
+      { id:"22.11", text:"Schedule DR failover test (monthly)", detail:"Failover to async replica (if exists) or document procedure" },
+      { id:"22.12", text:"Schedule patching procedure", detail:"Patch one node at a time, move AG roles, fail back, patch second node" }
+    ],
+    gate: "FINAL SIGN-OFF: All phases complete. Ready for production use."
+  }
+];
+
+// Pure in-memory state - no browser storage APIs, no file:// errors
+let state = {};
+
+function render() {
+  const container = document.getElementById('checklist');
+  let html = '';
+  let totalItems = 0;
+  let doneItems = 0;
+
+  PHASES.forEach(phase => {
+    const collapsed = state['p' + phase.id] ? 'collapsed' : '';
+    html += '<div class="phase ' + collapsed + '" id="phase_' + phase.id + '">';
+    html += '<div class="phase-header" onclick="togglePhase(' + phase.id + ')">';
+    html += '<div><h2>Phase ' + phase.id + ': ' + phase.title + '</h2>';
+    html += '<span class="badge">' + phase.items.length + ' steps</span></div>';
+    html += '<span class="toggle">&#9660;</span></div>';
+    html += '<div class="phase-body">';
+
+    phase.items.forEach(item => {
+      totalItems++;
+      const isChecked = state[item.id] || false;
+      if (isChecked) doneItems++;
+
+      html += '<div class="check-item ' + (isChecked ? 'checked' : '') + '" id="item_' + item.id + '">';
+      html += '<div class="cb-wrap"><input type="checkbox" id="cb_' + item.id + '" ' + (isChecked ? 'checked' : '') + ' onchange="toggleItem(\'' + item.id + '\')"><label for="cb_' + item.id + '"></label></div>';
+      html += '<div class="step-content">';
+      html += '<div class="step-header"><span class="step-id">' + item.id + '</span><span class="step-text">' + item.text + '</span></div>';
+      if (item.detail) html += '<div class="step-detail">' + item.detail + '</div>';
+      if (item.cmd) html += '<div class="step-cmd">' + escHtml(item.cmd) + '</div>';
+      if (item.why) html += '<div class="step-why">Why: ' + item.why + '</div>';
+      if (item.warning) html += '<div class="step-warning">Warning: ' + item.warning + '</div>';
+      html += '</div>';
+      html += '<div class="step-time">' + phase.time + '</div>';
+      html += '</div>';
+    });
+
+    if (phase.gate) {
+      html += '<div class="phase-gate"><strong>' + phase.gate + '</strong></div>';
+    }
+
+    html += '</div></div>';
+  });
+
+  container.innerHTML = html;
+  updateStats(totalItems, doneItems);
+}
+
+function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function toggleItem(id) {
+  state[id] = !state[id];
+  render();
+}
+
+function togglePhase(id) {
+  state['p' + id] = !state['p' + id];
+  render();
+}
+
+function updateStats(total, done) {
+  document.getElementById('statTotal').textContent = total;
+  document.getElementById('statDone').textContent = done;
+  document.getElementById('statPending').textContent = total - done;
+  document.getElementById('progressFill').style.width = (total > 0 ? (done / total * 100) : 0) + '%';
+}
+
+function resetAll() {
+  state = {};
+  render();
+}
+
+render();
+</script>
+</body>
+</html>

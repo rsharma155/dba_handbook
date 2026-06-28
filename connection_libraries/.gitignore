@@ -1,0 +1,5 @@
+*.jar
+*.dll
+*.so
+*.dylib
+odbc/**

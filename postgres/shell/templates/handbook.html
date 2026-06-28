@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PostgreSQL DBA Production Handbook</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous">
+<style>
+:root {
+  --bg-primary:#0f1419; --bg-secondary:#1a1f2e; --bg-card:#1e2538; --bg-hover:#263044;
+  --text-primary:#e1e5ee; --text-secondary:#8892a4; --accent:#336791; --accent-hover:#2a5577;
+  --accent-light:rgba(51,103,145,0.18); --success:#22c55e; --warning:#f59e0b; --danger:#ef4444;
+  --border:#2d3748; --sidebar-width:280px; --header-height:64px;
+}
+[data-theme="light"] {
+  --bg-primary:#f0f2f5; --bg-secondary:#fff; --bg-card:#fff; --bg-hover:#f5f7fa;
+  --text-primary:#1a202c; --text-secondary:#4a5568; --accent:#336791; --accent-hover:#2a5577;
+  --accent-light:rgba(51,103,145,0.1); --border:#e2e8f0;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg-primary);color:var(--text-primary);overflow-x:hidden}
+.header{position:fixed;top:0;left:0;right:0;height:var(--header-height);background:var(--bg-secondary);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 24px;z-index:1000}
+.header-title{display:flex;align-items:center;gap:12px}
+.header-title h1{font-size:18px;font-weight:700}
+.header-title .subtitle{font-size:11px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px}
+.header-actions{display:flex;align-items:center;gap:8px}
+.btn-icon{width:36px;height:36px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-secondary);cursor:pointer;display:flex;align-items:center;justify-content:center}
+.btn-icon:hover{background:var(--bg-hover);color:var(--text-primary);border-color:var(--accent)}
+.btn-accent{padding:6px 14px;border-radius:8px;border:none;background:var(--accent);color:#fff;cursor:pointer;font-size:13px;font-weight:500;display:flex;align-items:center;gap:6px}
+.btn-accent:hover{background:var(--accent-hover)}
+.sidebar{position:fixed;top:var(--header-height);left:0;bottom:0;width:var(--sidebar-width);background:var(--bg-secondary);border-right:1px solid var(--border);overflow-y:auto;z-index:900;transition:transform .3s}
+.sidebar.collapsed{transform:translateX(calc(-1 * var(--sidebar-width)))}
+.sidebar-section{padding:12px 0}
+.sidebar-section-title{padding:8px 20px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-secondary)}
+.sidebar-item{display:flex;align-items:center;gap:10px;padding:9px 20px;cursor:pointer;font-size:13px;color:var(--text-secondary);border-left:3px solid transparent}
+.sidebar-item:hover{background:var(--bg-hover);color:var(--text-primary)}
+.sidebar-item.active{background:var(--accent-light);color:var(--accent);border-left-color:var(--accent);font-weight:600}
+.main-content{margin-left:var(--sidebar-width);margin-top:var(--header-height);padding:24px;min-height:calc(100vh - var(--header-height));transition:margin-left .3s}
+.sidebar.collapsed~.main-content{margin-left:0}
+.section-page{display:none}.section-page.active{display:block;max-width:1100px}
+.page-header{margin-bottom:24px}.page-header h2{font-size:24px;font-weight:700;margin-bottom:6px}
+.page-header p{color:var(--text-secondary);font-size:14px}
+.back-btn{display:none;align-items:center;gap:6px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:8px 16px;margin-bottom:16px;cursor:pointer;font-size:14px;color:var(--text-primary)}
+.back-btn.visible{display:inline-flex}
+.card-box{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:16px}
+.card-box h3{font-size:16px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.card-box h3 i{color:var(--accent)}
+.checklist-item{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)}
+.checklist-item:last-child{border-bottom:none}
+.checklist-item input[type=checkbox]{width:18px;height:18px;margin-top:2px;accent-color:var(--accent);cursor:pointer;flex-shrink:0}
+.checklist-item .item-content{flex:1}
+.checklist-item .item-script{display:inline-flex;align-items:center;gap:4px;margin-top:4px;font-size:11px;color:var(--accent);background:var(--accent-light);padding:2px 8px;border-radius:4px;font-family:'Cascadia Code','Fira Code',monospace;cursor:pointer;transition:all .2s;border:1px solid transparent;position:relative}
+.checklist-item .item-script:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+.checklist-item .item-script::after{content:'\2197';font-size:8px;margin-left:2px;opacity:.6}
+.checklist-item .item-script:hover::after{opacity:1}
+.checklist-item .item-script i{font-size:10px}
+.card-box .item-script{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--accent);background:var(--accent-light);padding:2px 8px;border-radius:4px;font-family:'Cascadia Code','Fira Code',monospace;cursor:pointer;transition:all .2s;border:1px solid transparent}
+.card-box .item-script:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+.card-box .item-script::after{content:'\2197';font-size:8px;margin-left:2px;opacity:.6}
+.card-box .item-script:hover::after{opacity:1}
+.priority-badge{display:inline-block;font-size:10px;font-weight:600;padding:2px 8px;border-radius:4px;text-transform:uppercase}
+.priority-critical{background:rgba(239,68,68,.15);color:var(--danger)}
+.priority-high{background:rgba(245,158,11,.15);color:var(--warning)}
+.priority-medium{background:rgba(51,103,145,.15);color:var(--accent)}
+table.data-table{width:100%;border-collapse:collapse;font-size:13px}
+table.data-table th{background:var(--bg-hover);padding:10px 12px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--text-secondary);border-bottom:2px solid var(--border)}
+table.data-table td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+table.data-table tr:hover td{background:var(--bg-hover)}
+.script-path{font-family:monospace;font-size:11px;color:var(--accent);word-break:break-all}
+.dashboard-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:24px}
+.dash-card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:20px}
+.dash-card .big-number{font-size:36px;font-weight:700;color:var(--accent)}
+.dash-card .big-label{font-size:12px;color:var(--text-secondary)}
+.progress-bar-container{height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-top:8px}
+.progress-bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--success));transition:width .5s}
+.search-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:2000;align-items:flex-start;justify-content:center;padding-top:100px}
+.search-overlay.active{display:flex}
+.search-box{width:600px;max-width:90vw;background:var(--bg-card);border-radius:12px;border:1px solid var(--border);overflow:hidden}
+.search-box input{width:100%;padding:16px 20px;border:none;background:transparent;color:var(--text-primary);font-size:16px;outline:none}
+.search-results{max-height:400px;overflow-y:auto;padding:8px}
+.search-result-item{padding:10px 12px;border-radius:8px;cursor:pointer;font-size:13px}
+.search-result-item:hover{background:var(--bg-hover)}
+.kb-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
+.kb-card{background:var(--bg-hover);border:1px solid var(--border);border-radius:10px;padding:14px}
+.kb-card h4{font-size:14px;margin-bottom:8px;color:var(--accent)}
+.kb-field{font-size:12px;margin-bottom:6px;color:var(--text-secondary)}
+.kb-field strong{color:var(--text-primary)}
+.tag{display:inline-block;font-size:10px;padding:2px 6px;border-radius:4px;margin-right:4px}
+.tag-g{background:rgba(34,197,94,.15);color:var(--success)}
+.tag-y{background:rgba(245,158,11,.15);color:var(--warning)}
+.tag-b{background:rgba(51,103,145,.15);color:var(--accent)}
+.script-viewer-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:3000;align-items:center;justify-content:center;padding:20px}
+.script-viewer-overlay.active{display:flex}
+.script-viewer{width:95vw;max-width:1200px;max-height:90vh;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;display:flex;flex-direction:column;overflow:hidden}
+.script-viewer-header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);background:var(--bg-secondary);flex-shrink:0}
+.script-viewer-header h3{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px;margin:0}
+.script-viewer-actions{display:flex;gap:6px;align-items:center}
+.script-viewer-body{flex:1;overflow:auto;padding:0}
+pre.sql-code{margin:0;padding:16px 20px;font-family:'Cascadia Code','Fira Code',monospace;font-size:13px;line-height:1.65;white-space:pre;overflow:auto;background:#1e1e1e;color:#d4d4d4;tab-size:4}
+.copy-btn{padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-hover);color:var(--text-secondary);cursor:pointer;font-size:11px;display:flex;align-items:center;gap:4px;transition:all .2s}
+.copy-btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+.sql-kw{color:#569cd6}.sql-fn{color:#dcdcaa}.sql-str{color:#ce9178}.sql-cmt{color:#6a9955}.sql-var{color:#9cdcfe}.sql-num{color:#b5cea8}
+.mode-junior .senior-only{display:none!important}
+.mode-toggle{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary)}
+@media(max-width:768px){.sidebar{transform:translateX(calc(-1 * var(--sidebar-width)))}.main-content{margin-left:0}}
+</style>
+</head>
+<body class="mode-junior">
+
+<div id="generateBanner" style="display:none;position:fixed;top:var(--header-height);left:0;right:0;z-index:1100;background:#f59e0b;color:#1a202c;padding:10px 20px;font-size:13px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.2);">
+  <strong>Template only.</strong> Run <code>postgres/shell/generate-dba-handbook.sh</code> and open
+  <code>postgres/output/DBA_Production_Handbook.html</code> (not this templates file).
+</div>
+
+<header class="header">
+  <div class="header-title">
+    <i class="fas fa-elephant" style="font-size:24px;color:var(--accent)"></i>
+    <div>
+      <h1>PostgreSQL DBA Production Handbook</h1>
+      <div class="subtitle">Generated __GENERATED_AT__ · __SCRIPT_COUNT__ scripts embedded</div>
+    </div>
+  </div>
+  <div class="header-actions">
+    <div class="mode-toggle">
+      <span>Junior</span>
+      <button class="btn-icon" id="modeToggle" title="Toggle Junior/Senior mode" onclick="toggleDbaMode()"><i class="fas fa-user-graduate"></i></button>
+      <span>Senior</span>
+    </div>
+    <button class="btn-icon" onclick="toggleTheme()" title="Toggle theme"><i class="fas fa-moon" id="themeIcon"></i></button>
+    <button class="btn-icon" onclick="openSearch()" title="Search (Ctrl+K)"><i class="fas fa-search"></i></button>
+    <button class="btn-icon" onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
+    <button class="btn-accent" onclick="window.print()"><i class="fas fa-print"></i> Print / PDF</button>
+  </div>
+</header>
+
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-section">
+    <div class="sidebar-section-title">Overview</div>
+    <div class="sidebar-item active" onclick="showPage('dashboard')"><i class="fas fa-home"></i> Dashboard</div>
+  </div>
+  <div class="sidebar-section">
+    <div class="sidebar-section-title">Operations</div>
+    <div class="sidebar-item" onclick="showPage('sec01')"><i class="fas fa-shield-alt"></i> 01. DBA Principles</div>
+    <div class="sidebar-item" onclick="showPage('sec02')"><i class="fas fa-bolt"></i> 02. First Responder</div>
+    <div class="sidebar-item" onclick="showPage('sec03')"><i class="fas fa-cogs"></i> 03. Configuration</div>
+    <div class="sidebar-item" onclick="showPage('sec04')"><i class="fas fa-heartbeat"></i> 04. Daily Health</div>
+    <div class="sidebar-item" onclick="showPage('sec05')"><i class="fas fa-exclamation-circle"></i> 05. Incident Response</div>
+    <div class="sidebar-item" onclick="showPage('sec06')"><i class="fas fa-tachometer-alt"></i> 06. Performance</div>
+    <div class="sidebar-item" onclick="showPage('sec07')"><i class="fas fa-lock"></i> 07. Blocking &amp; Locks</div>
+    <div class="sidebar-item" onclick="showPage('sec08')"><i class="fas fa-broom"></i> 08. Vacuum &amp; Bloat</div>
+    <div class="sidebar-item" onclick="showPage('sec09')"><i class="fas fa-archive"></i> 09. Backup &amp; WAL</div>
+    <div class="sidebar-item" onclick="showPage('sec10')"><i class="fas fa-user-shield"></i> 10. Security</div>
+    <div class="sidebar-item" onclick="showPage('sec11')"><i class="fas fa-sync"></i> 11. HA &amp; Replication</div>
+    <div class="sidebar-item" onclick="showPage('sec12')"><i class="fas fa-chart-line"></i> 12. Capacity</div>
+    <div class="sidebar-item" onclick="showPage('sec13')"><i class="fas fa-robot"></i> 13. Framework</div>
+    <div class="sidebar-item" onclick="showPage('sec14')"><i class="fas fa-wave-square"></i> 14. Wait Events KB</div>
+  </div>
+  <div class="sidebar-section">
+    <div class="sidebar-section-title">Reference</div>
+    <div class="sidebar-item" onclick="showPage('scriptExplorer')"><i class="fas fa-folder-open"></i> Script Explorer</div>
+  </div>
+</nav>
+
+<div class="main-content" id="mainContent">
+<button class="back-btn" id="backBtn" onclick="showPage('dashboard')"><i class="fas fa-arrow-left"></i> Back to Dashboard</button>
+
+<!-- DASHBOARD -->
+<div class="section-page active" id="page-dashboard">
+  <div class="page-header"><h2>DBA Operations Dashboard</h2><p>PostgreSQL production handbook — checklists, scripts, and incident playbooks.</p></div>
+  <div class="dashboard-cards">
+    <div class="dash-card"><h4>Checklist Progress</h4><div class="big-number" id="dashProgress">0%</div><div class="big-label"><span id="dashCompleted">0</span> / <span id="dashTotal">0</span> tasks</div><div class="progress-bar-container"><div class="progress-bar-fill" id="dashProgressBar" style="width:0%"></div></div></div>
+    <div class="dash-card"><h4>Scripts Embedded</h4><div class="big-number" id="dashScripts">__SCRIPT_COUNT__</div><div class="big-label">SQL files in this handbook</div></div>
+    <div class="dash-card"><h4>Sections</h4><div class="big-number">14</div><div class="big-label">Operational playbooks</div></div>
+  </div>
+  <div class="card-box">
+    <h3><i class="fas fa-rocket"></i> Quick Actions</h3>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">
+      <button class="btn-accent" onclick="showPage('sec04',true)"><i class="fas fa-heartbeat"></i> Daily Health</button>
+      <button class="btn-accent" onclick="showPage('sec05',true)"><i class="fas fa-bolt"></i> Incident Response</button>
+      <button class="btn-accent" onclick="showPage('sec07',true)"><i class="fas fa-lock"></i> Blocking</button>
+      <button class="btn-accent" onclick="showPage('sec09',true)"><i class="fas fa-archive"></i> Backup / WAL</button>
+      <button class="btn-accent" onclick="showPage('scriptExplorer')"><i class="fas fa-code"></i> Script Explorer</button>
+    </div>
+  </div>
+  <div class="card-box"><h3><i class="fas fa-terminal"></i> Quick Commands</h3>
+    <pre class="sql-code" style="background:var(--bg-hover);border-radius:8px;margin-top:8px">psql -h HOST -U postgres -d dba_repository -f 00_Framework/00_Deploy_Framework.sql
+SELECT * FROM dba.sp_health_check(deep_dive => false);
+SELECT * FROM dba.sp_active_sessions(output_mode => 'BLOCKING');</pre>
+  </div>
+</div>
+
+<!-- SEC 01 -->
+<div class="section-page" id="page-sec01">
+  <div class="page-header"><h2>01. DBA Principles</h2><p>Collect evidence before changing anything on production PostgreSQL.</p></div>
+  <div class="card-box">
+    <div class="checklist-item"><input type="checkbox" data-id="p01" onchange="saveCheck(this)"><div><div><strong>Never immediately:</strong> restart PostgreSQL, pg_terminate_backend all sessions, DROP INDEX, change shared_buffers without plan, or VACUUM FULL during peak.</div><div class="item-script">14_Baselines/performance_snapshot.sql</div></div></div>
+    <div class="checklist-item"><input type="checkbox" data-id="p02" onchange="saveCheck(this)"><div><div>Capture <code>pg_stat_activity</code>, wait events, and top queries before remediation.</div><div class="item-script">04_Performance_Diagnostics/wait_events.sql</div></div></div>
+    <div class="checklist-item"><input type="checkbox" data-id="p03" onchange="saveCheck(this)"><div><div>Note <code>pg_postmaster_start_time()</code> — many stats reset on restart.</div><div class="item-script">SELECT pg_postmaster_start_time(), now();</div></div></div>
+  </div>
+</div>
+
+<!-- SEC 02 -->
+<div class="section-page" id="page-sec02">
+  <div class="page-header"><h2>02. First Responder</h2><p>First 5 minutes when PostgreSQL is slow or unreachable.</p></div>
+  <div class="card-box">
+    <div class="checklist-item"><input type="checkbox" data-id="fr01" onchange="saveCheck(this)"><div><div>Can I connect? <code>psql -h ... -U ... -c "SELECT version();"</code></div></div></div>
+    <div class="checklist-item"><input type="checkbox" data-id="fr02" onchange="saveCheck(this)"><div><div>Run health check orchestrator</div><div class="item-script">00_Framework/sp_dba_health_check.sql</div></div></div>
+    <div class="checklist-item"><input type="checkbox" data-id="fr03" onchange="saveCheck(this)"><div><div>Active sessions and blocking</div><div class="item-script">00_Framework/sp_dba_active_sessions.sql</div><div class="item-script">04_Performance_Diagnostics/blocking_and_locks.sql</div></div></div>
+    <div class="checklist-item"><input type="checkbox" data-id="fr04" onchange="saveCheck(this)"><div><div>Connection saturation</div><div class="item-script">02_Instance_Config/connection_settings.sql</div></div></div>
+    <div class="checklist-item"><input type="checkbox" data-id="fr05" onchange="saveCheck(this)"><div><div>Replication / archive status if HA</div><div class="item-script">06_HA_DR/streaming_replication_status.sql</div></div></div>
+  </div>
+</div>
+
+<!-- SEC 03 -->
+<div class="section-page" id="page-sec03">
+  <div class="page-header"><h2>03. PostgreSQL Configuration</h2><p>GUC audit and connection settings.</p></div>
+  <div class="card-box">
+    <div class="checklist-item"><input type="checkbox" data-id="cfg01" onchange="saveCheck(this)"><div><div>postgresql.conf critical parameters</div><div class="item-script">02_Instance_Config/postgresql_conf_audit.sql</div></div></div>
+    <div class="checklist-item"><input type="checkbox" data-id="cfg02" onchange="saveCheck(this)"><div><div>Extensions and shared_preload_libraries</div><div class="item-script">02_Instance_Config/extension_audit.sql</div></div></div>
+    <div class="checklist-item senior-only"><input type="checkbox" data-id="cfg03" onchange="saveCheck(this)"><div><div>Review pg_hba.conf and SSL externally on server</div><div class="item-script">07_Security/connection_encryption.sql</div></div></div>
+  </div>
+</div>
+
+<!-- SEC 04 -->
+<div class="section-page" id="page-sec04">
+  <div class="page-header"><h2>04. Daily Health Checks</h2><p>Morning production checklist.</p></div>
+  <div class="card-box">
+    <div class="checklist-item"><input type="checkbox" data-id="dh01" onchange="saveCheck(this)"><div><div>Health dashboard</div><div class="item-script">SELECT * FROM dba.sp_health_check(deep_dive => false);</div></div></div>
+    <div class="checklist-item"><input type="checkbox" data-id="dh02" onchange="saveCheck(this)"><div><div>Backup / archive chain</div><div class="item-script">06_HA_DR/backup_verification.sql</div></div></div>
+    <div class="checklist-item"><input type="checkbox" data-id="dh03" onchange="saveCheck(this)"><div><div>Replication lag</div><div class="item-script">06_HA_DR/replication_lag.sql</div></div></div>
+    <div class="checklist-item"><input type="checkbox" data-id="dh04" onchange="saveCheck(this)"><div><div>Long transactions</div><div class="item-script">09_Maintenance/long_running_transactions.sql</div></div></div>
+    <div class="checklist-item"><input type="checkbox" data-id="dh05" onchange="saveCheck(this)"><div><div>Capture baseline for trending</div><div class="item-script">00_Framework/sp_dba_baseline_capture.sql</div></div></div>
+  </div>
+</div>
+
+<!-- SEC 05 -->
+<div class="section-page" id="page-sec05">
+  <div class="page-header"><h2>05. Incident Response</h2><p>Structured response — evidence first, then fix.</p></div>
+  <div class="card-box">
+    <div class="checklist-item"><input type="checkbox" data-id="ir01" onchange="saveCheck(this)"><div><div>Snapshot performance</div><div class="item-script">14_Baselines/performance_snapshot.sql</div></div></div>
+    <div class="checklist-item"><input type="checkbox" data-id="ir02" onchange="saveCheck(this)"><div><div>Identify bottleneck layer (app / query / engine / OS / disk)</div></div></div>
+    <div class="checklist-item"><input type="checkbox" data-id="ir03" onchange="saveCheck(this)"><div><div>Wait events + top queries</div><div class="item-script">04_Performance_Diagnostics/wait_events.sql</div><div class="item-script">04_Performance_Diagnostics/top_resource_queries.sql</div></div></div>
+    <div class="checklist-item"><input type="checkbox" data-id="ir04" onchange="saveCheck(this)"><div><div>Export incident notes (print this page section)</div><button class="btn-accent" style="margin-top:8px" onclick="exportIncident()"><i class="fas fa-download"></i> Export Incident Summary</button></div></div>
+  </div>
+</div>
+
+<!-- SEC 06 -->
+<div class="section-page" id="page-sec06">
+  <div class="page-header"><h2>06. Performance Tuning</h2><p>CPU, memory, I/O, and query analysis.</p></div>
+  <div class="card-box">
+    <div class="checklist-item"><input type="checkbox" data-id="perf01" onchange="saveCheck(this)"><div><div>CPU and active backends</div><div class="item-script">01_Server_OS/cpu_utilization.sql</div></div></div>
+    <div class="checklist-item"><input type="checkbox" data-id="perf02" onchange="saveCheck(this)"><div><div>Memory and buffer hit ratio</div><div class="item-script">01_Server_OS/memory_diagnostics.sql</div></div></div>
+    <div class="checklist-item"><input type="checkbox" data-id="perf03" onchange="saveCheck(this)"><div><div>Disk I/O by table</div><div class="item-script">01_Server_OS/disk_io_analysis.sql</div></div></div>
+    <div class="checklist-item"><input type="checkbox" data-id="perf04" onchange="saveCheck(this)"><div><div>pg_stat_statements deep dive</div><div class="item-script">08_Advanced/pg_stat_statements_deep.sql</div></div></div>
+    <div class="checklist-item senior-only"><input type="checkbox" data-id="perf05" onchange="saveCheck(this)"><div><div>Query regression detection</div><div class="item-script">11_Query_Analysis/query_regression.sql</div></div></div>
+  </div>
+</div>
+
+<!-- SEC 07 -->
+<div class="section-page" id="page-sec07">
+  <div class="page-header"><h2>07. Blocking &amp; Locks</h2><p>Lock waits and blocking chains.</p></div>
+  <div class="card-box">
+    <div class="checklist-item"><input type="checkbox" data-id="blk01" onchange="saveCheck(this)"><div><div>Blocking tree</div><div class="item-script">04_Performance_Diagnostics/blocking_and_locks.sql</div></div></div>
+    <div class="checklist-item"><input type="checkbox" data-id="blk02" onchange="saveCheck(this)"><div><div>Framework blocking mode</div><div class="item-script">SELECT * FROM dba.sp_active_sessions(output_mode => 'BLOCKING');</div></div></div>
+    <div class="checklist-item"><input type="checkbox" data-id="blk03" onchange="saveCheck(this)"><div><div>Idle in transaction sessions</div><div class="item-script">09_Maintenance/long_running_transactions.sql</div></div></div>
+  </div>
+</div>
+
+<!-- SEC 08 -->
+<div class="section-page" id="page-sec08">
+  <div class="page-header"><h2>08. Vacuum &amp; Bloat</h2><p>Autovacuum health and table bloat.</p></div>
+  <div class="card-box">
+    <div class="checklist-item"><input type="checkbox" data-id="vac01" onchange="saveCheck(this)"><div><div>Bloat analysis</div><div class="item-script">03_Storage/bloat_analysis.sql</div></div></div>
+    <div class="checklist-item"><input type="checkbox" data-id="vac02" onchange="saveCheck(this)"><div><div>Vacuum / analyze status</div><div class="item-script">04_Performance_Diagnostics/vacuum_analyze_status.sql</div></div></div>
+    <div class="checklist-item"><input type="checkbox" data-id="vac03" onchange="saveCheck(this)"><div><div>Autovacuum tuning review</div><div class="item-script">08_Advanced/autovacuum_health.sql</div></div></div>
+    <div class="checklist-item"><input type="checkbox" data-id="vac04" onchange="saveCheck(this)"><div><div>Maintenance queue</div><div class="item-script">09_Maintenance/vacuum_bloat_maintenance.sql</div></div></div>
+  </div>
+</div>
+
+<!-- SEC 09 -->
+<div class="section-page" id="page-sec09">
+  <div class="page-header"><h2>09. Backup &amp; WAL</h2><p>PITR readiness and WAL archiving.</p></div>
+  <div class="card-box">
+    <div class="checklist-item"><input type="checkbox" data-id="bkp01" onchange="saveCheck(this)"><div><div>WAL archiving status</div><div class="item-script">03_Storage/wal_archiving.sql</div></div></div>
+    <div class="checklist-item"><input type="checkbox" data-id="bkp02" onchange="saveCheck(this)"><div><div>Backup review framework</div><div class="item-script">00_Framework/sp_dba_backup_review.sql</div></div></div>
+    <div class="checklist-item"><input type="checkbox" data-id="bkp03" onchange="saveCheck(this)"><div><div>Checkpoint / WAL tuning</div><div class="item-script">08_Advanced/checkpoint_and_wal.sql</div></div></div>
+  </div>
+</div>
+
+<!-- SEC 10 -->
+<div class="section-page" id="page-sec10">
+  <div class="page-header"><h2>10. Security Audit</h2><p>Roles, SSL, and privileges.</p></div>
+  <div class="card-box">
+    <div class="checklist-item"><input type="checkbox" data-id="sec01" onchange="saveCheck(this)"><div><div>Security orchestrator</div><div class="item-script">00_Framework/sp_dba_security_audit.sql</div></div></div>
+    <div class="checklist-item"><input type="checkbox" data-id="sec02" onchange="saveCheck(this)"><div><div>Role and privilege audit</div><div class="item-script">07_Security/role_privilege_audit.sql</div></div></div>
+    <div class="checklist-item"><input type="checkbox" data-id="sec03" onchange="saveCheck(this)"><div><div>SSL connections</div><div class="item-script">07_Security/connection_encryption.sql</div></div></div>
+  </div>
+</div>
+
+<!-- SEC 11 -->
+<div class="section-page" id="page-sec11">
+  <div class="page-header"><h2>11. HA &amp; Replication</h2><p>Streaming and logical replication.</p></div>
+  <div class="card-box">
+    <div class="checklist-item"><input type="checkbox" data-id="ha01" onchange="saveCheck(this)"><div><div>Streaming replication</div><div class="item-script">06_HA_DR/streaming_replication_status.sql</div></div></div>
+    <div class="checklist-item"><input type="checkbox" data-id="ha02" onchange="saveCheck(this)"><div><div>Logical replication</div><div class="item-script">06_HA_DR/logical_replication_status.sql</div></div></div>
+    <div class="checklist-item"><input type="checkbox" data-id="ha03" onchange="saveCheck(this)"><div><div>Replication lag alerts</div><div class="item-script">06_HA_DR/replication_lag.sql</div></div></div>
+  </div>
+</div>
+
+<!-- SEC 12 -->
+<div class="section-page" id="page-sec12">
+  <div class="page-header"><h2>12. Capacity Planning</h2><p>Database growth and connection pooling.</p></div>
+  <div class="card-box">
+    <div class="checklist-item"><input type="checkbox" data-id="cap01" onchange="saveCheck(this)"><div><div>Database sizes</div><div class="item-script">03_Storage/database_size_and_growth.sql</div></div></div>
+    <div class="checklist-item"><input type="checkbox" data-id="cap02" onchange="saveCheck(this)"><div><div>Growth forecast</div><div class="item-script">10_Capacity_Planning/database_growth_forecast.sql</div></div></div>
+    <div class="checklist-item"><input type="checkbox" data-id="cap03" onchange="saveCheck(this)"><div><div>Connection pool saturation</div><div class="item-script">13_Connection_Pooling/connection_pool_audit.sql</div></div></div>
+  </div>
+</div>
+
+<!-- SEC 13 -->
+<div class="section-page" id="page-sec13">
+  <div class="page-header"><h2>13. Framework &amp; Automation</h2><p>Deploy once per cluster.</p></div>
+  <div class="card-box">
+    <div class="checklist-item"><input type="checkbox" data-id="fw01" onchange="saveCheck(this)"><div><div>Create dba_repository</div><div class="item-script">00_Repository/00_create_repository.sql</div></div></div>
+    <div class="checklist-item"><input type="checkbox" data-id="fw02" onchange="saveCheck(this)"><div><div>Deploy framework</div><div class="item-script">00_Framework/00_Deploy_Framework.sql</div></div></div>
+    <div class="checklist-item senior-only"><input type="checkbox" data-id="fw03" onchange="saveCheck(this)"><div><div>Preventive governance layer</div><div class="item-script">preventive_measures/01_create_governance_schema.sql</div></div></div>
+  </div>
+</div>
+
+<!-- SEC 14 -->
+<div class="section-page" id="page-sec14">
+  <div class="page-header"><h2>14. Wait Events Knowledge Base</h2><p>Common PostgreSQL wait events and fixes.</p></div>
+  <div class="kb-grid">
+    <div class="kb-card"><h4>Lock / relation</h4><div class="kb-field"><strong>Cause:</strong> Blocking DDL/DML</div><div class="kb-field"><strong>Fix:</strong> blocking_and_locks.sql</div></div>
+    <div class="kb-card"><h4>IO / DataFileRead</h4><div class="kb-field"><strong>Cause:</strong> Disk reads, cold cache</div><div class="kb-field"><strong>Fix:</strong> disk_io_analysis.sql, indexes</div></div>
+    <div class="kb-card"><h4>WalSync</h4><div class="kb-field"><strong>Cause:</strong> WAL flush latency</div><div class="kb-field"><strong>Fix:</strong> checkpoint_and_wal.sql</div></div>
+    <div class="kb-card"><h4>Client / ClientRead</h4><div class="kb-field"><strong>Cause:</strong> App not consuming rows</div><div class="kb-field"><strong>Fix:</strong> connection_analysis.sql</div></div>
+    <div class="kb-card"><h4>LWLock / BufferContent</h4><div class="kb-field"><strong>Cause:</strong> Hot page contention</div><div class="kb-field"><strong>Fix:</strong> Reduce concurrent updates</div></div>
+    <div class="kb-card"><h4>Timeout</h4><div class="kb-field"><strong>Cause:</strong> statement_timeout fired</div><div class="kb-field"><strong>Fix:</strong> Optimize query or raise timeout</div></div>
+  </div>
+  <div class="card-box" style="margin-top:16px"><div class="item-script">04_Performance_Diagnostics/wait_events_reference.sql</div></div>
+</div>
+
+<!-- SCRIPT EXPLORER -->
+<div class="section-page" id="page-scriptExplorer">
+  <div class="page-header"><h2>Script Explorer</h2><p>All __SCRIPT_COUNT__ embedded PostgreSQL scripts — click a row to view source.</p></div>
+  <div class="card-box">
+    <input type="text" id="scriptSearchInput" placeholder="Search scripts..." style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-hover);color:var(--text-primary);margin-bottom:12px" oninput="filterScripts()">
+    <div id="scriptFilters" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px"></div>
+    <table class="data-table"><thead><tr><th>Script</th><th>Category</th><th>Description</th><th>Risk</th><th>Path</th></tr></thead><tbody id="scriptTableBody"></tbody></table>
+  </div>
+</div>
+
+</div>
+
+<div class="search-overlay" id="searchOverlay" onclick="if(event.target===this)closeSearch()">
+  <div class="search-box">
+    <div style="display:flex;align-items:center;padding:0 16px;border-bottom:1px solid var(--border)">
+      <i class="fas fa-search" style="color:var(--text-secondary);margin-right:10px"></i>
+      <input type="text" id="searchInput" placeholder="Search handbook..." oninput="performSearch()">
+      <button class="btn-icon" onclick="closeSearch()" style="border:none"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="search-results" id="searchResults"></div>
+  </div>
+</div>
+
+<div class="script-viewer-overlay" id="scriptViewerOverlay" onclick="if(event.target===this)closeScriptViewer()">
+  <div class="script-viewer">
+    <div class="script-viewer-header">
+      <h3 id="viewerTitle"><i class="fas fa-file-code"></i> <span id="viewerScriptName">script.sql</span></h3>
+      <div class="script-viewer-actions">
+        <span class="tag tag-g" id="viewerRiskTag">Read Only</span>
+        <span class="tag tag-b" id="viewerCatTag">Framework</span>
+        <button class="copy-btn" onclick="copyScriptContent()" title="Copy to clipboard"><i class="fas fa-copy"></i> Copy</button>
+        <button class="btn-icon" onclick="closeScriptViewer()" style="border:none;width:28px;height:28px"><i class="fas fa-times"></i></button>
+      </div>
+    </div>
+    <div class="script-viewer-body"><pre class="sql-code" id="viewerCode"></pre></div>
+  </div>
+</div>
+
+<script type="application/json" id="pgdba-embed-data">/*__SCRIPT_JSON__*/</script>
+<script>
+var SCRIPT_BASE = '.';
+var scriptContents = {};
+var scriptCatalog = [];
+var EMBEDDED_SCRIPT_COUNT = 0;
+
+function loadEmbeddedScripts() {
+  var el = document.getElementById('pgdba-embed-data');
+  if (!el) return;
+  var raw = (el.textContent || '').trim();
+  if (!raw || raw.indexOf('__SCRIPT_JSON__') !== -1) {
+    showGenerateBanner();
+    return;
+  }
+  try {
+    var data = JSON.parse(raw);
+    scriptContents = data.contents || {};
+    scriptCatalog = data.catalog || [];
+    EMBEDDED_SCRIPT_COUNT = data.count || scriptCatalog.length || 0;
+  } catch (err) {
+    console.error('Failed to parse embedded script data:', err);
+    showGenerateBanner();
+  }
+}
+
+function showGenerateBanner() {
+  var banner = document.getElementById('generateBanner');
+  if (banner) banner.style.display = 'block';
+  var mc = document.getElementById('mainContent');
+  if (mc) mc.style.marginTop = 'calc(var(--header-height) + 40px)';
+}
+
+const searchItems = [
+  {text:'health check sp_health_check',page:'sec04',section:'Daily Health'},
+  {text:'blocking locks pg_blocking_pids',page:'sec07',section:'Blocking'},
+  {text:'vacuum bloat autovacuum dead tuples',page:'sec08',section:'Vacuum'},
+  {text:'WAL archive backup PITR',page:'sec09',section:'Backup'},
+  {text:'replication lag streaming logical',page:'sec11',section:'HA'},
+  {text:'pg_stat_statements top queries',page:'sec06',section:'Performance'},
+  {text:'security SSL roles superuser',page:'sec10',section:'Security'},
+  {text:'deploy framework dba_repository',page:'sec13',section:'Framework'},
+  {text:'wait events Lock IO WalSync',page:'sec14',section:'Wait Events'},
+];
+
+let currentScriptFilter = 'all';
+let seniorMode = false;
+
+function toggleDbaMode() {
+  seniorMode = !seniorMode;
+  document.body.classList.toggle('mode-senior', seniorMode);
+  document.body.classList.toggle('mode-junior', !seniorMode);
+}
+
+function toggleTheme() {
+  const html = document.documentElement;
+  const light = html.getAttribute('data-theme') === 'light';
+  html.setAttribute('data-theme', light ? 'dark' : 'light');
+  document.getElementById('themeIcon').className = light ? 'fas fa-sun' : 'fas fa-moon';
+}
+
+function toggleSidebar() { document.getElementById('sidebar').classList.toggle('collapsed'); }
+
+function showPage(id, fromQuick) {
+  document.querySelectorAll('.section-page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+  const page = document.getElementById('page-' + id);
+  if (page) page.classList.add('active');
+  document.getElementById('backBtn').classList.toggle('visible', !!fromQuick && id !== 'dashboard');
+  if (id === 'scriptExplorer') renderScriptTable();
+  updateDashboard();
+}
+
+function saveCheck(el) {
+  localStorage.setItem('pgdba_' + el.dataset.id, el.checked ? '1' : '0');
+  updateDashboard();
+}
+
+function loadChecks() {
+  document.querySelectorAll('.checklist-item input[type=checkbox]').forEach(cb => {
+    if (localStorage.getItem('pgdba_' + cb.dataset.id) === '1') cb.checked = true;
+  });
+  updateDashboard();
+}
+
+function updateDashboard() {
+  const all = document.querySelectorAll('.checklist-item input[type=checkbox]');
+  const done = document.querySelectorAll('.checklist-item input[type=checkbox]:checked');
+  const pct = all.length ? Math.round((done.length / all.length) * 100) : 0;
+  document.getElementById('dashProgress').textContent = pct + '%';
+  document.getElementById('dashCompleted').textContent = done.length;
+  document.getElementById('dashTotal').textContent = all.length;
+  document.getElementById('dashProgressBar').style.width = pct + '%';
+  if (typeof EMBEDDED_SCRIPT_COUNT !== 'undefined')
+    document.getElementById('dashScripts').textContent = EMBEDDED_SCRIPT_COUNT;
+}
+
+function openSearch() { document.getElementById('searchOverlay').classList.add('active'); document.getElementById('searchInput').focus(); }
+function closeSearch() { document.getElementById('searchOverlay').classList.remove('active'); }
+
+function performSearch() {
+  const q = document.getElementById('searchInput').value.toLowerCase();
+  const box = document.getElementById('searchResults');
+  if (!q) { box.innerHTML = ''; return; }
+  const hits = searchItems.filter(i => i.text.toLowerCase().includes(q));
+  const catalog = Array.isArray(scriptCatalog) ? scriptCatalog : [];
+  const scriptHits = catalog.filter(s => (s.name + s.desc + s.path + s.cat).toLowerCase().includes(q)).slice(0, 15);
+  let html = hits.map(h => '<div class="search-result-item" onclick="closeSearch();showPage(\'' + h.page + '\')"><strong>' + h.section + '</strong><br>' + h.text + '</div>').join('');
+  html += scriptHits.map(s => '<div class="search-result-item" onclick="closeSearch();viewScript(\'' + s.path.replace(/'/g,"\\'") + '\',\'' + s.name.replace(/'/g,"\\'") + '\')"><strong>Script:</strong> ' + s.name + '</div>').join('');
+  box.innerHTML = html || '<div style="padding:12px;color:var(--text-secondary)">No results</div>';
+}
+
+function initScriptFilters() {
+  if (!Array.isArray(scriptCatalog) || scriptCatalog.length === 0) return;
+  const cats = ['all', ...new Set(scriptCatalog.map(s => s.cat))];
+  const el = document.getElementById('scriptFilters');
+  el.innerHTML = cats.map(c => '<button class="btn-accent" style="font-size:11px;padding:4px 10px" onclick="filterScriptCategory(\'' + c + '\')">' + c + '</button>').join('');
+}
+
+function filterScriptCategory(cat) { currentScriptFilter = cat; filterScripts(); }
+
+function filterScripts() {
+  const q = (document.getElementById('scriptSearchInput').value || '').toLowerCase();
+  renderScriptTable(q);
+}
+
+function renderScriptTable(q) {
+  q = q || '';
+  const tbody = document.getElementById('scriptTableBody');
+  if (!Array.isArray(scriptCatalog) || scriptCatalog.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5">No embedded scripts. Run generate-dba-handbook.sh first.</td></tr>';
+    return;
+  }
+  const rows = scriptCatalog.filter(s => {
+    if (currentScriptFilter !== 'all' && s.cat !== currentScriptFilter) return false;
+    if (q && !(s.name + s.desc + s.path + s.cat).toLowerCase().includes(q)) return false;
+    return true;
+  });
+  tbody.innerHTML = rows.map(s =>
+    '<tr style="cursor:pointer" onclick="viewScript(\'' + s.path.replace(/'/g,"\\'") + '\',\'' + s.name.replace(/'/g,"\\'") + '\')">' +
+    '<td><strong>' + s.name + '</strong></td><td>' + s.cat + '</td><td>' + s.desc + '</td>' +
+    '<td><span class="tag ' + (s.risk === 'Read Only' ? 'tag-g' : 'tag-y') + '">' + s.risk + '</span></td>' +
+    '<td class="script-path">' + s.path + '</td></tr>'
+  ).join('');
+}
+
+function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function getItemScriptText(el) {
+  if (el.dataset.script) return el.dataset.script;
+  const clone = el.cloneNode(true);
+  clone.querySelectorAll('i').forEach(i => i.remove());
+  return clone.textContent.trim();
+}
+
+function decorateItemScripts() {
+  document.querySelectorAll('.item-script').forEach(el => {
+    if (el.dataset.decorated) return;
+    const text = getItemScriptText(el);
+    el.dataset.script = text;
+    el.dataset.decorated = '1';
+    el.innerHTML = '<i class="fas fa-file-code"></i> ' + escapeHtml(text);
+    el.setAttribute('role', 'button');
+    el.setAttribute('title', 'Click to view script');
+  });
+}
+
+function resolveScriptPath(text) {
+  if (!text) return '';
+  if (text.includes('/') && (text.endsWith('.sql') || text.endsWith('.ps1'))) return text;
+  const base = text.split('/').pop();
+  const hit = scriptCatalog.find(s => s.path === text || s.name === base || s.path.endsWith('/' + base));
+  return hit ? hit.path : text;
+}
+
+function viewInlineSQL(sqlText) {
+  document.getElementById('viewerScriptName').textContent = 'SQL Snippet';
+  document.getElementById('viewerRiskTag').textContent = 'Read Only';
+  document.getElementById('viewerRiskTag').className = 'tag tag-g';
+  document.getElementById('viewerCatTag').textContent = 'Inline';
+  document.getElementById('viewerCatTag').className = 'tag tag-b';
+  document.getElementById('viewerCode').innerHTML = highlightSQL(sqlText);
+  document.getElementById('scriptViewerOverlay').classList.add('active');
+}
+
+function highlightSQL(code) {
+  let r = escapeHtml(code);
+  r = r.replace(/\/\*[\s\S]*?\*\//g, m => '<span class="sql-cmt">' + m + '</span>');
+  r = r.replace(/--[^\n]*/g, m => '<span class="sql-cmt">' + m + '</span>');
+  r = r.replace(/\b(SELECT|FROM|WHERE|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|JOIN|LEFT|RIGHT|INNER|OUTER|ON|AND|OR|NOT|NULL|AS|INTO|VALUES|RETURNING|WITH|CASE|WHEN|THEN|ELSE|END|EXISTS|IN|IS|DISTINCT|ORDER|BY|GROUP|HAVING|LIMIT|OFFSET|UNION|ALL|GRANT|REVOKE|FUNCTION|TABLE|INDEX|VIEW|SCHEMA|DATABASE|EXTENSION|VACUUM|ANALYZE|EXPLAIN|PERFORM|DECLARE|BEGIN|LOOP|IF|ELSIF|LANGUAGE|plpgsql|sql|STABLE|VOLATILE|IMMUTABLE)\b/gi, '<span class="sql-kw">$1</span>');
+  r = r.replace(/\b(pg_\w+|current_setting|now|coalesce|format|count|sum|avg|round|extract|exists)\b/gi, '<span class="sql-fn">$1</span>');
+  r = r.replace(/'(?:''|[^'])*'/g, m => '<span class="sql-str">' + m + '</span>');
+  r = r.replace(/\b\d+\.?\d*\b/g, m => '<span class="sql-num">' + m + '</span>');
+  return r;
+}
+
+function viewScript(path, name) {
+  const resolved = resolveScriptPath(path);
+  let content = scriptContents[resolved] || scriptContents[path] || null;
+  if (!content) {
+    content = '-- Script content not available.\n-- File: ' + (resolved || path) +
+      '\n-- Regenerate the handbook or open this file directly in the repository.';
+  }
+  let cat = '', risk = '';
+  for (const s of scriptCatalog) {
+    if (s.path === resolved || s.path === path) { cat = s.cat; risk = s.risk; break; }
+  }
+  document.getElementById('viewerScriptName').textContent = name || resolved || path;
+  document.getElementById('viewerRiskTag').textContent = risk || 'Read Only';
+  document.getElementById('viewerRiskTag').className = 'tag ' + (risk === 'Write' ? 'tag-y' : 'tag-g');
+  document.getElementById('viewerCatTag').textContent = cat || 'Script';
+  document.getElementById('viewerCatTag').className = 'tag tag-b';
+  document.getElementById('viewerCode').innerHTML = highlightSQL(content);
+  document.getElementById('scriptViewerOverlay').classList.add('active');
+}
+
+function closeScriptViewer() { document.getElementById('scriptViewerOverlay').classList.remove('active'); }
+
+function copyScriptContent() {
+  const nameEl = document.getElementById('viewerScriptName');
+  let content = '';
+  if (nameEl && nameEl.textContent !== 'SQL Snippet') {
+    let path = '';
+    for (const s of scriptCatalog) {
+      if (s.name === nameEl.textContent || s.path === nameEl.textContent) { path = s.path; break; }
+    }
+    content = scriptContents[path] || '';
+  }
+  if (!content) {
+    const codeEl = document.getElementById('viewerCode');
+    if (codeEl) content = codeEl.textContent || '';
+  }
+  navigator.clipboard.writeText(content).then(() => {
+    const btn = document.querySelector('.copy-btn');
+    if (btn) {
+      const orig = btn.innerHTML;
+      btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+      setTimeout(() => { btn.innerHTML = orig; }, 1500);
+    }
+  });
+}
+
+function exportIncident() {
+  const lines = ['PostgreSQL Incident Summary', 'Generated: ' + new Date().toISOString(), ''];
+  document.querySelectorAll('.checklist-item input:checked').forEach(cb => {
+    const t = cb.closest('.checklist-item');
+    if (t) lines.push('[x] ' + t.textContent.trim().substring(0, 120));
+  });
+  lines.push('', 'Key scripts:', 'dba.sp_health_check()', 'blocking_and_locks.sql', 'wait_events.sql');
+  const blob = new Blob([lines.join('\n')], {type: 'text/plain'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'pg_incident_' + new Date().toISOString().slice(0,10) + '.txt';
+  a.click();
+}
+
+function initItemScriptClicks() {
+  document.querySelectorAll('.item-script').forEach(el => {
+    el.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const text = getItemScriptText(el);
+      const isFile = text.endsWith('.sql') || text.endsWith('.ps1');
+      if (isFile) viewScript(text, text.split('/').pop());
+      else viewInlineSQL(text);
+    });
+  });
+}
+
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); openSearch(); }
+  if (e.key === 'Escape') {
+    if (document.getElementById('scriptViewerOverlay').classList.contains('active')) closeScriptViewer();
+    else closeSearch();
+  }
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadEmbeddedScripts();
+  loadChecks();
+  decorateItemScripts();
+  initScriptFilters();
+  initItemScriptClicks();
+  renderScriptTable();
+});
+</script>
+</body>
+</html>

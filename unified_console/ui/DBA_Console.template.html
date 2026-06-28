@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DBA Unified Console</title>
+<style>
+:root {
+  --bg:#0f1419; --panel:#1a1f2e; --card:#1e2538; --border:#2d3748;
+  --text:#e1e5ee; --muted:#8892a4; --accent:#3b82f6; --ok:#22c55e; --err:#ef4444; --warn:#f59e0b;
+  --pg:#336791; --mssql:#cc2927;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+header{display:flex;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid var(--border);background:var(--panel);gap:12px;flex-wrap:wrap}
+header h1{font-size:18px}
+.subtitle{font-size:11px;color:var(--muted)}
+.badge{font-size:11px;padding:4px 8px;border-radius:999px;background:rgba(59,130,246,.15);color:var(--accent)}
+.layout{display:grid;grid-template-columns:300px 1fr;min-height:calc(100vh - 58px)}
+aside{padding:16px;border-right:1px solid var(--border);background:var(--panel);overflow:auto}
+main{padding:16px;display:flex;flex-direction:column;gap:12px;overflow:auto}
+label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px}
+input,select,textarea{width:100%;padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:13px}
+textarea{min-height:160px;font-family:'Cascadia Code','Fira Code',monospace;line-height:1.5;resize:vertical}
+button{padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;font-size:12px}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.run{background:var(--ok);border-color:var(--ok);color:#fff}
+button:disabled{opacity:.5;cursor:not-allowed}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
+.status{font-size:12px;padding:9px 11px;border-radius:8px;background:var(--card);border:1px solid var(--border)}
+.status.ok{border-color:rgba(34,197,94,.4);color:var(--ok)}
+.status.err{border-color:rgba(239,68,68,.4);color:var(--err)}
+.status.warn{border-color:rgba(245,158,11,.4);color:var(--warn)}
+.panel{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px}
+.panel h2{font-size:14px;margin-bottom:10px}
+.log{font-family:monospace;font-size:12px;white-space:pre-wrap;max-height:140px;overflow:auto;background:#111827;padding:10px;border-radius:8px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{border-bottom:1px solid var(--border);padding:8px;text-align:left;vertical-align:top}
+th{color:var(--muted);font-size:11px;text-transform:uppercase;position:sticky;top:0;background:var(--card)}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.tab{padding:6px 10px;border-radius:8px;border:1px solid var(--border);cursor:pointer;font-size:12px}
+.tab.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.nav-tabs{display:flex;gap:8px;margin-bottom:12px}
+.nav-tab{padding:8px 14px;border-radius:8px;border:1px solid var(--border);cursor:pointer;font-size:13px;background:var(--panel)}
+.nav-tab.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.view{display:none}.view.active{display:block}
+.hidden{display:none!important}
+.tag{display:inline-block;font-size:10px;padding:2px 7px;border-radius:4px;margin-right:4px}
+.tag-g{background:rgba(34,197,94,.15);color:var(--ok)}
+.tag-y{background:rgba(245,158,11,.15);color:var(--warn)}
+.tag-b{background:rgba(59,130,246,.15);color:var(--accent)}
+.tag-pg{background:rgba(51,103,145,.2);color:#7eb8e8}
+.tag-ms{background:rgba(204,41,39,.2);color:#f87171}
+.script-table-wrap{max-height:420px;overflow:auto;border:1px solid var(--border);border-radius:8px}
+.script-path{font-family:monospace;font-size:11px;color:var(--muted);word-break:break-all}
+tr.script-row{cursor:pointer}tr.script-row:hover td{background:rgba(59,130,246,.08)}
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;align-items:center;justify-content:center;padding:16px}
+.overlay.active{display:flex}
+.modal{width:min(1100px,96vw);max-height:90vh;background:var(--card);border:1px solid var(--border);border-radius:12px;display:flex;flex-direction:column;overflow:hidden}
+.modal-head{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--panel);gap:8px;flex-wrap:wrap}
+.modal-body{overflow:auto;padding:0;flex:1}
+pre.sql-code{margin:0;padding:14px 16px;font-family:'Cascadia Code','Fira Code',monospace;font-size:12px;line-height:1.6;white-space:pre;overflow:auto;background:#1e1e1e;color:#d4d4d4}
+.filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center}
+.filter-bar input{max-width:280px}
+.chip{padding:4px 10px;border-radius:999px;border:1px solid var(--border);cursor:pointer;font-size:11px}
+.chip.active{background:var(--accent);border-color:var(--accent);color:#fff}
+@media(max-width:900px){.layout{grid-template-columns:1fr}aside{border-right:none;border-bottom:1px solid var(--border)}}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>DBA Unified Console</h1>
+    <div class="subtitle">__SCRIPT_COUNT__ scripts · __GENERATED_AT__</div>
+  </div>
+  <span class="badge" id="connectorBadge">Checking connector…</span>
+</header>
+
+<div class="layout">
+  <aside>
+    <div class="panel">
+      <h2>Connection</h2>
+      <label for="engine">Engine</label>
+      <select id="engine">
+        <option value="mssql">SQL Server</option>
+        <option value="postgres">PostgreSQL</option>
+      </select>
+      <label for="host">Host</label>
+      <input id="host" value="localhost">
+      <label for="port">Port</label>
+      <input id="port" type="number" placeholder="auto">
+      <label for="database">Database</label>
+      <input id="database" placeholder="master / dba_repository">
+      <label for="username">Username</label>
+      <input id="username" placeholder="SQL auth (optional for Windows auth)">
+      <label for="password">Password</label>
+      <input id="password" type="password" autocomplete="current-password">
+      <label for="sslMode" class="pg-only">SSL mode</label>
+      <select id="sslMode" class="pg-only">
+        <option value="prefer">prefer</option>
+        <option value="require">require</option>
+        <option value="disable">disable</option>
+      </select>
+      <label class="mssql-only"><input type="checkbox" id="trustCertificate" checked> Trust server certificate</label>
+      <div class="row">
+        <button class="primary" id="btnConnect">Connect</button>
+        <button id="btnDisconnect" disabled>Disconnect</button>
+      </div>
+      <div class="status warn" id="connStatus" style="margin-top:10px">Not connected</div>
+    </div>
+  </aside>
+
+  <main>
+    <div class="nav-tabs">
+      <div class="nav-tab active" data-view="scripts">Script Explorer</div>
+      <div class="nav-tab" data-view="query">Query Editor</div>
+    </div>
+
+    <div id="view-scripts" class="view active">
+      <div class="panel">
+        <h2>Browse scripts</h2>
+        <div class="filter-bar">
+          <input type="text" id="scriptSearch" placeholder="Search name, path, description…" oninput="renderScriptTable()">
+          <span class="chip active" data-engine="all" onclick="setEngineFilter('all')">All</span>
+          <span class="chip" data-engine="mssql" onclick="setEngineFilter('mssql')">SQL Server</span>
+          <span class="chip" data-engine="postgres" onclick="setEngineFilter('postgres')">PostgreSQL</span>
+          <span class="chip active" data-cat="all" onclick="setCatFilter('all')">All categories</span>
+        </div>
+        <div id="catChips" class="filter-bar" style="margin-top:0"></div>
+        <div class="script-table-wrap">
+          <table>
+            <thead><tr><th>Script</th><th>Engine</th><th>Category</th><th>Risk</th><th>Description</th></tr></thead>
+            <tbody id="scriptTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="view-query" class="view">
+      <div class="panel">
+        <h2>SQL</h2>
+        <textarea id="sql">SELECT @@VERSION AS version;</textarea>
+        <div class="row">
+          <button class="primary" id="btnExecute" disabled>Execute</button>
+          <button id="btnClear">Clear results</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Execution log</h2>
+      <div class="log" id="execLog">Ready.</div>
+    </div>
+    <div class="panel">
+      <h2>Results</h2>
+      <div id="resultsMeta" class="status">No results yet.</div>
+      <div id="resultTabs" class="tabs hidden"></div>
+      <div id="resultTables"></div>
+    </div>
+  </main>
+</div>
+
+<div class="overlay" id="scriptModal" onclick="if(event.target===this)closeScriptModal()">
+  <div class="modal">
+    <div class="modal-head">
+      <div>
+        <strong id="modalTitle">script.sql</strong>
+        <div class="script-path" id="modalPath"></div>
+      </div>
+      <div class="row" style="margin:0">
+        <span class="tag" id="modalEngineTag"></span>
+        <span class="tag" id="modalRiskTag"></span>
+        <span class="tag tag-b" id="modalCatTag"></span>
+        <button onclick="loadScriptToEditor()">Load in editor</button>
+        <button class="run" id="btnRunScript" onclick="runCurrentScript()">Run script</button>
+        <button onclick="closeScriptModal()">Close</button>
+      </div>
+    </div>
+    <div class="modal-body"><pre class="sql-code" id="modalCode"></pre></div>
+  </div>
+</div>
+
+<script type="application/json" id="dba-embed-data">/*__SCRIPT_JSON__*/</script>
+<script>
+const API = 'http://127.0.0.1:8742';
+let connectionId = null;
+let resultCache = [];
+let scriptContents = {};
+let scriptCatalog = [];
+let currentScript = null;
+let engineFilter = 'all';
+let catFilter = 'all';
+
+const $ = (id) => document.getElementById(id);
+
+function loadEmbeddedScripts() {
+  const el = $('dba-embed-data');
+  if (!el) return;
+  const raw = (el.textContent || '').trim();
+  if (!raw || raw.includes('__SCRIPT_JSON__')) return;
+  try {
+    const data = JSON.parse(raw);
+    scriptContents = data.contents || {};
+    scriptCatalog = data.catalog || [];
+  } catch (e) {
+    console.error('Failed to parse embedded scripts', e);
+  }
+}
+
+function log(line) {
+  const ts = new Date().toLocaleTimeString();
+  $('execLog').textContent += `\n[${ts}] ${line}`;
+  $('execLog').scrollTop = $('execLog').scrollHeight;
+}
+
+function setConnStatus(text, kind) {
+  const el = $('connStatus');
+  el.textContent = text;
+  el.className = 'status ' + (kind || '');
+}
+
+function defaultPort() { return $('engine').value === 'postgres' ? 5432 : 1433; }
+function defaultDatabase() { return $('engine').value === 'postgres' ? 'postgres' : 'master'; }
+function defaultSql() { return $('engine').value === 'postgres' ? 'SELECT version();' : 'SELECT @@VERSION AS version;'; }
+
+function toggleEngineFields() {
+  const pg = $('engine').value === 'postgres';
+  document.querySelectorAll('.pg-only').forEach((el) => el.classList.toggle('hidden', !pg));
+  document.querySelectorAll('.mssql-only').forEach((el) => el.classList.toggle('hidden', pg));
+  if (!$('port').value) $('port').value = defaultPort();
+  if (!$('database').value) $('database').value = defaultDatabase();
+  renderScriptTable();
+}
+
+function showView(name) {
+  document.querySelectorAll('.view').forEach((v) => v.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach((t) => t.classList.remove('active'));
+  $('view-' + name).classList.add('active');
+  document.querySelector(`.nav-tab[data-view="${name}"]`).classList.add('active');
+}
+
+document.querySelectorAll('.nav-tab').forEach((t) => {
+  t.addEventListener('click', () => showView(t.dataset.view));
+});
+
+function setEngineFilter(engine) {
+  engineFilter = engine;
+  document.querySelectorAll('.chip[data-engine]').forEach((c) => {
+    c.classList.toggle('active', c.dataset.engine === engine);
+  });
+  renderScriptTable();
+}
+
+function setCatFilter(cat) {
+  catFilter = cat;
+  document.querySelectorAll('.chip[data-cat]').forEach((c) => {
+    c.classList.toggle('active', c.dataset.cat === cat);
+  });
+  renderScriptTable();
+}
+
+function initCatChips() {
+  const cats = ['all', ...new Set(scriptCatalog.map((s) => s.cat))].sort();
+  $('catChips').innerHTML = cats.map((c) =>
+    `<span class="chip${c === 'all' ? ' active' : ''}" data-cat="${c}" onclick="setCatFilter('${c}')">${c}</span>`
+  ).join('');
+}
+
+function renderScriptTable() {
+  const tbody = $('scriptTableBody');
+  const q = ($('scriptSearch').value || '').toLowerCase();
+  const connEngine = $('engine').value;
+
+  let rows = scriptCatalog.filter((s) => {
+    if (engineFilter !== 'all' && s.engine !== engineFilter) return false;
+    if (catFilter !== 'all' && s.cat !== catFilter) return false;
+    if (q && !(s.name + s.path + s.desc + s.cat).toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="5">No scripts match filters.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map((s) => {
+    const engineTag = s.engine === 'postgres'
+      ? '<span class="tag tag-pg">PostgreSQL</span>'
+      : '<span class="tag tag-ms">SQL Server</span>';
+    const riskTag = s.risk === 'Write'
+      ? '<span class="tag tag-y">Write</span>'
+      : '<span class="tag tag-g">Read Only</span>';
+    const mismatch = connectionId && s.engine !== connEngine ? ' opacity:.55' : '';
+    return `<tr class="script-row" style="${mismatch}" onclick="openScript('${s.path.replace(/'/g, "\\'")}')">
+      <td><strong>${escapeHtml(s.name)}</strong><div class="script-path">${escapeHtml(s.path)}</div></td>
+      <td>${engineTag}</td>
+      <td>${escapeHtml(s.cat)}</td>
+      <td>${riskTag}</td>
+      <td>${escapeHtml(s.desc)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function openScript(path) {
+  const script = scriptCatalog.find((s) => s.path === path);
+  if (!script) return;
+  currentScript = script;
+  const content = scriptContents[path] || '-- Script not found';
+  $('modalTitle').textContent = script.name;
+  $('modalPath').textContent = script.path + (script.database ? ` · DB: ${script.database}` : '');
+  $('modalEngineTag').textContent = script.engine === 'postgres' ? 'PostgreSQL' : 'SQL Server';
+  $('modalEngineTag').className = 'tag ' + (script.engine === 'postgres' ? 'tag-pg' : 'tag-ms');
+  $('modalRiskTag').textContent = script.risk;
+  $('modalRiskTag').className = 'tag ' + (script.risk === 'Write' ? 'tag-y' : 'tag-g');
+  $('modalCatTag').textContent = script.cat;
+  $('modalCode').textContent = content;
+  $('btnRunScript').disabled = !connectionId;
+  $('scriptModal').classList.add('active');
+}
+
+function closeScriptModal() {
+  $('scriptModal').classList.remove('active');
+}
+
+function loadScriptToEditor() {
+  if (!currentScript) return;
+  $('sql').value = scriptContents[currentScript.path] || '';
+  if (currentScript.engine !== $('engine').value) {
+    $('engine').value = currentScript.engine;
+    toggleEngineFields();
+  }
+  closeScriptModal();
+  showView('query');
+}
+
+async function runCurrentScript() {
+  if (!currentScript) return;
+  await runScript(currentScript);
+}
+
+async function runScript(script) {
+  if (!connectionId) {
+    log('ERROR: Connect to a database first');
+    setConnStatus('Connect before running scripts', 'warn');
+    return;
+  }
+  if (script.engine !== $('engine').value) {
+    log(`ERROR: Script is for ${script.engine} but connected engine is ${$('engine').value}`);
+    return;
+  }
+  if (script.risk === 'Write' && !confirm(`"${script.name}" may modify the database. Continue?`)) {
+    return;
+  }
+
+  const sql = scriptContents[script.path];
+  if (!sql) {
+    log('ERROR: Script content missing');
+    return;
+  }
+
+  $('sql').value = sql;
+  closeScriptModal();
+  showView('query');
+  await executeSql(sql, script.database || $('database').value.trim() || defaultDatabase(), script.name);
+}
+
+async function api(path, body) {
+  const res = await fetch(API + path, {
+    method: body ? 'POST' : 'GET',
+    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok && data.error) throw new Error(data.error);
+  return data;
+}
+
+async function checkConnector() {
+  try {
+    await api('/api/ping');
+    $('connectorBadge').textContent = 'Connector online';
+    $('connectorBadge').style.background = 'rgba(34,197,94,.15)';
+    $('connectorBadge').style.color = 'var(--ok)';
+    return true;
+  } catch (e) {
+    $('connectorBadge').textContent = 'Connector offline';
+    $('connectorBadge').style.background = 'rgba(239,68,68,.15)';
+    $('connectorBadge').style.color = 'var(--err)';
+    return false;
+  }
+}
+
+async function connect() {
+  if (!(await checkConnector())) {
+    setConnStatus('Double-click DBA-Console to start', 'err');
+    return;
+  }
+  const host = $('host').value.trim();
+  if (!host) {
+    setConnStatus('Host is required', 'err');
+    return;
+  }
+  const body = {
+    engine: $('engine').value,
+    host,
+    port: Number($('port').value || defaultPort()),
+    database: $('database').value.trim() || defaultDatabase(),
+    username: $('username').value.trim() || null,
+    password: $('password').value || null
+  };
+  if (body.engine === 'postgres') body.sslMode = $('sslMode').value;
+  if (body.engine === 'mssql') body.trustCertificate = $('trustCertificate').checked;
+
+  log(`Connecting to ${body.engine}://${body.host}:${body.port}/${body.database}…`);
+  try {
+    const data = await api('/api/connect', body);
+    connectionId = data.connectionId;
+    setConnStatus('Connected', 'ok');
+    $('btnDisconnect').disabled = false;
+    $('btnExecute').disabled = false;
+    $('btnRunScript').disabled = false;
+    log('Connected in ' + data.durationMs + ' ms');
+    renderScriptTable();
+  } catch (e) {
+    setConnStatus('Connect failed: ' + e.message, 'err');
+    log('ERROR connect: ' + e.message);
+  }
+}
+
+async function disconnect() {
+  if (!connectionId) return;
+  try { await api('/api/disconnect', { connectionId }); } catch (e) { /* ignore */ }
+  connectionId = null;
+  $('btnDisconnect').disabled = true;
+  $('btnExecute').disabled = true;
+  $('btnRunScript').disabled = true;
+  setConnStatus('Not connected', 'warn');
+  renderScriptTable();
+}
+
+function renderTable(table) {
+  const cols = table.columns || [];
+  const rows = table.rows || [];
+  let html = '<table><thead><tr>' + cols.map((c) => '<th>' + escapeHtml(c.name) + '</th>').join('') + '</tr></thead><tbody>';
+  for (const row of rows) {
+    html += '<tr>' + cols.map((c) => '<td>' + escapeHtml(row[c.name] == null ? '' : String(row[c.name])) + '</td>').join('') + '</tr>';
+  }
+  return html + '</tbody></table>';
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function showResults(data) {
+  resultCache = data.tables || [];
+  const tabs = $('resultTabs');
+  const holder = $('resultTables');
+  tabs.innerHTML = '';
+  holder.innerHTML = '';
+  $('resultsMeta').className = 'status ok';
+
+  if (!resultCache.length) {
+    const msg = data.batchCount > 1
+      ? `Success — ${data.batchCount} batches, no result sets (${data.durationMs || 0} ms)`
+      : `Success — no result sets (${data.durationMs || 0} ms)`;
+    $('resultsMeta').textContent = msg;
+    tabs.classList.add('hidden');
+    return;
+  }
+
+  $('resultsMeta').textContent = resultCache.length + ' result set(s) in ' + (data.durationMs || 0) + ' ms';
+  tabs.classList.remove('hidden');
+  resultCache.forEach((table, idx) => {
+    const tab = document.createElement('div');
+    tab.className = 'tab' + (idx === 0 ? ' active' : '');
+    tab.textContent = 'Result ' + (idx + 1) + ' (' + table.rowCount + ' rows)';
+    tab.onclick = () => {
+      document.querySelectorAll('#resultTabs .tab').forEach((t) => t.classList.remove('active'));
+      tab.classList.add('active');
+      holder.innerHTML = renderTable(table);
+    };
+    tabs.appendChild(tab);
+  });
+  holder.innerHTML = renderTable(resultCache[0]);
+}
+
+async function executeSql(sql, database, label) {
+  if (!connectionId || !sql.trim()) return;
+  log('Executing' + (label ? ': ' + label : '…'));
+  try {
+    const data = await api('/api/execute', { connectionId, sql, database });
+    if (data.messages?.length) {
+      data.messages.forEach((m) => log('Batch message: updateCount=' + m.updateCount));
+    }
+    log('Success in ' + data.durationMs + ' ms' + (data.batchCount ? ` (${data.batchCount} batch(es))` : ''));
+    showResults(data);
+  } catch (e) {
+    $('resultsMeta').textContent = 'Execution failed';
+    $('resultsMeta').className = 'status err';
+    log('ERROR execute: ' + e.message);
+  }
+}
+
+async function execute() {
+  await executeSql($('sql').value.trim(), $('database').value.trim() || defaultDatabase());
+}
+
+$('engine').addEventListener('change', toggleEngineFields);
+$('btnConnect').addEventListener('click', connect);
+$('btnDisconnect').addEventListener('click', disconnect);
+$('btnExecute').addEventListener('click', execute);
+$('btnClear').addEventListener('click', () => {
+  $('execLog').textContent = 'Ready.';
+  $('resultTables').innerHTML = '';
+  $('resultTabs').innerHTML = '';
+  $('resultTabs').classList.add('hidden');
+  $('resultsMeta').textContent = 'No results yet.';
+  $('resultsMeta').className = 'status';
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeScriptModal();
+});
+
+loadEmbeddedScripts();
+initCatChips();
+toggleEngineFields();
+renderScriptTable();
+checkConnector();
+setInterval(checkConnector, 10000);
+</script>
+</body>
+</html>
