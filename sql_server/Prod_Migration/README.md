@@ -40,6 +40,11 @@ Production-grade playbook for **severe slowdown after SQL Server edition/version
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
+│ 0. 02_Upgrade_Validation/04_complete_post_upgrade_configuration_report.sql │
+│    → FULL REPORT: instance, DBs, waits, TempDB, I/O, findings   │
+└────────────────────────────┬────────────────────────────────────┘
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
 │ 1. 01_Quick_Triage/00_RUN_FIRST_triage_playbook.sql            │
 │    → Snapshot: version, memory, blocking, top waits, compat      │
 └────────────────────────────┬────────────────────────────────────┘
@@ -88,7 +93,7 @@ Production-grade playbook for **severe slowdown after SQL Server edition/version
 5. **TempDB** — single file, wrong size, PFS/SGAM latch contention after increased parallelism
 6. **Instant File Initialization (IFI) off** — file growth zero-fills cause `PREEMPTIVE_OS_WRITEFILEGATHER`
 7. **Antivirus / backup agent** scanning `.mdf`/`.ldf` after migration to new paths
-8. **Orphaned Express parallelism settings** — MAXDOP, CTFP, limited schedulers
+8. **Orphaned Express parallelism settings** — MAXDOP, CTFP, limited schedulers; **NUMA topology expansion** (see `02_Upgrade_Validation/03_cpu_numa_topology.sql`)
 9. **Database auto_close / auto_shrink** enabled (disastrous on user DBs)
 10. **AD / Windows auth latency** for metadata enumeration (SSMS expand triggers security checks)
 11. **DBCC or maintenance job** holding schema-mod locks during business hours
@@ -143,7 +148,7 @@ All fix scripts with rollback notes: `07_Instance_Config/02_recommended_fixes_wi
 | Folder                         | Scripts                                                                                                 |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------- |
 | `01_Quick_Triage/`             | `00_RUN_FIRST_triage_playbook.sql`                                                                      |
-| `02_Upgrade_Validation/`       | `01_instance_upgrade_validation.sql`, `02_express_to_developer_limits_check.sql`                        |
+| `02_Upgrade_Validation/`       | `04_complete_post_upgrade_configuration_report.sql`, `01_instance_upgrade_validation.sql`, `02_express_to_developer_limits_check.sql`, `03_cpu_numa_topology.sql` |
 | `03_Elapsed_Time_Diagnostics/` | `01_elapsed_vs_worker_time_gap.sql`, `02_capture_live_session_waits.sql`                                |
 | `04_Wait_Stats/`               | `01_wait_stats_delta_capture.sql`, `02_post_migration_wait_decoder.sql`, `03_latch_metadata_waits.sql`  |
 | `05_Concurrency/`              | `01_blocking_and_locks.sql`, `02_ssms_metadata_slowness.sql`                                            |

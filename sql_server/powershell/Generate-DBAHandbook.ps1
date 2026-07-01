@@ -1725,6 +1725,14 @@ i.fas.fa-undo::before { content:"\21BA"; }
       </div>
     </div>
     <div class="checklist-item">
+      <input type="checkbox" data-id="pt14b" onchange="saveCheck(this)">
+      <div class="item-content">
+        <div class="item-text">Online index reorganize and rebuild maintenance</div>
+        <div class="item-script"><i class="fas fa-file-code"></i> 05_Index_Statistics/index_maintenance_online.sql</div>
+        <div class="item-meta"><span class="priority-badge priority-high">High</span> Risk: Write</div>
+      </div>
+    </div>
+    <div class="checklist-item">
       <input type="checkbox" data-id="pt15" onchange="saveCheck(this)">
       <div class="item-content">
         <div class="item-text">Statistics freshness check</div>
@@ -2927,12 +2935,14 @@ const scriptCatalog = [
   {name:'cpu_utilization.sql',cat:'Server_OS',desc:'Historical CPU usage from ring buffers + Signal Wait analysis',risk:'Read Only',path:'01_Server_OS/cpu_utilization.sql'},
   {name:'disk_latency.sql',cat:'Server_OS',desc:'Disk I/O latency analysis',risk:'Read Only',path:'01_Server_OS/disk_latency.sql'},
   {name:'memory_diagnostics.sql',cat:'Server_OS',desc:'SQL Server memory diagnostics',risk:'Read Only',path:'01_Server_OS/memory_diagnostics.sql'},
+  {name:'memory_bottleneck_deep_dive.sql',cat:'Server_OS',desc:'In-depth memory bottleneck analysis',risk:'Read Only',path:'01_Server_OS/memory_bottleneck_deep_dive.sql'},
   {name:'server_configuration_audit.sql',cat:'Instance_Config',desc:'Full server configuration audit',risk:'Read Only',path:'02_Instance_Config/server_configuration_audit.sql'},
   {name:'database_compatibility_audit.sql',cat:'Instance_Config',desc:'Database compatibility level audit',risk:'Read Only',path:'02_Instance_Config/database_compatibility_audit.sql'},
   {name:'os_integration_checks.sql',cat:'Instance_Config',desc:'OS integration checks for SQL Server',risk:'Read Only',path:'02_Instance_Config/os_integration_checks.sql'},
   {name:'database_files_growth.sql',cat:'Storage_Engine',desc:'Database file growth analysis',risk:'Read Only',path:'03_Storage_Engine/database_files_growth.sql'},
   {name:'tempdb_configuration.sql',cat:'Storage_Engine',desc:'TempDB configuration validation',risk:'Read Only',path:'03_Storage_Engine/tempdb_configuration.sql'},
   {name:'vlf_fragmentation.sql',cat:'Storage_Engine',desc:'Virtual Log File fragmentation analysis',risk:'Read Only',path:'03_Storage_Engine/vlf_fragmentation.sql'},
+  {name:'storage_latency_post_relocation.sql',cat:'Storage_Engine',desc:'MDF/LDF storage latency after file move',risk:'Read Only',path:'03_Storage_Engine/storage_latency_post_relocation.sql'},
   {name:'blocking_and_deadlocks.sql',cat:'Performance',desc:'Blocking and deadlock pattern analysis',risk:'Read Only',path:'04_Performance_Diagnostics/blocking_and_deadlocks.sql'},
   {name:'deadlock_analysis.sql',cat:'Performance',desc:'Deep deadlock analysis with XML graphs',risk:'Read Only',path:'04_Performance_Diagnostics/deadlock_analysis.sql'},
   {name:'plan_cache_deep_dive.sql',cat:'Performance',desc:'Plan cache deep dive analysis',risk:'Read Only',path:'04_Performance_Diagnostics/plan_cache_deep_dive.sql'},
@@ -2941,7 +2951,8 @@ const scriptCatalog = [
   {name:'wait_statistics_reference.sql',cat:'Performance',desc:'Wait statistics reference guide',risk:'Read Only',path:'04_Performance_Diagnostics/wait_statistics_reference.sql'},
   {name:'advanced_index_analysis.sql',cat:'Index_Statistics',desc:'Advanced index analysis',risk:'Read Only',path:'05_Index_Statistics/advanced_index_analysis.sql'},
   {name:'index_usage_efficiency.sql',cat:'Index_Statistics',desc:'Index usage efficiency report',risk:'Read Only',path:'05_Index_Statistics/index_usage_efficiency.sql'},
-  {name:'physical_stats_and_heaps.sql',cat:'Index_Statistics',desc:'Physical stats and heap analysis',risk:'Read Only',path:'05_Index_Statistics/physical_stats_and_heaps.sql'},
+  {name:'physical_stats_and_heaps.sql',cat:'Index_Statistics',desc:'Physical stats and heap fragmentation report',risk:'Read Only',path:'05_Index_Statistics/physical_stats_and_heaps.sql'},
+  {name:'index_maintenance_online.sql',cat:'Index_Statistics',desc:'Online index reorganize and rebuild maintenance',risk:'Write',path:'05_Index_Statistics/index_maintenance_online.sql'},
   {name:'statistics_freshness.sql',cat:'Index_Statistics',desc:'Statistics freshness check',risk:'Read Only',path:'05_Index_Statistics/statistics_freshness.sql'},
   {name:'alwayson_ag_monitor.sql',cat:'HA_DR',desc:'AlwaysOn AG monitoring',risk:'Read Only',path:'06_HA_DR/alwayson_ag_monitor.sql'},
   {name:'backup_log_chain.sql',cat:'HA_DR',desc:'Backup log chain integrity check',risk:'Read Only',path:'06_HA_DR/backup_log_chain.sql'},
@@ -2962,6 +2973,13 @@ const scriptCatalog = [
   {name:'last_checkdb_dates.sql',cat:'Maintenance',desc:'Last DBCC CHECKDB dates',risk:'Read Only',path:'09_Maintenance/last_checkdb_dates.sql'},
   {name:'database_growth_forecast.sql',cat:'Advanced',desc:'Database growth forecasting',risk:'Read Only',path:'10_Capacity_Planning/database_growth_forecast.sql'},
   {name:'regressed_queries.sql',cat:'Advanced',desc:'Query Store regressed queries',risk:'Read Only',path:'11_Query_Store/regressed_queries.sql'},
+  {name:'01_multi_plan_queries.sql',cat:'Advanced',desc:'Query Store multi-plan query discovery',risk:'Read Only',path:'11_Query_Store/01_multi_plan_queries.sql'},
+  {name:'02_query_id_plan_breakdown.sql',cat:'Advanced',desc:'Query Store plan breakdown by query_id',risk:'Read Only',path:'11_Query_Store/02_query_id_plan_breakdown.sql'},
+  {name:'03_plan_comparison_and_force_candidate.sql',cat:'Advanced',desc:'Query Store plan comparison and force candidate',risk:'Read Only',path:'11_Query_Store/03_plan_comparison_and_force_candidate.sql'},
+  {name:'04_force_or_unforce_plan.sql',cat:'Advanced',desc:'Query Store force or unforce plan',risk:'Write',path:'11_Query_Store/04_force_or_unforce_plan.sql'},
+  {name:'05_forced_plans_monitor.sql',cat:'Advanced',desc:'Query Store forced plans monitor',risk:'Read Only',path:'11_Query_Store/05_forced_plans_monitor.sql'},
+  {name:'06_query_store_wait_stats_by_plan.sql',cat:'Advanced',desc:'Query Store wait stats by plan',risk:'Read Only',path:'11_Query_Store/06_query_store_wait_stats_by_plan.sql'},
+  {name:'07_query_plan_xml.sql',cat:'Advanced',desc:'Query Store plan XML retrieval',risk:'Read Only',path:'11_Query_Store/07_query_plan_xml.sql'},
   {name:'active_xe_sessions.sql',cat:'Advanced',desc:'Active Extended Events sessions',risk:'Read Only',path:'12_Extended_Events/active_xe_sessions.sql'},
   {name:'resource_governor_config.sql',cat:'Advanced',desc:'Resource Governor configuration',risk:'Read Only',path:'13_Resource_Governor/resource_governor_config.sql'},
   {name:'performance_snapshot.sql',cat:'Advanced',desc:'Performance snapshot baseline',risk:'Read Only',path:'14_Baselines/performance_snapshot.sql'},
@@ -3396,6 +3414,9 @@ function viewScript(path, name) {
   document.getElementById('viewerCatTag').textContent = cat;
   document.getElementById('viewerCatTag').className = 'tag tag-b';
   document.getElementById('viewerCode').innerHTML = highlightSQL(content);
+  var viewerBody = document.querySelector('.script-viewer-body');
+  if (viewerBody) viewerBody.scrollTop = 0;
+  document.getElementById('viewerCode').scrollTop = 0;
   document.getElementById('scriptViewerOverlay').classList.add('active');
 }
 

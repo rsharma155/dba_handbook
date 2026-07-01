@@ -122,6 +122,10 @@
 --      Analyzes memory pressure, buffer pool, and page life expectancy.
 --      Location: 01_Server_OS\memory_diagnostics.sql
 
+-- memory_bottleneck_deep_dive.sql
+--      In-depth memory clerks, grants, buffer pool, bottleneck summary.
+--      Location: 01_Server_OS\memory_bottleneck_deep_dive.sql
+
 
 /*===========================================================================
    02 - INSTANCE CONFIGURATION
@@ -155,6 +159,10 @@
 -- vlf_fragmentation.sql
 --      Analyzes Virtual Log File fragmentation in transaction logs.
 --      Location: 03_Storage_Engine\vlf_fragmentation.sql
+
+-- storage_latency_post_relocation.sql
+--      MDF/LDF I/O latency validation after file relocation.
+--      Location: 03_Storage_Engine\storage_latency_post_relocation.sql
 
 
 /*===========================================================================
@@ -201,6 +209,10 @@
 -- physical_stats_and_heaps.sql
 --      Reviews heap tables and physical index statistics.
 --      Location: 05_Index_Statistics\physical_stats_and_heaps.sql
+
+-- index_maintenance_online.sql
+--      Online REORGANIZE (5-30%) and REBUILD (>30%) index maintenance.
+--      Location: 05_Index_Statistics\index_maintenance_online.sql
 
 -- statistics_freshness.sql
 --      Checks statistics update dates and row modification counters.
@@ -305,10 +317,39 @@
 
 /*===========================================================================
    11 - QUERY STORE
+     Multi-plan discovery, drill-down, force workflow, wait stats.
 ===========================================================================*/
 -- regressed_queries.sql
 --      Identifies queries with regressed performance in Query Store.
 --      Location: 11_Query_Store\regressed_queries.sql
+
+-- 01_multi_plan_queries.sql
+--      Top queries with multiple compiled plans and duration spread.
+--      Location: 11_Query_Store\01_multi_plan_queries.sql
+
+-- 02_query_id_plan_breakdown.sql
+--      Per-plan runtime stats for a single query_id.
+--      Location: 11_Query_Store\02_query_id_plan_breakdown.sql
+
+-- 03_plan_comparison_and_force_candidate.sql
+--      Rank plans and suggest force/unforce commands.
+--      Location: 11_Query_Store\03_plan_comparison_and_force_candidate.sql
+
+-- 04_force_or_unforce_plan.sql
+--      Force or unforce a plan (dry-run by default).
+--      Location: 11_Query_Store\04_force_or_unforce_plan.sql
+
+-- 05_forced_plans_monitor.sql
+--      Forced plans, force failures, Query Store options.
+--      Location: 11_Query_Store\05_forced_plans_monitor.sql
+
+-- 06_query_store_wait_stats_by_plan.sql
+--      Wait breakdown by plan for one query_id (2017+).
+--      Location: 11_Query_Store\06_query_store_wait_stats_by_plan.sql
+
+-- 07_query_plan_xml.sql
+--      Retrieve showplan XML for a plan_id.
+--      Location: 11_Query_Store\07_query_plan_xml.sql
 
 
 /*===========================================================================

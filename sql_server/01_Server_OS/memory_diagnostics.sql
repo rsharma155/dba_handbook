@@ -9,7 +9,7 @@ Importance:     Memory pressure causes frequent disk I/O (paging), severely
 Interpretation: PLE below dynamic threshold ((Total Memory in GB / 4) * 150) 
                 indicates pressure. Any pending memory grants indicate severe starvation.
  Prerequisites: Deploy framework objects first (00_Framework/00_Deploy_Framework.ps1) when using shared wait helpers.
-Action:         If PLE is below threshold, increase max server memory or add RAM. If pending memory grants exist, review queries with large memory grants via top_resource_queries.sql. For high single-page allocators, check for .NET or linked server connections.
+Action:         If PLE is below threshold, increase max server memory or add RAM. If pending memory grants exist, review queries with large memory grants via top_resource_queries.sql. For high single-page allocators, check for .NET or linked server connections. For full analysis run memory_bottleneck_deep_dive.sql.
 Criticality:    High
 ================================================================================
 */

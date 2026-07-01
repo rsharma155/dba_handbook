@@ -24,6 +24,7 @@ Thresholds:
 
 Next action:
     Move log/data to faster volume; check VM storage policy; exclude SQL paths from AV
+    03_Storage_Engine/storage_latency_post_relocation.sql (full MDF/LDF analysis)
     08_Storage_OS/02_os_integration_post_migration.sql
 
 Criticality: High

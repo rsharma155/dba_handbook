@@ -159,7 +159,7 @@ BEGIN
                     ps.avg_fragmentation_in_percent,
                     ps.page_count,
                     CASE
-                        WHEN ps.avg_fragmentation_in_percent > 30 AND ps.page_count > 1000 THEN ''REBUILD''
+                        WHEN ps.avg_fragmentation_in_percent > 30 AND ps.page_count > 1000 THEN ''REBUILD_ONLINE''
                         WHEN ps.avg_fragmentation_in_percent > 5 AND ps.page_count > 1000 THEN ''REORGANIZE''
                         ELSE ''OK''
                     END

@@ -128,4 +128,4 @@ FROM sys.master_files
 WHERE database_id > 4
 ORDER BY size DESC;
 
-PRINT 'Next: 07_Instance_Config/01_post_migration_config_audit.sql';
+PRINT 'Next: 02_Upgrade_Validation/03_cpu_numa_topology.sql';
