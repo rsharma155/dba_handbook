@@ -12562,6 +12562,9 @@ function viewScript(path, name) {
   document.getElementById('viewerCatTag').textContent = cat;
   document.getElementById('viewerCatTag').className = 'tag tag-b';
   document.getElementById('viewerCode').innerHTML = highlightSQL(content);
+  var viewerBody = document.querySelector('.script-viewer-body');
+  if (viewerBody) viewerBody.scrollTop = 0;
+  document.getElementById('viewerCode').scrollTop = 0;
   document.getElementById('scriptViewerOverlay').classList.add('active');
 }
 

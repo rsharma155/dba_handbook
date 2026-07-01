@@ -77,7 +77,7 @@ sql_server/
 ├── 08_Advanced/                   CDC, Query Store, replication, agent jobs
 ├── 09_Maintenance/                Failed jobs, CHECKDB history
 ├── 10_Capacity_Planning/          Growth forecasting
-├── 11_Query_Store/                Plan regression diagnostics
+├── 11_Query_Store/                Plan regression, multi-plan debug, force workflow
 ├── 12_Extended_Events/            XE sessions, deadlocks
 ├── 13_Resource_Governor/          RG pools and workload groups
 ├── 14_Baselines/                  Point-in-time performance snapshots
@@ -530,6 +530,7 @@ fn_DBA_ExcludedWaitTypes -> fn_DBA_AgentRunDurationSeconds -> sp_DBA_ForEachData
 - Drop indexes from `dm_db_index_usage_stats` alone (resets on restart)
 - Create every missing-index DMV suggestion (validate overlap first)
 - Run `physical_stats_and_heaps.sql` on all DBs during peak without `@DatabaseList`
+- Run `index_maintenance_online.sql` with `@ExecuteMaintenance = 0` first (dry run), then `1` off-peak
 - Execute remediation commands from health check without review
 
 ---
@@ -910,6 +911,7 @@ Every script header includes:
 |------|----------------|----------|
 | `cpu_utilization.sql` | Historical CPU from ring buffers, signal wait %, runnable tasks | High CPU, scheduler pressure |
 | `memory_diagnostics.sql` | Target vs total memory, PLE per NUMA node, memory clerks, memory grants | Memory pressure, PLE alerts |
+| `memory_bottleneck_deep_dive.sql` | Process memory, buffer pool, clerks, grants, RESOURCE_SEMAPHORE, bottleneck summary | Deep memory starvation / pressure analysis |
 | `disk_latency.sql` | Read/write stalls per database file | Slow queries, PAGEIOLATCH waits |
 
 ---
@@ -931,6 +933,7 @@ Every script header includes:
 | `database_files_growth.sql` | File size, used %, autogrowth settings (all user DBs) | Disk space alerts, autogrow events |
 | `tempdb_configuration.sql` | File count, growth uniformity, PAGELATCH contention | TempDB contention, PAGELATCH waits |
 | `vlf_fragmentation.sql` | VLF count per database (2016+ via `dm_db_log_info`) | Slow log backups, recovery, AG sync |
+| `storage_latency_post_relocation.sql` | MDF/LDF path, per-file latency, volume placement, pending I/O | After moving data/log files to new storage |
 
 ---
 
@@ -952,7 +955,8 @@ Every script header includes:
 | File | What it checks | Run when |
 |------|----------------|----------|
 | `index_usage_efficiency.sql` | Missing index DMV (instance) + unused indexes (all DBs) | Write-heavy systems, index cleanup |
-| `physical_stats_and_heaps.sql` | Fragmentation, forwarded records, maintenance hints | Index maintenance planning |
+| `physical_stats_and_heaps.sql` | Fragmentation, forwarded records, maintenance recommendations | Index maintenance planning |
+| `index_maintenance_online.sql` | Online REORGANIZE (5–30%) and REBUILD (>30%); dry-run default | Applying index maintenance |
 | `statistics_freshness.sql` | Stale statistics by modification % | Plan regressions, skewed cardinality |
 | `advanced_index_analysis.sql` | Lock contention per index, exact duplicate indexes | Blocking on indexes, redundant indexes |
 
@@ -1016,6 +1020,13 @@ Every script header includes:
 | File | What it checks | Run when |
 |------|----------------|----------|
 | `regressed_queries.sql` | Wrapper for `sp_DBA_QueryStoreRegressions` | Single query suddenly slow |
+| `01_multi_plan_queries.sql` | Queries with multiple plans, duration spread | Unstable performance, plan sniffing |
+| `02_query_id_plan_breakdown.sql` | All plans and stats for one `query_id` | After picking a suspect from script 01 |
+| `03_plan_comparison_and_force_candidate.sql` | Rank plans, flag best candidate, print FORCE command | Deciding which plan to force |
+| `04_force_or_unforce_plan.sql` | `sp_query_store_force_plan` / `unforce_plan` (dry-run default) | Applying or removing a forced plan |
+| `05_forced_plans_monitor.sql` | Forced plans, force failures, QS options | After forcing; periodic QS review |
+| `06_query_store_wait_stats_by_plan.sql` | Wait stats per plan for one `query_id` | High elapsed but low CPU/reads |
+| `07_query_plan_xml.sql` | Showplan XML for a `plan_id` | Visual plan comparison in SSMS |
 
 ---
 
@@ -1172,7 +1183,7 @@ cd powershell
 
 - Scripts are designed to be **read-only** (DMVs, catalog views, `msdb` history). They do not modify data or settings.
 - `sp_DBA_HealthCheck` may suggest remediation commands in output -- **review before executing** any `ALTER` or `EXEC sp_configure`.
-- `physical_stats_and_heaps.sql` and `ultra_deep_internal_audit.sql` can be **expensive** on large databases -- prefer off-peak or scope with `@DatabaseList`.
+- `physical_stats_and_heaps.sql` and `index_maintenance_online.sql` (collection phase) and `ultra_deep_internal_audit.sql` can be **expensive** on large databases -- prefer off-peak or scope with `@DatabaseList`.
 - Do not create indexes solely from `dm_db_missing_index_*` DMVs -- always validate overlap and write overhead.
 - Do not drop "unused" indexes without confirming uptime since last restart and business sign-off.
 - `sp_DBA_BaselineCapture` writes to `dbo.BaselineSnapshot` -- ensure the persistence table exists (run `DBARepository_Persistence.sql`).

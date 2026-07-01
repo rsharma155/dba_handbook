@@ -314,6 +314,9 @@ function openScript(path) {
   $('modalRiskTag').className = 'tag ' + (script.risk === 'Write' ? 'tag-y' : 'tag-g');
   $('modalCatTag').textContent = script.cat;
   $('modalCode').textContent = content;
+  const modalBody = $('modalCode').parentElement;
+  if (modalBody) modalBody.scrollTop = 0;
+  $('modalCode').scrollTop = 0;
   $('btnRunScript').disabled = !connectionId;
   $('scriptModal').classList.add('active');
 }

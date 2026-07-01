@@ -592,6 +592,9 @@ function viewScript(path, name) {
   document.getElementById('viewerCatTag').textContent = cat || 'Script';
   document.getElementById('viewerCatTag').className = 'tag tag-b';
   document.getElementById('viewerCode').innerHTML = highlightSQL(content);
+  const viewerBody = document.querySelector('.script-viewer-body');
+  if (viewerBody) viewerBody.scrollTop = 0;
+  document.getElementById('viewerCode').scrollTop = 0;
   document.getElementById('scriptViewerOverlay').classList.add('active');
 }
 
