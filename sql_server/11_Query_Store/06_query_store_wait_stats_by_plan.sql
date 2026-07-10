@@ -26,6 +26,7 @@ Action:
 
 Criticality: High for elapsed-vs-CPU mismatches
 Prerequisites: SQL Server 2017+, Query Store wait stats capture enabled
+Author:        Ravi Sharma
 ================================================================================
 */
 

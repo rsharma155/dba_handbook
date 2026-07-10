@@ -19,6 +19,7 @@ Action:
 
 Criticality: Medium
 Prerequisites: Query Store enabled on current database
+Author:        Ravi Sharma
 ================================================================================
 */
 

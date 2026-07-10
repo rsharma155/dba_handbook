@@ -13,6 +13,7 @@ If you need cross-session delta:
     in the original window without closing it.
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 

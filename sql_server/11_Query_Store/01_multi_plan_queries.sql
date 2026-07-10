@@ -28,6 +28,7 @@ Action:
 
 Criticality: High
 Prerequisites: Query Store enabled on current database (SQL Server 2016+)
+Author:        Ravi Sharma
 ================================================================================
 */
 

@@ -10,6 +10,7 @@ Importance:     TempDB is a shared resource; contention here bottlenecks the
                 critical. PAGELATCH waits indicate contention.
 Action:         If file count < @ExpectedFiles, add equal-sized data files (1 per core/CPU up to 8). If file sizes are not uniform, resize all files to the same size. If PAGELATCH waits are detected, adding files often resolves allocation contention. Restart is NOT required after adding TempDB files.
 Criticality:    High
+Author:        Ravi Sharma
 ================================================================================
 */
 

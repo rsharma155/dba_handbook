@@ -9,6 +9,7 @@ Description:
 Action:  Run VACUUM (ANALYZE) on flagged tables; tune autovacuum per table if needed.
 
 Criticality: Medium
+Author:        Ravi Sharma
 ================================================================================
 */
 

@@ -9,6 +9,7 @@ Importance:     Misconfigured instance settings are a leading cause of systemic
                 (Critical/Warning/Optimal).
 Action:         For each setting marked "Critical" or "Warning", apply the recommended value using sp_configure. For MAXDOP and CTFP changes, test on non-production first. For max server memory, ensure at least 4-8 GB is reserved for the OS.
 Criticality:    High
+Author:        Ravi Sharma
 ================================================================================
 */
 

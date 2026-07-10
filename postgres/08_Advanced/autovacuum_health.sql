@@ -8,6 +8,7 @@ Description:
 Action:  Increase autovacuum_max_workers on large catalogs; per-table autovacuum for hot tables.
 
 Criticality: Medium
+Author:        Ravi Sharma
 ================================================================================
 */
 

@@ -20,6 +20,7 @@ Action:
 Prerequisites: dbo.fn_DBA_AgentRunDurationSeconds (00_Framework) optional.
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 

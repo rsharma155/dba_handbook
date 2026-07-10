@@ -10,6 +10,7 @@ Interpretation: Sync Health should be "HEALTHY". High log send/redo queues
 indicate bottlenecks. RPO should be near 0 for sync replicas.
 Action: If Sync Health is not "HEALTHY" for any replica, check network connectivity and SQL Server error logs. For high log_send_queue_size or redo_queue_size, investigate the disk I/O on the secondary (log writing) and primary (log generation) using disk_latency.sql. For synchronous replicas, RPO > 0 means data loss risk — ensure the network latency is < 10ms between replicas.
 Criticality:    Critical
+Author:        Ravi Sharma
 ================================================================================
 */
 

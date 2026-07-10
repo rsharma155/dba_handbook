@@ -10,6 +10,7 @@ Interpretation: Focus on queries with high "Avg_Logical_Reads" or "Avg_CPU_ms".
                  Correlate with wait statistics to understand the wait type.
 Action: Copy the query text from the top-ranked queries and analyze the execution plan in SSMS. Look for: (1) missing index warnings (green text), (2) table scans on large tables, (3) implicit conversions, (4) key lookups. For queries with high Avg_CPU_ms, create recommended indexes and re-evaluate. For large batches, consider breaking into smaller operations or optimizing the worst-performing steps.
 Criticality:    High
+Author:        Ravi Sharma
 ================================================================================
 */
 

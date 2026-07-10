@@ -9,6 +9,7 @@ Purpose:
 Usage:
     Execute this script in the context of master or a suitable admin database.
     Then run DBARepository_Deploy.sql to install stored procedures and tables.
+Author:        Ravi Sharma
 ================================================================================
 */
 IF DB_ID(N'DBARepository') IS NOT NULL

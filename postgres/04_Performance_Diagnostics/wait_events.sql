@@ -9,6 +9,7 @@ Description:
 Action:  Top Lock waits → blocking_and_locks.sql. IO waits → disk_io_analysis.sql.
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 

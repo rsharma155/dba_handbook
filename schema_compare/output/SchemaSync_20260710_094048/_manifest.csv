@@ -1,0 +1,5 @@
+"Phase","Mode","Order","Database","Object","Purpose","ChangeCount","FileName","Blockers","Prerequisites","RequiresReview"
+"2 - Tables & Columns","Auto","50","ERP_System","[dbo].[newtable]","table_create","1","auto_ERP_System__dbo.newtable__table_create.sql","","","False"
+"2 - Tables & Columns","Auto","50","ERP_System","[dbo].[testCompanies]","table_create","1","auto_ERP_System__dbo.testCompanies__table_create.sql","","","False"
+"2 - Tables & Columns","Auto","60","ERP_System","[dbo].[Companies]","column_add","1","auto_ERP_System__dbo.Companies__column_add.sql","","","False"
+"3 - Indexes & Constraints","Auto","80","ERP_System","[dbo].[Companies]","index","1","auto_ERP_System__dbo.Companies__index.sql","","","False"

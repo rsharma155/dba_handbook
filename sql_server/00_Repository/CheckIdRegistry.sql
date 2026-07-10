@@ -9,6 +9,7 @@ Purpose:
 Usage:
     Deploy into DBARepository. PowerShell and SQL consumers reference this
     table to map CheckId → human-readable description.
+Author:        Ravi Sharma
 ================================================================================
 */
 IF OBJECT_ID(N'dbo.CheckIdRegistry', N'U') IS NOT NULL

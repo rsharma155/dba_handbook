@@ -23,6 +23,7 @@ Sections:
     (19)      Step-by-step action plan
 
 Criticality: Critical — run before changing settings
+Author:        Ravi Sharma
 ================================================================================
 */
 
@@ -677,16 +678,26 @@ CREATE TABLE #TempDBSpace (
     Internal_Objects_MB BIGINT,
     Version_Store_MB BIGINT
 );
-INSERT INTO #TempDBSpace
+INSERT INTO #TempDBSpace (
+    Free_Space_MB,
+    User_Objects_MB,
+    Internal_Objects_MB,
+    Version_Store_MB
+)
 EXEC(N'USE tempdb;
 SELECT
-    SUM(unallocated_extent_page_count) * 8 / 1024,
-    SUM(user_object_reserved_page_count) * 8 / 1024,
-    SUM(internal_object_reserved_page_count) * 8 / 1024,
-    SUM(version_store_reserved_page_count) * 8 / 1024
+    SUM(unallocated_extent_page_count) * 8 / 1024 AS [Free_Space_MB],
+    SUM(user_object_reserved_page_count) * 8 / 1024 AS [User_Objects_MB],
+    SUM(internal_object_reserved_page_count) * 8 / 1024 AS [Internal_Objects_MB],
+    SUM(version_store_reserved_page_count) * 8 / 1024 AS [Version_Store_MB]
 FROM sys.dm_db_file_space_usage;');
 
-SELECT * FROM #TempDBSpace;
+SELECT
+    Free_Space_MB,
+    User_Objects_MB,
+    Internal_Objects_MB,
+    Version_Store_MB
+FROM #TempDBSpace;
 DROP TABLE #TempDBSpace;
 
 IF @TempDBDataFiles = 1 AND @CPU > 4

@@ -8,6 +8,7 @@ Importance:     IFI speeds up file growth/creation; LPIM prevents OS from paging
  Interpretation: IFI_Enabled should be "Y". Memory_Model should be "LOCK_PAGES".
 Action:         If IFI_Enabled = 'N', grant 'Perform Volume Maintenance Tasks' to the SQL service account and restart. If Memory_Model is not 'LOCK_PAGES', grant 'Lock Pages in Memory' to the SQL service account and restart.
 Criticality:    Medium
+Author:        Ravi Sharma
 ================================================================================
 */
 

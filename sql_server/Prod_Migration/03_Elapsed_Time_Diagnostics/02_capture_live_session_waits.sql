@@ -17,6 +17,13 @@ Interpretation:
     dm_os_waiting_tasks = lower-level task waits with resource description
     blocking_session_id > 0 → not optimizer issue
 
+Output:
+    Target session overview, request-level waits, task-level waits, and blocking
+    chain details for the supplied session ID.
+
+Parameters:
+    @TargetSessionId - SPID for the slow query session to inspect (required)
+
 Next action by wait_type:
     LCK_*           → 05_Concurrency/01_blocking_and_locks.sql
     LATCH_*         → 04_Wait_Stats/03_latch_metadata_waits.sql
@@ -28,6 +35,7 @@ If wait_type = NULL and status = running but still slow:
     May be client-side (SSMS rendering) or async completion — use XE script.
 
 Criticality: Critical
+Author:        Ravi Sharma
 ================================================================================
 */
 
@@ -40,7 +48,13 @@ IF @TargetSessionId IS NULL
 BEGIN
     PRINT 'Set @TargetSessionId to the SPID running your slow query.';
     PRINT 'Active non-system sessions:';
-    SELECT session_id, login_name, host_name, program_name, status
+    SELECT
+        N'Active User Sessions' AS [Result_Set],
+        session_id AS [Session_Id],
+        login_name AS [Login_Name],
+        host_name AS [Host_Name],
+        program_name AS [Program_Name],
+        status AS [Session_Status]
     FROM sys.dm_exec_sessions
     WHERE is_user_process = 1 AND session_id <> @@SPID
     ORDER BY session_id;
@@ -49,40 +63,42 @@ END;
 
 PRINT '=== SESSION OVERVIEW ===';
 SELECT
-    s.session_id,
-    s.login_name,
-    s.host_name,
-    s.program_name,
-    s.status,
+    N'Session Overview' AS [Result_Set],
+    s.session_id AS [Session_Id],
+    s.login_name AS [Login_Name],
+    s.host_name AS [Host_Name],
+    s.program_name AS [Program_Name],
+    s.status AS [Session_Status],
     s.cpu_time AS [Session_CPU_ms],
     s.memory_usage * 8 AS [Memory_KB],
     s.total_elapsed_time AS [Session_Elapsed_ms],
-    s.reads,
-    s.writes,
-    s.logical_reads,
-    s.last_request_start_time,
-    s.last_request_end_time
+    s.reads AS [Reads],
+    s.writes AS [Writes],
+    s.logical_reads AS [Logical_Reads],
+    s.last_request_start_time AS [Last_Request_Start_Time],
+    s.last_request_end_time AS [Last_Request_End_Time]
 FROM sys.dm_exec_sessions AS s
 WHERE s.session_id = @TargetSessionId;
 
 PRINT '=== REQUEST-LEVEL WAITS (dm_exec_requests) ===';
 SELECT
-    r.session_id,
-    r.status,
-    r.command,
-    r.blocking_session_id,
-    r.wait_type,
+    N'Request-Level Waits' AS [Result_Set],
+    r.session_id AS [Session_Id],
+    r.status AS [Request_Status],
+    r.command AS [Command],
+    r.blocking_session_id AS [Blocking_Session_Id],
+    r.wait_type AS [Wait_Type],
     r.wait_time AS [Wait_ms],
-    r.wait_resource,
-    r.open_transaction_count,
-    r.percent_complete,
-    r.estimated_completion_time,
-    r.cpu_time,
-    r.total_elapsed_time,
-    r.logical_reads,
-    r.reads,
-    r.writes,
-    r.dop,
+    r.wait_resource AS [Wait_Resource],
+    r.open_transaction_count AS [Open_Transaction_Count],
+    r.percent_complete AS [Percent_Complete],
+    r.estimated_completion_time AS [Estimated_Completion_Time_ms],
+    r.cpu_time AS [Request_CPU_ms],
+    r.total_elapsed_time AS [Request_Elapsed_ms],
+    r.logical_reads AS [Logical_Reads],
+    r.reads AS [Reads],
+    r.writes AS [Writes],
+    r.dop AS [DOP],
     r.granted_query_memory * 8192 / 1024 AS [Granted_Memory_KB],
     SUBSTRING(st.text, (r.statement_start_offset / 2) + 1,
         CASE WHEN r.statement_end_offset = -1 THEN LEN(st.text)
@@ -94,14 +110,15 @@ WHERE r.session_id = @TargetSessionId;
 
 PRINT '=== TASK-LEVEL WAITS (dm_os_waiting_tasks) ===';
 SELECT
-    wt.session_id,
-    wt.wait_type,
-    wt.wait_duration_ms,
-    wt.resource_description,
-    wt.blocking_session_id,
-    t.task_state,
-    t.context_switches_count,
-    t.pending_io_count
+    N'Task-Level Waits' AS [Result_Set],
+    wt.session_id AS [Session_Id],
+    wt.wait_type AS [Wait_Type],
+    wt.wait_duration_ms AS [Wait_Duration_ms],
+    wt.resource_description AS [Resource_Description],
+    wt.blocking_session_id AS [Blocking_Session_Id],
+    t.task_state AS [Task_State],
+    t.context_switches_count AS [Context_Switches_Count],
+    t.pending_io_count AS [Pending_IO_Count]
 FROM sys.dm_os_waiting_tasks AS wt
 LEFT JOIN sys.dm_os_tasks AS t ON wt.waiting_task_address = t.task_address
 WHERE wt.session_id = @TargetSessionId
@@ -128,7 +145,14 @@ PRINT '=== BLOCKING CHAIN (if blocked) ===';
     INNER JOIN block_chain AS bc ON r.session_id = bc.blocking_session_id
     WHERE bc.lvl < 20
 )
-SELECT * FROM block_chain ORDER BY lvl;
+SELECT
+    N'Blocking Chain' AS [Result_Set],
+    [session_id] AS [Session_Id],
+    [blocking_session_id] AS [Blocking_Session_Id],
+    [lvl] AS [Chain_Level],
+    [chain] AS [Blocking_Chain]
+FROM block_chain
+ORDER BY [lvl];
 
 /*
 -- POLLING LOOP: uncomment to sample every 2 seconds for 60 seconds

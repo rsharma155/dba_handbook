@@ -10,6 +10,7 @@ Action:  Buffer hit ratio < 99% on OLTP → increase shared_buffers or reduce se
          High temp_bytes in pg_stat_statements → lower work_mem per query or optimize sorts.
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 

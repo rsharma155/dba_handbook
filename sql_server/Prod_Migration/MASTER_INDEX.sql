@@ -8,6 +8,7 @@ Run scripts in order unless triage points elsewhere.
 Scenario: 2019 Express → 2025 Developer, high elapsed, low CPU/reads,
            SSMS slow, query hints ineffective, slow on local VM too.
 
+Author:        Ravi Sharma
 ================================================================================
 */
 

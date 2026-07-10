@@ -9,6 +9,7 @@ Usage:
     psql -d dba_repository -f 00_Deploy_Framework.sql
 
 Criticality: Low (one-time)
+Author:        Ravi Sharma
 ================================================================================
 */
 

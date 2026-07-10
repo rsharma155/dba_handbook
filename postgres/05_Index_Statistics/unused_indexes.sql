@@ -8,6 +8,7 @@ Description:
 Action:  Confirm with business; DROP INDEX CONCURRENTLY during maintenance window.
 
 Criticality: Medium
+Author:        Ravi Sharma
 ================================================================================
 */
 

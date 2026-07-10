@@ -10,6 +10,7 @@ Usage:
     SELECT * FROM dba.sp_wait_analysis(top_n => 20);
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 

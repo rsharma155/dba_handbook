@@ -11,6 +11,7 @@ Interpretation: High TempDB version store suggests long transactions or RCSI.
                 Multi-plan queries indicate parameter sniffing.
 Action: For TempDB: if Version_Store_MB > 30% of total TempDB, investigate long-running transactions or read-committed snapshot isolation usage (RCSI). If Internal_Objects_MB is high, review large hash joins/sort spills. For Buffer Pool: if a small database dominates cache, investigate inefficient table scans via index_usage_efficiency.sql. For Multi-Plan queries (parameter sniffing candidates): review the query text and consider OPTION (RECOMPILE) or optimize for unknown pattern.
 Criticality:    High
+Author:        Ravi Sharma
 ================================================================================
 */
 

@@ -2,12 +2,18 @@
 ================================================================================
 sp_DBA_HealthCheck - One-Stop Diagnostic Engine (Enterprise Edition)
 ================================================================================
-Prerequisites: Deploy framework objects first (00_Framework/00_Deploy_Framework.ps1).
+Purpose:        Runs a broad SQL Server health check and returns actionable findings.
+Prerequisites:  None for ad-hoc execution; dbo.fn_DBA_ExcludedWaitTypes is used
+                when deployed, otherwise an inline fallback wait list is used.
+Persistence:    None. Results are returned as result sets only.
+Safety:         Read-only by default. @DeepDive = 1 can return large diagnostic
+                result sets and XML plans on busy systems.
 
 Usage:
     EXEC dbo.sp_DBA_HealthCheck @DeepDive = 0;
-    EXEC dbo.sp_DBA_HealthCheck @DeepDive = 1, @DatabaseList = N'SalesDB,HRDB';
+    EXEC dbo.sp_DBA_HealthCheck @DeepDive = 1, @DatabaseList = N'userdb';
     EXEC dbo.sp_DBA_HealthCheck @BackupHoursSLA = 48;
+Author:        Ravi Sharma
 ================================================================================
 */
 IF OBJECT_ID(N'dbo.sp_DBA_HealthCheck', N'P') IS NULL
@@ -25,10 +31,49 @@ BEGIN
     SET QUOTED_IDENTIFIER ON;
     SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 
-    IF OBJECT_ID(N'dbo.fn_DBA_ExcludedWaitTypes', N'IF') IS NULL
+    IF OBJECT_ID(N'tempdb..#ExcludedWaitTypes') IS NOT NULL DROP TABLE #ExcludedWaitTypes;
+    CREATE TABLE #ExcludedWaitTypes (wait_type NVARCHAR(60) NOT NULL PRIMARY KEY);
+
+    IF OBJECT_ID(N'dbo.fn_DBA_ExcludedWaitTypes', N'IF') IS NOT NULL
     BEGIN
-        RAISERROR(N'Run 00_Framework/00_Deploy_Framework.ps1 (-ServerInstance . -Database master) to auto-deploy all required objects, or deploy sp_DBA_HealthCheck and fn_DBA_ExcludedWaitTypes manually.', 16, 1);
-        RETURN;
+        INSERT INTO #ExcludedWaitTypes (wait_type)
+        SELECT wait_type FROM dbo.fn_DBA_ExcludedWaitTypes();
+    END;
+    ELSE
+    BEGIN
+        INSERT INTO #ExcludedWaitTypes (wait_type)
+        VALUES
+            (N'CLR_SEMAPHORE'),
+            (N'LAZYWRITER_SLEEP'),
+            (N'RESOURCE_QUEUE'),
+            (N'SLEEP_TASK'),
+            (N'SLEEP_SYSTEMTASK'),
+            (N'SQLTRACE_BUFFER_FLUSH'),
+            (N'WAITFOR'),
+            (N'LOGMGR_QUEUE'),
+            (N'CHECKPOINT_QUEUE'),
+            (N'REQUEST_FOR_DEADLOCK_SEARCH'),
+            (N'XE_TIMER_EVENT'),
+            (N'XE_DISPATCHER_JOIN'),
+            (N'XE_DISPATCHER_WAIT'),
+            (N'FT_IFTS_SCHEDULER_VAL_KEEP_ALIVE'),
+            (N'DIRTY_PAGE_TABLE_RELEASE'),
+            (N'SP_SERVER_DIAGNOSTICS_SLEEP'),
+            (N'QDS_CLEANUP_STALE_QUERIES_TASK_MAIN_LOOP_SLEEP'),
+            (N'QDS_PERSIST_TASK_MAIN_LOOP_SLEEP'),
+            (N'REDO_THREAD_PENDING_WORK'),
+            (N'WAIT_FOR_RESULTS'),
+            (N'HADR_FILESTREAM_IOMGR_IOCOMPLETION'),
+            (N'BROKER_EVENTHANDLER'),
+            (N'BROKER_RECEIVE_WAITFOR'),
+            (N'BROKER_TRANSMITTER'),
+            (N'BROKER_TO_FLUSH'),
+            (N'ONDEMAND_TASK_QUEUE'),
+            (N'PREEMPTIVE_OS_AUTHENTICATIONOPS'),
+            (N'HADR_FABRIC_CALLBACK_EVENT'),
+            (N'HADR_NOTIFICATION_DEQUEUE'),
+            (N'HADR_TIMER_TASK'),
+            (N'HADR_LOGCAPTURE_WAIT');
     END;
 
     IF OBJECT_ID(N'tempdb..#DBAFindings') IS NOT NULL DROP TABLE #DBAFindings;
@@ -103,11 +148,11 @@ BEGIN
     ) AS y;
 
     IF EXISTS (SELECT 1 FROM sys.dm_os_schedulers WHERE runnable_tasks_count > 10 AND status = N'VISIBLE ONLINE')
-        INSERT INTO #DBAFindings VALUES (101, N'High', 15, N'CPU', N'High Runnable Task Count', N'Queries are waiting for CPU cycles.', N'Check sys.dm_os_schedulers for specific hotspots.', N'SELECT * FROM sys.dm_os_schedulers WHERE status = ''VISIBLE ONLINE'';');
+        INSERT INTO #DBAFindings VALUES (101, N'High', 15, N'CPU', N'High Runnable Task Count', N'Queries are waiting for CPU cycles.', N'Check sys.dm_os_schedulers for specific hotspots.', N'SELECT scheduler_id, current_tasks_count, runnable_tasks_count, active_workers_count, work_queue_count FROM sys.dm_os_schedulers WHERE status = ''VISIBLE ONLINE'';');
 
     SELECT @SignalWaitPct = CAST(CAST(SUM(signal_wait_time_ms) AS NUMERIC(18,2)) / NULLIF(SUM(wait_time_ms), 0) * 100 AS DECIMAL(5,2))
     FROM sys.dm_os_wait_stats
-    WHERE wait_type NOT IN (SELECT wait_type FROM dbo.fn_DBA_ExcludedWaitTypes());
+    WHERE wait_type NOT IN (SELECT wait_type FROM #ExcludedWaitTypes);
 
     IF @SQLServerCPU > 80
         INSERT INTO #DBAFindings VALUES (102, N'High', 20, N'CPU', N'High SQL Server CPU Utilization (' + CAST(@SQLServerCPU AS VARCHAR(10)) + N'%)', N'Query performance degradation.', N'Historical CPU from ring buffers. Threshold > 80%.', N'SELECT TOP 10 * FROM sys.dm_exec_query_stats ORDER BY total_worker_time DESC;');
@@ -253,7 +298,7 @@ BEGIN
         INSERT INTO #DBAFindings VALUES (402, N'Medium', 10, N'Memory', N'Low Page Life Expectancy (' + CAST(@PLE AS VARCHAR(10)) + N's)', N'Buffer pool churn.', N'Check scans, missing indexes, memory grants.', NULL);
 
     IF EXISTS (SELECT 1 FROM sys.dm_exec_query_memory_grants)
-        INSERT INTO #DBAFindings VALUES (403, N'High', 20, N'Memory', N'Active Memory Grant Waits', N'Queries waiting for memory to execute.', N'Optimize sorts/hashes or add RAM.', N'SELECT * FROM sys.dm_exec_query_memory_grants;');
+        INSERT INTO #DBAFindings VALUES (403, N'High', 20, N'Memory', N'Active Memory Grant Waits', N'Queries waiting for memory to execute.', N'Optimize sorts/hashes or add RAM.', N'SELECT session_id, requested_memory_kb, granted_memory_kb, required_memory_kb, wait_time_ms FROM sys.dm_exec_query_memory_grants;');
 
     ----------------------------------------------------------------------------
     -- 4. Wait Statistics (Top 30)
@@ -308,7 +353,7 @@ BEGIN
         END AS [Expert_Note]
     INTO #TopWaits
     FROM sys.dm_os_wait_stats
-    WHERE wait_type NOT IN (SELECT wait_type FROM dbo.fn_DBA_ExcludedWaitTypes())
+    WHERE wait_type NOT IN (SELECT wait_type FROM #ExcludedWaitTypes)
       AND waiting_tasks_count > 0
     ORDER BY wait_time_ms DESC;
 
@@ -473,5 +518,6 @@ BEGIN
     DROP TABLE #DBAFindings;
     DROP TABLE #HealthCheckDbs;
     IF OBJECT_ID(N'tempdb..#TopWaits') IS NOT NULL DROP TABLE #TopWaits;
+    IF OBJECT_ID(N'tempdb..#ExcludedWaitTypes') IS NOT NULL DROP TABLE #ExcludedWaitTypes;
 END;
 GO

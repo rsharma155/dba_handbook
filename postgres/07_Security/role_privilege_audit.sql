@@ -8,6 +8,7 @@ Description:
 Action:  Revoke excessive grants; enforce least privilege; rotate superuser accounts.
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 

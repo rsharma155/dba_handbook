@@ -9,6 +9,7 @@ Action:  Enable idle_in_transaction_session_timeout and statement_timeout in pro
          Use connection pooling when max_connections is stressed.
 
 Criticality: Medium
+Author:        Ravi Sharma
 ================================================================================
 */
 

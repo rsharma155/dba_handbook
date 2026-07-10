@@ -9,6 +9,7 @@ Description:
 Prerequisite: pg_stat_statements
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 

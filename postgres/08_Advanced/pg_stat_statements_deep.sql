@@ -8,6 +8,7 @@ Description:
 Prerequisite: pg_stat_statements extension
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 

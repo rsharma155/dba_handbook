@@ -34,11 +34,21 @@ Parameters:
     @WaitAtLowPriority      - WAIT_AT_LOW_PRIORITY on online rebuild (default 1)
     @MaxIndexesToProcess    - safety cap per run (default 500)
 
+Safety:
+    - Defaults to dry run (@ExecuteMaintenance = 0); no ALTER INDEX/TABLE
+      statements execute unless explicitly set to 1
+    - Prints and returns the candidate command queue before any execution
+
+Persistence:
+    - When executed, persists physical index/heap changes in target user databases
+    - Uses only temp tables for run metadata and drops them before completion
+
 Warning: dm_db_index_physical_stats can be expensive. Run off-peak.
          Test on a non-production database before @ExecuteMaintenance = 1.
 
 Criticality: High — modifies indexes
 Prerequisites: ALTER permission on target tables/indexes
+Author:        Ravi Sharma
 ================================================================================
 */
 
@@ -305,7 +315,7 @@ ORDER BY
 IF @ExecuteMaintenance = 0
 BEGIN
     PRINT N'';
-    PRINT N'DRY RUN complete. Review the queue above, then set @ExecuteMaintenance = 1.';
+    PRINT N'DRY RUN complete. No action was taken; review the queue above, then set @ExecuteMaintenance = 1.';
     DROP TABLE #MaintenanceQueue;
     DROP TABLE #MaintenanceLog;
 END

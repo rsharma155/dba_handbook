@@ -8,6 +8,7 @@ Description:
 Action:  Inactive replication slots can retain WAL — monitor pg_replication_slots.
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 

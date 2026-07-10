@@ -12,12 +12,22 @@ Parameters:
     @Action   - FORCE or UNFORCE
     @DryRun   - 1 = print only (default), 0 = execute
 
+Safety:
+    - Defaults to dry run (@DryRun = 1); no Query Store plan forcing state
+      changes unless explicitly set to 0
+    - Validates Query Store state and query/plan relationship before executing
+
+Persistence:
+    - When executed, persists Query Store forced-plan state in the current database
+    - Does not create or modify schema objects
+
 Action:
     After forcing, monitor with 05_forced_plans_monitor.sql. Re-check regressions
     after statistics updates, index changes, or CE changes.
 
 Criticality: High — modifies Query Store plan forcing state
 Prerequisites: Query Store enabled; ALTER permission on database
+Author:        Ravi Sharma
 ================================================================================
 */
 
@@ -86,7 +96,7 @@ WHERE q.query_id = @QueryId
 IF @DryRun = 1
 BEGIN
     PRINT N'';
-    PRINT N'DRY RUN (@DryRun = 1). Set @DryRun = 0 to execute:';
+    PRINT N'DRY RUN (@DryRun = 1). No action was taken. Set @DryRun = 0 to execute:';
     IF @Action = N'FORCE'
         PRINT N'EXEC sys.sp_query_store_force_plan @query_id = '
             + CAST(@QueryId AS NVARCHAR(20)) + N', @plan_id = ' + CAST(@PlanId AS NVARCHAR(20)) + N';';

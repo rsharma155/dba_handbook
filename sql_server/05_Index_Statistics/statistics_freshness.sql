@@ -24,6 +24,7 @@ Parameters:
     @StalePctThreshold - modification % threshold for flagging (default 20)
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 
@@ -96,5 +97,16 @@ BEGIN
     DROP TABLE #DbTargets;
 END;
 
-SELECT * FROM #StatsResults ORDER BY [Modification_Pct] DESC, [Modifications] DESC;
+SELECT
+    N'Statistics Freshness' AS [Result_Set],
+    [Database_Name],
+    [Table_Name],
+    [Statistics_Name],
+    [Last_Updated],
+    [Total_Rows],
+    [Rows_Sampled],
+    [Modifications],
+    [Modification_Pct]
+FROM #StatsResults
+ORDER BY [Modification_Pct] DESC, [Modifications] DESC;
 DROP TABLE #StatsResults;

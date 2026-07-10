@@ -24,6 +24,7 @@ Prerequisites: Ola Hallengren's maintenance solution for CommandLog table.
                Falls back to msdb backup history if CommandLog is unavailable.
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 

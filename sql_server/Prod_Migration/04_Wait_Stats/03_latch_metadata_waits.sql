@@ -31,6 +31,7 @@ Next action:
     IF PAGELATCH on tempdb: add evenly-sized tempdb files
 
 Criticality: High for SSMS + low-read slow queries
+Author:        Ravi Sharma
 ================================================================================
 */
 

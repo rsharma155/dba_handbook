@@ -16,6 +16,7 @@ Parameters:
     backup_hours_sla   — hours since last archived WAL before warning
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 

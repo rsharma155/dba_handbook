@@ -3,6 +3,7 @@
 AssessmentFindingTableType — Table-valued parameter for assessment findings
 ================================================================================
 Table type used by sp_DBA_SaveAssessmentRun to accept findings as a TVP.
+Author:        Ravi Sharma
 ================================================================================
 */
 IF TYPE_ID(N'dbo.AssessmentFindingTableType') IS NULL

@@ -32,6 +32,7 @@ Next action if memory capped:
     See 07_Instance_Config/02_recommended_fixes_with_rollback.sql section 1.
 
 Criticality: High for Express → non-Express migrations
+Author:        Ravi Sharma
 ================================================================================
 */
 

@@ -8,6 +8,7 @@ Description:
 Action:  Review flagged settings against workload; change via ALTER SYSTEM + reload.
 
 Criticality: Medium
+Author:        Ravi Sharma
 ================================================================================
 */
 

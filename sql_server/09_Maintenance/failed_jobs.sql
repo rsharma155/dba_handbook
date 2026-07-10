@@ -22,6 +22,7 @@ Prerequisites: dbo.fn_DBA_AgentRunDurationSeconds (00_Framework) optional.
                Falls back to inline calculation if function is not available.
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 

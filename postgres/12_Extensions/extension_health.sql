@@ -6,6 +6,7 @@ Description:
     Extension inventory with upgrade recommendations.
 
 Criticality: Low
+Author:        Ravi Sharma
 ================================================================================
 */
 

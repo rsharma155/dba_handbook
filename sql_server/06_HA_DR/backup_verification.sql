@@ -12,6 +12,7 @@ Action: For databases with Backup_Status = "CRITICAL" (no backup within SLA), ta
     BACKUP DATABASE [DBName] TO DISK = N'path';
     For FULL recovery databases with long gaps since last log backup (< 1 hour is recommended), increase log backup frequency via a SQL Agent job. Schedule daily verification using this script in a monitoring job.
 Criticality:    Critical
+Author:        Ravi Sharma
 ================================================================================
 */
 

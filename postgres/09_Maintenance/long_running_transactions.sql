@@ -8,6 +8,7 @@ Description:
 Action:  Terminate only after app owner approval; fix app transaction handling.
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 

@@ -8,6 +8,7 @@ Description:
 Action:  Drop unused large indexes after validation; add indexes where seq_scan dominates.
 
 Criticality: Medium
+Author:        Ravi Sharma
 ================================================================================
 */
 

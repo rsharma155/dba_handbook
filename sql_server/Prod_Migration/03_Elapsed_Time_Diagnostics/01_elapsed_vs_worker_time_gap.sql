@@ -36,13 +36,14 @@ Next action if gap confirmed:
     → 09_Extended_Events/01_xe_single_query_wait_capture.sql for proof
 
 Criticality: Critical — core diagnostic for reported issue
+Author:        Ravi Sharma
 ================================================================================
 */
 
 SET NOCOUNT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 
-DECLARE @DatabaseName SYSNAME = NULL;  -- e.g. N'MyAppDB'
+DECLARE @DatabaseName SYSNAME = NULL;  -- e.g. N'userdb'
 DECLARE @QueryTextFilter NVARCHAR(256) = NULL;  -- e.g. N'%CustomerOrder%'
 DECLARE @TopN INT = 25;
 

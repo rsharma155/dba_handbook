@@ -18,6 +18,7 @@ Interpretation: Focus on the OBJECT involved (table/index) and the lock mode
                  access pattern or index strategy for that object.
 Action: Identify the most contested object (table/index) from the Resource_Contention_Map. If the same object appears repeatedly, consider: (1) reducing transaction scope, (2) accessing the object in the same order across transactions, (3) adding covering indexes to reduce lock duration, or (4) enabling READ_COMMITTED_SNAPSHOT if acceptable. For historical trend, check deadlock_frequency to see if the pattern is worsening.
 Criticality:    High
+Author:        Ravi Sharma
 ================================================================================
 */
 

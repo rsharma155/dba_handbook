@@ -6,6 +6,7 @@ Description:
     Educational reference for junior DBAs mapping wait events to actions.
 
 Criticality: Low (reference)
+Author:        Ravi Sharma
 ================================================================================
 */
 

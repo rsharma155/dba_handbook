@@ -10,7 +10,12 @@ using the delta query in the header.
 
 Delta comparison:
     WITH Latest AS (
-        SELECT TOP (2) *
+        SELECT TOP (2)
+            SnapshotId,
+            SnapshotUtc,
+            ServerName,
+            WaitType,
+            WaitTimeMs
         FROM dbo.BaselineSnapshot
         WHERE ServerName = @@SERVERNAME AND WaitType IS NOT NULL
         ORDER BY SnapshotUtc DESC
@@ -26,6 +31,7 @@ Delta comparison:
 Usage:
     EXEC dbo.sp_DBA_BaselineCapture;
     EXEC dbo.sp_DBA_BaselineCapture @CaptureWaitStats = 1, @CaptureCounters = 1;
+Author:        Ravi Sharma
 ================================================================================
 */
 IF OBJECT_ID(N'dbo.sp_DBA_BaselineCapture', N'P') IS NULL

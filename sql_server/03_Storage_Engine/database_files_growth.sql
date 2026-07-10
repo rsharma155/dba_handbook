@@ -25,13 +25,14 @@ Parameters:
     @StalePctThreshold - used space % threshold for warnings (default 80)
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 SET NOCOUNT ON;
 
-DECLARE @DatabaseList NVARCHAR(MAX) = NULL; -- e.g. N'SalesDB,HRDB'
+DECLARE @DatabaseList NVARCHAR(MAX) = NULL; -- e.g. N'userdb'
 DECLARE @StalePctThreshold DECIMAL(5,2) = 80.0;
 
 IF OBJECT_ID(N'tempdb..#FileSpaceStats') IS NOT NULL DROP TABLE #FileSpaceStats;
@@ -107,6 +108,19 @@ END;
 CLOSE db_cursor;
 DEALLOCATE db_cursor;
 
-SELECT * FROM #FileSpaceStats ORDER BY UsedPct DESC, TotalSizeMB DESC;
+SELECT
+    N'Database File Growth' AS [Result_Set],
+    [DatabaseName] AS [Database_Name],
+    [LogicalName] AS [Logical_Name],
+    [PhysicalName] AS [Physical_Name],
+    [FileType] AS [File_Type],
+    [TotalSizeMB] AS [Total_Size_MB],
+    [SpaceUsedMB] AS [Space_Used_MB],
+    [FreeSpaceMB] AS [Free_Space_MB],
+    [AutogrowthSetting] AS [Autogrowth_Setting],
+    [UsedPct] AS [Used_Pct],
+    [SpaceStatus] AS [Space_Status]
+FROM #FileSpaceStats
+ORDER BY [UsedPct] DESC, [TotalSizeMB] DESC;
 DROP TABLE #FileSpaceStats;
 DROP TABLE #DbTargets;

@@ -24,6 +24,7 @@ Rollback / reset (maintenance window only):
     DBCC SQLPERF('sys.dm_os_wait_stats', CLEAR);
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 

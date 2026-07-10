@@ -8,6 +8,7 @@ Description:
 Action:  ALTER DATABASE ... SET statement_timeout = '30s'; (adjust per workload)
 
 Criticality: Medium
+Author:        Ravi Sharma
 ================================================================================
 */
 
@@ -22,5 +23,5 @@ FROM pg_settings
 WHERE name IN ('statement_timeout', 'lock_timeout', 'idle_in_transaction_session_timeout');
 
 -- Example (review before running):
--- ALTER DATABASE mydb SET statement_timeout = '60s';
--- ALTER DATABASE mydb SET idle_in_transaction_session_timeout = '5min';
+-- ALTER DATABASE userdb SET statement_timeout = '60s';
+-- ALTER DATABASE userdb SET idle_in_transaction_session_timeout = '5min';

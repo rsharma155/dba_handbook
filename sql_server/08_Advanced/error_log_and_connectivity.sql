@@ -10,6 +10,7 @@ Interpretation: Frequent "Login timeout" or "Connection drop" in ring buffers
                  points to network or client-side issues.
 Action: For error log entries showing I/O errors (823, 824, 825): run DBCC CHECKDB on affected databases immediately and check disk health. For connectivity issues (Login timeout, Connection drops): investigate network latency, firewall rules, and client driver configuration. For memory errors: run memory_diagnostics.sql to check PLE and memory pressure. Review the error log weekly as part of routine maintenance.
 Criticality:    High
+Author:        Ravi Sharma
 ================================================================================
 */
 

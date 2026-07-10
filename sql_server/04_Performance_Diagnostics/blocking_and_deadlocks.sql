@@ -10,6 +10,7 @@ Interpretation: Root blockers have a Blocking_Session_ID = 0. Target these first
                  Analyze Deadlock_XML to identify the specific resources contested.
 Action: For active blocking (Blocking_Session_ID > 0), evaluate terminating the head blocker only as a last resort: KILL <session_id>. Investigate the head blocker's query (Open Session_ID query in SSMS) to understand why it holds locks for prolonged periods. For recurring deadlocks, use the Deadlock_XML to identify the objects and lock modes in conflict, then redesign the access pattern.
 Criticality:    Critical
+Author:        Ravi Sharma
 ================================================================================
 */
 

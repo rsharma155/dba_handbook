@@ -15,6 +15,7 @@ Your tested hints:
 Use this script as a template — replace @SampleQuery with your problem query.
 
 Criticality: High — prevents wasted time on wrong tooling
+Author:        Ravi Sharma
 ================================================================================
 */
 

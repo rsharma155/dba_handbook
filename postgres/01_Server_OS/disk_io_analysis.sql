@@ -10,6 +10,7 @@ Action:  High heap_blks_read → missing indexes or insufficient cache.
          High idx_blks_read on small tables → review index usage.
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 

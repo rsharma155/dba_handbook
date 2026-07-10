@@ -7,6 +7,7 @@ Description:
     Prefer dba.sp_baseline_capture() when framework is deployed.
 
 Criticality: Medium
+Author:        Ravi Sharma
 ================================================================================
 */
 

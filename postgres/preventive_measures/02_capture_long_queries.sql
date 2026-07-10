@@ -8,6 +8,7 @@ Description:
 Prerequisite: preventive_measures/01_create_governance_schema.sql
 
 Criticality: Medium
+Author:        Ravi Sharma
 ================================================================================
 */
 

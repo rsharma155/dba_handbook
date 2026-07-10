@@ -23,6 +23,7 @@ Interpretation: If Estimated_Restore_Minutes > your RTO target, you have a
                 problem. Fix backup frequency or restore procedures.
 Action: If Estimated_Restore_Minutes exceeds your RTO, increase backup frequency or invest in faster storage. If broken log chains are detected, take a new full backup immediately to re-establish the chain. Save the generated RESTORE commands to a recovery document. Schedule this script weekly to verify DR readiness.
 Criticality:    High (run weekly, before DR drills)
+Author:        Ravi Sharma
 ================================================================================
 */
 

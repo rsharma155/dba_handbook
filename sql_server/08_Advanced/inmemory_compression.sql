@@ -24,6 +24,7 @@ Parameters:
     @MinScans - minimum scan count to consider (default 1000)
 
 Criticality: Low
+Author:        Ravi Sharma
 ================================================================================
 */
 
@@ -98,7 +99,16 @@ BEGIN
 END;
 
 PRINT N'--- Compression Candidates (uncompressed, scan-heavy) ---';
-SELECT * FROM #CompressionResults ORDER BY [Size_MB] DESC;
+SELECT
+    N'Compression Candidates' AS [Result_Set],
+    [Database] AS [Database_Name],
+    [Table] AS [Table_Name],
+    [Index] AS [Index_Name],
+    [Rows],
+    [Scans],
+    [Size_MB]
+FROM #CompressionResults
+ORDER BY [Size_MB] DESC;
 
 -- In-Memory OLTP (per database with memory-optimized objects)
 IF OBJECT_ID(N'tempdb..#XtpHealth') IS NOT NULL DROP TABLE #XtpHealth;
@@ -136,6 +146,13 @@ BEGIN
 END;
 
 PRINT N'--- In-Memory OLTP Table Memory ---';
-SELECT * FROM #XtpHealth ORDER BY [Memory_Used_KB] DESC;
+SELECT
+    N'In-Memory OLTP Table Memory' AS [Result_Set],
+    [Database] AS [Database_Name],
+    [Table] AS [Table_Name],
+    [Memory_Allocated_KB],
+    [Memory_Used_KB]
+FROM #XtpHealth
+ORDER BY [Memory_Used_KB] DESC;
 DROP TABLE #CompressionResults;
 DROP TABLE #XtpHealth;

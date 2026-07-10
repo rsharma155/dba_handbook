@@ -8,6 +8,7 @@ Description:
 Action:  VACUUM ANALYZE on flagged tables; adjust autovacuum storage parameters for hot tables.
 
 Criticality: Medium
+Author:        Ravi Sharma
 ================================================================================
 */
 

@@ -1,0 +1,35 @@
+{
+    "$comment": "Define your promotion pipeline here. Each environment is a named node. 'Promotions' lists the ordered Source->Target hops (e.g. Dev->Uat->Prod). Databases can be overridden per environment when names differ across tiers.",
+
+    "Environments": {
+        "Dev": {
+            "SqlInstance": "SQL-DEV-01",
+            "Auth": "Windows",
+            "Databases": [ "Sales", "HR" ]
+        },
+        "Uat": {
+            "SqlInstance": "SQL-UAT-01",
+            "Auth": "Windows",
+            "Databases": [ "Sales", "HR" ]
+        },
+        "Prod": {
+            "SqlInstance": "SQL-PROD-01",
+            "Auth": "Windows",
+            "Databases": [ "Sales", "HR" ]
+        }
+    },
+
+    "Promotions": [
+        { "Source": "Dev",  "Target": "Uat",  "IncludeDrops": false, "AutoApply": false },
+        { "Source": "Uat",  "Target": "Prod", "IncludeDrops": false, "AutoApply": false }
+    ],
+
+    "Options": {
+        "ExcludeSchema": [ "sys", "INFORMATION_SCHEMA", "guest", "staging" ],
+        "IncludeObjectType": [
+            "Schemas", "UserDefinedDataTypes", "UserDefinedTableTypes", "Sequences",
+            "Synonyms", "Tables", "Views", "StoredProcedures", "UserDefinedFunctions",
+            "DatabaseTriggers"
+        ]
+    }
+}

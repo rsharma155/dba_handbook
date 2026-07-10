@@ -27,6 +27,7 @@ Next if unforce/force does not help:
     Problem is likely waits not plan — 03_Elapsed_Time_Diagnostics/
 
 Criticality: High after in-place upgrade with Query Store ON
+Author:        Ravi Sharma
 ================================================================================
 */
 

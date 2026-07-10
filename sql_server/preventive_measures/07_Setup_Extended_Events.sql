@@ -4,7 +4,7 @@
 ================================================================================
 Purpose:    Extended Events for real-time capture (OPTIONAL - DMV monitoring works without this)
 Version:    2.0
-Author:     DBA Team
+Author:     Ravi Sharma
 Created:    2026-06-19
 Compatible: SQL Server 2016, 2017, 2019, 2022
 
