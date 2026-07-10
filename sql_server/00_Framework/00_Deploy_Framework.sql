@@ -13,7 +13,16 @@ Prerequisites:
 
 Usage:
     1. Update @TargetDB to your admin database name
-    2. Execute in SSMS / sqlcmd
+    2. Set @ExecuteDeployment = 1 and @AllowProductionChanges = 1
+    3. Execute in SSMS / sqlcmd
+
+Safety:
+  - Defaults to dry run; no configuration changes or deployment actions occur
+  - Requires both @ExecuteDeployment = 1 and @AllowProductionChanges = 1
+
+Persistence:
+  - Executes child scripts against @TargetDB when explicitly enabled
+  - Temporarily enables xp_cmdshell when needed and restores prior settings
 ==============================================================================
 */
 SET NOCOUNT ON;
@@ -21,13 +30,47 @@ SET NOCOUNT ON;
 DECLARE @TargetDB       SYSNAME         = N'master';   -- Change to your admin DB
 DECLARE @FrameworkDir   NVARCHAR(500)   = N'C:\Users\Admin\Documents\dba_essential_scripts\dba_essential_scripts\00_Framework';
 DECLARE @ServerName     SYSNAME         = @@SERVERNAME;
+DECLARE @ExecuteDeployment BIT          = 0;           -- 1 = execute deployment
+DECLARE @AllowProductionChanges BIT     = 0;           -- must also be 1 to mutate
 
--- Step 1: Enable xp_cmdshell if not already
-PRINT N'Enabling xp_cmdshell...';
-EXEC sp_configure 'show advanced options', 1;
-RECONFIGURE;
-EXEC sp_configure 'xp_cmdshell', 1;
-RECONFIGURE;
+PRINT N'=== DBA FRAMEWORK DEPLOYMENT ===';
+PRINT N'Mode: '
+    + CASE WHEN @ExecuteDeployment = 1 AND @AllowProductionChanges = 1 THEN N'EXECUTE'
+           ELSE N'DRY RUN - set @ExecuteDeployment = 1 and @AllowProductionChanges = 1 to apply' END;
+
+IF @ExecuteDeployment <> 1 OR @AllowProductionChanges <> 1
+BEGIN
+    PRINT N'DRY RUN complete. No action was taken; xp_cmdshell was not changed and no framework scripts were deployed.';
+    PRINT N'Target database would be: [' + @TargetDB + N']';
+    PRINT N'Framework directory would be: ' + @FrameworkDir;
+    RETURN;
+END;
+
+DECLARE @ShowAdvancedWasEnabled BIT = (
+    SELECT CAST(value_in_use AS BIT)
+    FROM sys.configurations
+    WHERE name = N'show advanced options'
+);
+DECLARE @XpCmdShellWasEnabled BIT = (
+    SELECT CAST(value_in_use AS BIT)
+    FROM sys.configurations
+    WHERE name = N'xp_cmdshell'
+);
+
+-- Step 1: Enable xp_cmdshell only for this deployment run when not already enabled
+IF @ShowAdvancedWasEnabled = 0
+BEGIN
+    PRINT N'Enabling show advanced options temporarily...';
+    EXEC sp_configure 'show advanced options', 1;
+    RECONFIGURE;
+END;
+
+IF @XpCmdShellWasEnabled = 0
+BEGIN
+    PRINT N'Enabling xp_cmdshell temporarily...';
+    EXEC sp_configure 'xp_cmdshell', 1;
+    RECONFIGURE;
+END;
 
 -- Step 2: Gather .sql files (sorted by name)
 IF OBJECT_ID(N'tempdb..#Files') IS NOT NULL DROP TABLE #Files;
@@ -80,6 +123,20 @@ END;
 
 -- Step 4: Cleanup
 DROP TABLE #Files;
+
+IF @XpCmdShellWasEnabled = 0
+BEGIN
+    PRINT N'Restoring xp_cmdshell to disabled...';
+    EXEC sp_configure 'xp_cmdshell', 0;
+    RECONFIGURE;
+END;
+
+IF @ShowAdvancedWasEnabled = 0
+BEGIN
+    PRINT N'Restoring show advanced options to disabled...';
+    EXEC sp_configure 'show advanced options', 0;
+    RECONFIGURE;
+END;
 
 PRINT N'';
 PRINT N'==============================================================================';

@@ -19,20 +19,33 @@ Architecture:
     - Alert generation
     - Session termination (if policy allows)
 
-Version:    2.0
+Version:    2.1
 Author:     DBA Team
 Created:    2026-06-19
 Updated:    2026-06-19 - Restructured as Layer 2 orchestrator
+            2026-07-09 - Added report-only orchestration and governance notes
 Compatible: SQL Server 2016, 2017, 2019, 2022
 
 Usage:      EXEC [dbo].[sp_Enforce_Query_Policy];
+            EXEC [dbo].[sp_Enforce_Query_Policy] @Report_Only = 1, @Verbose = 1;
             Scheduled via SQL Agent job every 60 seconds.
             This is the MAIN entry point for policy enforcement.
+
+Prerequisites:
+            - DBARepository tables from 01_Create_Governance_Database.sql.
+            - Check procedures from 02 through 05 must be deployed first.
+            - VIEW SERVER STATE permission for DMV-based checks.
 
 Notes:      - Calls all individual check procedures
             - Provides comprehensive reporting
             - Handles errors gracefully
             - Returns summary of all actions taken
+
+Safety/Persistence:
+            - Default mode preserves monitoring behavior and allows called
+              procedures to persist Query_History and Alert_Log rows.
+            - @Report_Only = 1 passes ad-hoc report mode to called procedures so
+              the policy pass returns current candidates without repository writes.
 ================================================================================
 */
 
@@ -49,7 +62,8 @@ ALTER PROCEDURE [dbo].[sp_Enforce_Query_Policy]
     @Run_Massive_DML_Check    BIT = 1,    -- Run massive DML check
     @Run_Blocked_App_Check    BIT = 1,    -- Run blocked applications check
     @Auto_Kill                BIT = 0,    -- Override to auto-kill all violations
-    @Verbose                  BIT = 0     -- Return detailed results
+    @Verbose                  BIT = 0,    -- Return detailed results
+    @Report_Only              BIT = 0     -- Return findings without repository writes
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -85,7 +99,8 @@ BEGIN
     BEGIN
         DECLARE @Capture_Start DATETIME2 = SYSDATETIME();
         BEGIN TRY
-            EXEC [dbo].[sp_Capture_Running_Queries];
+            EXEC [dbo].[sp_Capture_Running_Queries]
+                @Report_Only = @Report_Only;
             
             INSERT INTO #EnforcementSummary VALUES (
                 'Capture Running Queries', 'SUCCESS',
@@ -117,7 +132,8 @@ BEGIN
             EXEC [dbo].[sp_Check_Long_Running_Queries] 
                 @Auto_Kill = @Auto_Kill,
                 @Process_XE_Events = 1,
-                @Check_Live_DMV = 1;
+                @Check_Live_DMV = 1,
+                @Report_Only = @Report_Only;
 
             -- Capture results from the procedure (if available)
             -- For now, use placeholder values
@@ -158,7 +174,8 @@ BEGIN
             EXEC [dbo].[sp_Check_Massive_DML] 
                 @Auto_Kill = @Auto_Kill,
                 @Process_XE_Events = 1,
-                @Check_Live_DMV = 1;
+                @Check_Live_DMV = 1,
+                @Report_Only = @Report_Only;
 
             SET @DML_XE = 0;
             SET @DML_Live = 0;
@@ -194,7 +211,9 @@ BEGIN
         DECLARE @BlockedApp_Found INT, @BlockedApp_Killed INT;
         
         BEGIN TRY
-            EXEC [dbo].[sp_Check_Blocked_Applications] @Auto_Kill = @Auto_Kill;
+            EXEC [dbo].[sp_Check_Blocked_Applications]
+                @Auto_Kill = @Auto_Kill,
+                @Report_Only = @Report_Only;
 
             SET @BlockedApp_Found = 0;
             SET @BlockedApp_Killed = 0;
@@ -236,7 +255,16 @@ BEGIN
     -- Return detailed results if verbose mode
     IF @Verbose = 1
     BEGIN
-        SELECT * FROM #EnforcementSummary ORDER BY [Check_Name];
+        SELECT
+            [Check_Name],
+            [Status],
+            [XE_Events],
+            [Live_Checked],
+            [Actions_Taken],
+            [Duration_ms],
+            [Error_Message]
+        FROM #EnforcementSummary
+        ORDER BY [Check_Name];
     END
 
     -- Always return summary
@@ -246,7 +274,8 @@ BEGIN
         @Total_Duration_ms AS [Total_Duration_ms],
         @Total_Alerts_Generated AS [Total_Alerts_Generated],
         @Total_Sessions_Killed AS [Total_Sessions_Killed],
-        @Auto_Kill AS [Auto_Kill_Enabled];
+        @Auto_Kill AS [Auto_Kill_Enabled],
+        @Report_Only AS [Report_Only];
 
     DROP TABLE #EnforcementSummary;
 END

@@ -978,6 +978,7 @@ Every script header includes:
 | File | What it checks | Run when |
 |------|----------------|----------|
 | `database_files_growth.sql` | File size, used %, autogrowth settings (all user DBs) | Disk space alerts, autogrow events |
+| `database_size_inventory.sql` | Database size, compatibility, collation, log reuse wait, data/log file counts | Instance inventory, capacity review, migration planning |
 | `tempdb_configuration.sql` | File count, growth uniformity, PAGELATCH contention | TempDB contention, PAGELATCH waits |
 | `vlf_fragmentation.sql` | VLF count per database (2016+ via `dm_db_log_info`) | Slow log backups, recovery, AG sync |
 

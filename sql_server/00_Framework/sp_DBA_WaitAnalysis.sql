@@ -5,6 +5,13 @@ sp_DBA_WaitAnalysis — Top wait types with categories and recommendations
 Returns the top N wait types with percentage calculation, category mapping,
 and expert recommendations. Uses fn_DBA_ExcludedWaitTypes for filtering.
 
+Prerequisites:
+    VIEW SERVER STATE permission; dbo.fn_DBA_ExcludedWaitTypes must exist.
+Persistence:
+    Read-only; uses a session-scoped temp table only.
+Safety:
+    No data changes. Reads cumulative instance wait statistics since last reset.
+
 Usage:
     EXEC dbo.sp_DBA_WaitAnalysis;
     EXEC dbo.sp_DBA_WaitAnalysis @TopN = 30, @IncludeRecommendations = 1;
@@ -109,7 +116,18 @@ BEGIN
     FROM WaitCTE
     ORDER BY Total_Wait_S DESC;
 
-    SELECT * FROM #WaitResults ORDER BY Total_Wait_S DESC;
+    SELECT
+        Wait_Type,
+        Wait_Count,
+        Total_Wait_S,
+        Resource_Wait_S,
+        Signal_Wait_S,
+        Pct_Of_All_Waits,
+        Signal_Pct,
+        Wait_Category,
+        Recommendation
+    FROM #WaitResults
+    ORDER BY Total_Wait_S DESC;
     DROP TABLE #WaitResults;
 END;
 GO

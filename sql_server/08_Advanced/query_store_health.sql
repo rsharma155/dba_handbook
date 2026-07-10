@@ -102,7 +102,17 @@ END;
 CLOSE db_cursor;
 DEALLOCATE db_cursor;
 
-SELECT * FROM #QSStatus ORDER BY [Database_Name];
+SELECT
+    N'Query Store Status' AS [Result_Set],
+    [Database_Name],
+    [Actual_State],
+    [Desired_State],
+    [Current_Size_MB],
+    [Max_Size_MB],
+    [Capture_Mode],
+    [Health_Status]
+FROM #QSStatus
+ORDER BY [Database_Name];
 DROP TABLE #QSStatus;
 
 -- 2. True Plan Regressions
@@ -120,5 +130,11 @@ BEGIN
 END
 ELSE
 BEGIN
-    RAISERROR(N'Deploy 00_Framework/sp_DBA_QueryStoreRegressions.sql for true regression detection.', 16, 1);
+    SELECT
+        N'Query Store Regression Dependency' AS [Result_Set],
+        N'WARNING' AS [Severity],
+        N'dbo.sp_DBA_QueryStoreRegressions' AS [Dependency],
+        N'Not deployed' AS [Status],
+        N'True regression detection was skipped because the optional framework procedure is not available.' AS [Message],
+        N'Deploy 00_Framework/sp_DBA_QueryStoreRegressions.sql or run 00_Framework/00_Deploy_Framework.ps1, then re-run this script.' AS [How_To_Deploy];
 END;

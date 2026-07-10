@@ -10,7 +10,12 @@ using the delta query in the header.
 
 Delta comparison:
     WITH Latest AS (
-        SELECT TOP (2) *
+        SELECT TOP (2)
+            SnapshotId,
+            SnapshotUtc,
+            ServerName,
+            WaitType,
+            WaitTimeMs
         FROM dbo.BaselineSnapshot
         WHERE ServerName = @@SERVERNAME AND WaitType IS NOT NULL
         ORDER BY SnapshotUtc DESC

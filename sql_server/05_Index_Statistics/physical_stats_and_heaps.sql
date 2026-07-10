@@ -168,7 +168,18 @@ PRINT N'Online rebuild supported on this instance: '
     + CASE WHEN @SupportsOnlineRebuild = 1 THEN N'YES' ELSE N'NO' END;
 PRINT N'To apply maintenance: index_maintenance_online.sql (@ExecuteMaintenance = 0 first for dry run)';
 
-SELECT *
+SELECT
+    N'Physical Stats And Heaps' AS [Result_Set],
+    [Database_Name],
+    [Schema_Name],
+    [Table_Name],
+    [Index_Name],
+    [Index_Type],
+    [Page_Count],
+    [Forwarded_Records],
+    [Fragmentation_Pct],
+    [Maintenance_Action],
+    [Maintenance_Notes]
 FROM #PhysStats
 WHERE Maintenance_Action NOT IN (N'OK', N'SKIP_SMALL', N'SKIP_DISABLED', N'SKIP_NON_ROWSTORE')
 ORDER BY

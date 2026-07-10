@@ -5,6 +5,13 @@ sp_DBA_SecurityAudit — Comprehensive security audit across databases
 Checks for orphaned users, sysadmin members, trustworthy databases, guest
 access, password policies, and dangerous permissions.
 
+Prerequisites:
+    VIEW SERVER STATE and security catalog visibility; database access for targets.
+Persistence:
+    Read-only; uses session-scoped temp tables only.
+Safety:
+    No data changes. Reports security posture and may expose principal names.
+
 Usage:
     EXEC dbo.sp_DBA_SecurityAudit;
     EXEC dbo.sp_DBA_SecurityAudit @DatabaseList = N'SalesDB';
@@ -148,7 +155,14 @@ BEGIN
     DEALLOCATE db_cursor;
 
     PRINT '--- Orphaned Database Users ---';
-    SELECT * FROM #OrphanedUsers ORDER BY DatabaseName, UserName;
+    SELECT
+        DatabaseName,
+        UserName,
+        UserType,
+        CreateDate,
+        LastLogin
+    FROM #OrphanedUsers
+    ORDER BY DatabaseName, UserName;
 
     -- Guest access
     IF OBJECT_ID(N'tempdb..#GuestAccess') IS NOT NULL DROP TABLE #GuestAccess;
@@ -182,7 +196,12 @@ BEGIN
     DEALLOCATE guest_cursor;
 
     PRINT '--- Guest CONNECT Access ---';
-    SELECT * FROM #GuestAccess WHERE HasConnect = 1;
+    SELECT
+        DatabaseName,
+        HasConnect
+    FROM #GuestAccess
+    WHERE HasConnect = 1
+    ORDER BY DatabaseName;
 
     -- DB owners
     PRINT '--- Database Owners ---';

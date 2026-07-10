@@ -41,7 +41,13 @@ DECLARE @LookbackHours INT = 168;
 
 IF OBJECT_ID(N'dbo.sp_DBA_QueryStoreRegressions', N'P') IS NULL
 BEGIN
-    RAISERROR(N'Run 00_Framework/sp_DBA_QueryStoreRegressions.sql before this script.', 16, 1);
+    SELECT
+        N'Query Store Regression Dependency' AS [Result_Set],
+        N'WARNING' AS [Severity],
+        N'dbo.sp_DBA_QueryStoreRegressions' AS [Dependency],
+        N'Not deployed' AS [Status],
+        N'This ad-hoc regression report was skipped because the optional framework procedure is not available.' AS [Message],
+        N'Deploy 00_Framework/sp_DBA_QueryStoreRegressions.sql or run 00_Framework/00_Deploy_Framework.ps1, then re-run this script.' AS [How_To_Deploy];
     RETURN;
 END;
 

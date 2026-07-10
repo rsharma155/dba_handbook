@@ -12,6 +12,13 @@ and anti-patterns. Unlike a simple "top queries by CPU" script, this proc:
   4. Shows parameter sensitivity indicators (multiple plans for same query hash)
   5. Provides a human-readable "What To Do" column for each finding
 
+Prerequisites:
+    VIEW SERVER STATE permission; SHOWPLAN permission may be needed for plan XML.
+Persistence:
+    Read-only; uses a session-scoped temp table only.
+Safety:
+    No data changes. Reads plan cache contents, which can include query text.
+
 Usage:
     EXEC dbo.sp_DBA_PlanCacheAnalyzer;
     EXEC dbo.sp_DBA_PlanCacheAnalyzer @SortOrder = 'READS', @TopN = 20;
@@ -54,6 +61,45 @@ BEGIN
     ------------------------------------------------------------
     -- Core CTE: extract plan warnings and anti-patterns
     ------------------------------------------------------------
+    IF OBJECT_ID(N'tempdb..#PlanCacheResults') IS NOT NULL DROP TABLE #PlanCacheResults;
+    CREATE TABLE #PlanCacheResults (
+        plan_handle VARBINARY(64) NOT NULL,
+        sql_handle VARBINARY(64) NOT NULL,
+        statement_start_offset INT NOT NULL,
+        statement_end_offset INT NOT NULL,
+        Full_Query_Text NVARCHAR(MAX) NULL,
+        Statement_Text NVARCHAR(MAX) NULL,
+        Database_Name SYSNAME NULL,
+        Execution_Count BIGINT NOT NULL,
+        Total_CPU_ms BIGINT NOT NULL,
+        Avg_CPU_ms BIGINT NOT NULL,
+        Total_Logical_Reads BIGINT NOT NULL,
+        Avg_Logical_Reads BIGINT NOT NULL,
+        Total_Duration_ms BIGINT NOT NULL,
+        Avg_Duration_ms BIGINT NOT NULL,
+        Total_Physical_Reads BIGINT NOT NULL,
+        Total_Logical_Writes BIGINT NOT NULL,
+        Avg_Memory_Grant_MB BIGINT NULL,
+        Total_Spills_MB BIGINT NULL,
+        Plan_Generation_Num BIGINT NULL,
+        Plan_Created_At DATETIME NULL,
+        Last_Execution DATETIME NULL,
+        Query_Hash_Binary VARBINARY(32) NULL,
+        Query_Hash VARCHAR(16) NULL,
+        Query_Plan XML NULL,
+        Warnings VARCHAR(512) NULL,
+        Has_KeyLookup INT NULL,
+        Has_ImplicitConversion INT NULL,
+        Has_ExpensiveSort INT NULL,
+        Has_TableScan INT NULL,
+        Has_LargeIndexScan INT NULL,
+        Has_Cursor INT NULL,
+        Has_SpillToTempDB INT NULL,
+        Has_CartesianJoin INT NULL,
+        Is_PossibleParamSniff INT NULL,
+        Recommendation VARCHAR(4000) NULL
+    );
+
     WITH PlanWarnings AS (
         SELECT
             qs.plan_handle,
@@ -124,7 +170,30 @@ BEGIN
     ),
     Combined AS (
         SELECT
-            mq.*,
+            mq.plan_handle,
+            mq.sql_handle,
+            mq.statement_start_offset,
+            mq.statement_end_offset,
+            mq.Full_Query_Text,
+            mq.Statement_Text,
+            mq.Database_Name,
+            mq.Execution_Count,
+            mq.Total_CPU_ms,
+            mq.Avg_CPU_ms,
+            mq.Total_Logical_Reads,
+            mq.Avg_Logical_Reads,
+            mq.Total_Duration_ms,
+            mq.Avg_Duration_ms,
+            mq.Total_Physical_Reads,
+            mq.Total_Logical_Writes,
+            mq.Avg_Memory_Grant_MB,
+            mq.Total_Spills_MB,
+            mq.Plan_Generation_Num,
+            mq.Plan_Created_At,
+            mq.Last_Execution,
+            mq.Query_Hash_Binary,
+            mq.Query_Hash,
+            mq.Query_Plan,
             pw.Warnings,
             pw.Has_KeyLookup,
             pw.Has_ImplicitConversion,
@@ -155,31 +224,363 @@ BEGIN
             AND mq.sql_handle = pw.sql_handle
             AND mq.statement_start_offset = pw.statement_start_offset
     )
-    SELECT * INTO #PlanCacheResults FROM Combined;
+    INSERT INTO #PlanCacheResults (
+        plan_handle,
+        sql_handle,
+        statement_start_offset,
+        statement_end_offset,
+        Full_Query_Text,
+        Statement_Text,
+        Database_Name,
+        Execution_Count,
+        Total_CPU_ms,
+        Avg_CPU_ms,
+        Total_Logical_Reads,
+        Avg_Logical_Reads,
+        Total_Duration_ms,
+        Avg_Duration_ms,
+        Total_Physical_Reads,
+        Total_Logical_Writes,
+        Avg_Memory_Grant_MB,
+        Total_Spills_MB,
+        Plan_Generation_Num,
+        Plan_Created_At,
+        Last_Execution,
+        Query_Hash_Binary,
+        Query_Hash,
+        Query_Plan,
+        Warnings,
+        Has_KeyLookup,
+        Has_ImplicitConversion,
+        Has_ExpensiveSort,
+        Has_TableScan,
+        Has_LargeIndexScan,
+        Has_Cursor,
+        Has_SpillToTempDB,
+        Has_CartesianJoin,
+        Is_PossibleParamSniff,
+        Recommendation
+    )
+    SELECT
+        plan_handle,
+        sql_handle,
+        statement_start_offset,
+        statement_end_offset,
+        Full_Query_Text,
+        Statement_Text,
+        Database_Name,
+        Execution_Count,
+        Total_CPU_ms,
+        Avg_CPU_ms,
+        Total_Logical_Reads,
+        Avg_Logical_Reads,
+        Total_Duration_ms,
+        Avg_Duration_ms,
+        Total_Physical_Reads,
+        Total_Logical_Writes,
+        Avg_Memory_Grant_MB,
+        Total_Spills_MB,
+        Plan_Generation_Num,
+        Plan_Created_At,
+        Last_Execution,
+        Query_Hash_Binary,
+        Query_Hash,
+        Query_Plan,
+        Warnings,
+        Has_KeyLookup,
+        Has_ImplicitConversion,
+        Has_ExpensiveSort,
+        Has_TableScan,
+        Has_LargeIndexScan,
+        Has_Cursor,
+        Has_SpillToTempDB,
+        Has_CartesianJoin,
+        Is_PossibleParamSniff,
+        Recommendation
+    FROM Combined;
 
     ------------------------------------------------------------
     -- Output based on sort order
     ------------------------------------------------------------
     IF @SortOrder = 'CPU'
-        SELECT TOP (@TopN) * FROM #PlanCacheResults ORDER BY Total_CPU_ms DESC;
+        SELECT TOP (@TopN)
+            plan_handle,
+            sql_handle,
+            statement_start_offset,
+            statement_end_offset,
+            Full_Query_Text,
+            Statement_Text,
+            Database_Name,
+            Execution_Count,
+            Total_CPU_ms,
+            Avg_CPU_ms,
+            Total_Logical_Reads,
+            Avg_Logical_Reads,
+            Total_Duration_ms,
+            Avg_Duration_ms,
+            Total_Physical_Reads,
+            Total_Logical_Writes,
+            Avg_Memory_Grant_MB,
+            Total_Spills_MB,
+            Plan_Generation_Num,
+            Plan_Created_At,
+            Last_Execution,
+            Query_Hash_Binary,
+            Query_Hash,
+            Query_Plan,
+            Warnings,
+            Has_KeyLookup,
+            Has_ImplicitConversion,
+            Has_ExpensiveSort,
+            Has_TableScan,
+            Has_LargeIndexScan,
+            Has_Cursor,
+            Has_SpillToTempDB,
+            Has_CartesianJoin,
+            Is_PossibleParamSniff,
+            Recommendation
+        FROM #PlanCacheResults
+        ORDER BY Total_CPU_ms DESC;
 
     ELSE IF @SortOrder = 'READS'
-        SELECT TOP (@TopN) * FROM #PlanCacheResults ORDER BY Total_Logical_Reads DESC;
+        SELECT TOP (@TopN)
+            plan_handle,
+            sql_handle,
+            statement_start_offset,
+            statement_end_offset,
+            Full_Query_Text,
+            Statement_Text,
+            Database_Name,
+            Execution_Count,
+            Total_CPU_ms,
+            Avg_CPU_ms,
+            Total_Logical_Reads,
+            Avg_Logical_Reads,
+            Total_Duration_ms,
+            Avg_Duration_ms,
+            Total_Physical_Reads,
+            Total_Logical_Writes,
+            Avg_Memory_Grant_MB,
+            Total_Spills_MB,
+            Plan_Generation_Num,
+            Plan_Created_At,
+            Last_Execution,
+            Query_Hash_Binary,
+            Query_Hash,
+            Query_Plan,
+            Warnings,
+            Has_KeyLookup,
+            Has_ImplicitConversion,
+            Has_ExpensiveSort,
+            Has_TableScan,
+            Has_LargeIndexScan,
+            Has_Cursor,
+            Has_SpillToTempDB,
+            Has_CartesianJoin,
+            Is_PossibleParamSniff,
+            Recommendation
+        FROM #PlanCacheResults
+        ORDER BY Total_Logical_Reads DESC;
 
     ELSE IF @SortOrder = 'DURATION'
-        SELECT TOP (@TopN) * FROM #PlanCacheResults ORDER BY Total_Duration_ms DESC;
+        SELECT TOP (@TopN)
+            plan_handle,
+            sql_handle,
+            statement_start_offset,
+            statement_end_offset,
+            Full_Query_Text,
+            Statement_Text,
+            Database_Name,
+            Execution_Count,
+            Total_CPU_ms,
+            Avg_CPU_ms,
+            Total_Logical_Reads,
+            Avg_Logical_Reads,
+            Total_Duration_ms,
+            Avg_Duration_ms,
+            Total_Physical_Reads,
+            Total_Logical_Writes,
+            Avg_Memory_Grant_MB,
+            Total_Spills_MB,
+            Plan_Generation_Num,
+            Plan_Created_At,
+            Last_Execution,
+            Query_Hash_Binary,
+            Query_Hash,
+            Query_Plan,
+            Warnings,
+            Has_KeyLookup,
+            Has_ImplicitConversion,
+            Has_ExpensiveSort,
+            Has_TableScan,
+            Has_LargeIndexScan,
+            Has_Cursor,
+            Has_SpillToTempDB,
+            Has_CartesianJoin,
+            Is_PossibleParamSniff,
+            Recommendation
+        FROM #PlanCacheResults
+        ORDER BY Total_Duration_ms DESC;
 
     ELSE IF @SortOrder = 'MEMORY'
-        SELECT TOP (@TopN) * FROM #PlanCacheResults ORDER BY Avg_Memory_Grant_MB DESC;
+        SELECT TOP (@TopN)
+            plan_handle,
+            sql_handle,
+            statement_start_offset,
+            statement_end_offset,
+            Full_Query_Text,
+            Statement_Text,
+            Database_Name,
+            Execution_Count,
+            Total_CPU_ms,
+            Avg_CPU_ms,
+            Total_Logical_Reads,
+            Avg_Logical_Reads,
+            Total_Duration_ms,
+            Avg_Duration_ms,
+            Total_Physical_Reads,
+            Total_Logical_Writes,
+            Avg_Memory_Grant_MB,
+            Total_Spills_MB,
+            Plan_Generation_Num,
+            Plan_Created_At,
+            Last_Execution,
+            Query_Hash_Binary,
+            Query_Hash,
+            Query_Plan,
+            Warnings,
+            Has_KeyLookup,
+            Has_ImplicitConversion,
+            Has_ExpensiveSort,
+            Has_TableScan,
+            Has_LargeIndexScan,
+            Has_Cursor,
+            Has_SpillToTempDB,
+            Has_CartesianJoin,
+            Is_PossibleParamSniff,
+            Recommendation
+        FROM #PlanCacheResults
+        ORDER BY Avg_Memory_Grant_MB DESC;
 
     ELSE IF @SortOrder = 'EXECUTIONS'
-        SELECT TOP (@TopN) * FROM #PlanCacheResults ORDER BY Execution_Count DESC;
+        SELECT TOP (@TopN)
+            plan_handle,
+            sql_handle,
+            statement_start_offset,
+            statement_end_offset,
+            Full_Query_Text,
+            Statement_Text,
+            Database_Name,
+            Execution_Count,
+            Total_CPU_ms,
+            Avg_CPU_ms,
+            Total_Logical_Reads,
+            Avg_Logical_Reads,
+            Total_Duration_ms,
+            Avg_Duration_ms,
+            Total_Physical_Reads,
+            Total_Logical_Writes,
+            Avg_Memory_Grant_MB,
+            Total_Spills_MB,
+            Plan_Generation_Num,
+            Plan_Created_At,
+            Last_Execution,
+            Query_Hash_Binary,
+            Query_Hash,
+            Query_Plan,
+            Warnings,
+            Has_KeyLookup,
+            Has_ImplicitConversion,
+            Has_ExpensiveSort,
+            Has_TableScan,
+            Has_LargeIndexScan,
+            Has_Cursor,
+            Has_SpillToTempDB,
+            Has_CartesianJoin,
+            Is_PossibleParamSniff,
+            Recommendation
+        FROM #PlanCacheResults
+        ORDER BY Execution_Count DESC;
 
     ELSE IF @SortOrder = 'WRITES'
-        SELECT TOP (@TopN) * FROM #PlanCacheResults ORDER BY Total_Logical_Writes DESC;
+        SELECT TOP (@TopN)
+            plan_handle,
+            sql_handle,
+            statement_start_offset,
+            statement_end_offset,
+            Full_Query_Text,
+            Statement_Text,
+            Database_Name,
+            Execution_Count,
+            Total_CPU_ms,
+            Avg_CPU_ms,
+            Total_Logical_Reads,
+            Avg_Logical_Reads,
+            Total_Duration_ms,
+            Avg_Duration_ms,
+            Total_Physical_Reads,
+            Total_Logical_Writes,
+            Avg_Memory_Grant_MB,
+            Total_Spills_MB,
+            Plan_Generation_Num,
+            Plan_Created_At,
+            Last_Execution,
+            Query_Hash_Binary,
+            Query_Hash,
+            Query_Plan,
+            Warnings,
+            Has_KeyLookup,
+            Has_ImplicitConversion,
+            Has_ExpensiveSort,
+            Has_TableScan,
+            Has_LargeIndexScan,
+            Has_Cursor,
+            Has_SpillToTempDB,
+            Has_CartesianJoin,
+            Is_PossibleParamSniff,
+            Recommendation
+        FROM #PlanCacheResults
+        ORDER BY Total_Logical_Writes DESC;
 
     ELSE IF @SortOrder = 'REGRESSION'
-        SELECT TOP (@TopN) * FROM #PlanCacheResults ORDER BY Avg_Duration_ms DESC;
+        SELECT TOP (@TopN)
+            plan_handle,
+            sql_handle,
+            statement_start_offset,
+            statement_end_offset,
+            Full_Query_Text,
+            Statement_Text,
+            Database_Name,
+            Execution_Count,
+            Total_CPU_ms,
+            Avg_CPU_ms,
+            Total_Logical_Reads,
+            Avg_Logical_Reads,
+            Total_Duration_ms,
+            Avg_Duration_ms,
+            Total_Physical_Reads,
+            Total_Logical_Writes,
+            Avg_Memory_Grant_MB,
+            Total_Spills_MB,
+            Plan_Generation_Num,
+            Plan_Created_At,
+            Last_Execution,
+            Query_Hash_Binary,
+            Query_Hash,
+            Query_Plan,
+            Warnings,
+            Has_KeyLookup,
+            Has_ImplicitConversion,
+            Has_ExpensiveSort,
+            Has_TableScan,
+            Has_LargeIndexScan,
+            Has_Cursor,
+            Has_SpillToTempDB,
+            Has_CartesianJoin,
+            Is_PossibleParamSniff,
+            Recommendation
+        FROM #PlanCacheResults
+        ORDER BY Avg_Duration_ms DESC;
 
     ELSE IF @SortOrder = 'WARNING'
     BEGIN
@@ -210,7 +611,43 @@ BEGIN
         ORDER BY COUNT(*) DESC;
 
         -- Then show the top queries by warning
-        SELECT TOP (@TopN) * FROM #PlanCacheResults
+        SELECT TOP (@TopN)
+            plan_handle,
+            sql_handle,
+            statement_start_offset,
+            statement_end_offset,
+            Full_Query_Text,
+            Statement_Text,
+            Database_Name,
+            Execution_Count,
+            Total_CPU_ms,
+            Avg_CPU_ms,
+            Total_Logical_Reads,
+            Avg_Logical_Reads,
+            Total_Duration_ms,
+            Avg_Duration_ms,
+            Total_Physical_Reads,
+            Total_Logical_Writes,
+            Avg_Memory_Grant_MB,
+            Total_Spills_MB,
+            Plan_Generation_Num,
+            Plan_Created_At,
+            Last_Execution,
+            Query_Hash_Binary,
+            Query_Hash,
+            Query_Plan,
+            Warnings,
+            Has_KeyLookup,
+            Has_ImplicitConversion,
+            Has_ExpensiveSort,
+            Has_TableScan,
+            Has_LargeIndexScan,
+            Has_Cursor,
+            Has_SpillToTempDB,
+            Has_CartesianJoin,
+            Is_PossibleParamSniff,
+            Recommendation
+        FROM #PlanCacheResults
         WHERE Warnings <> ''
         ORDER BY Total_CPU_ms DESC;
     END;

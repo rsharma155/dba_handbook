@@ -31,7 +31,10 @@ SET NOCOUNT ON;
 DECLARE @DatabaseList NVARCHAR(MAX) = NULL;
 
 PRINT N'--- Trustworthy Databases ---';
-SELECT name AS [DB], is_trustworthy_on
+SELECT
+    N'Trustworthy Databases' AS [Result_Set],
+    name AS [Database_Name],
+    is_trustworthy_on AS [Is_Trustworthy_On]
 FROM sys.databases
 WHERE is_trustworthy_on = 1 AND database_id > 4;
 
@@ -107,11 +110,22 @@ BEGIN
     DROP TABLE #DbTargets;
 END;
 
-SELECT * FROM #SecurityAudit ORDER BY [Database], [Metric], [Principal];
+SELECT
+    N'Database Authorization Findings' AS [Result_Set],
+    [Database] AS [Database_Name],
+    [Metric],
+    [Principal],
+    [Type] AS [Principal_Type],
+    [Created] AS [Created_Date]
+FROM #SecurityAudit
+ORDER BY [Database], [Metric], [Principal];
 DROP TABLE #SecurityAudit;
 
 PRINT N'--- Sysadmins & SecurityAdmins ---';
-SELECT l.name AS [Login], r.name AS [Role]
+SELECT
+    N'Server Security Role Members' AS [Result_Set],
+    l.name AS [Login_Name],
+    r.name AS [Server_Role_Name]
 FROM sys.server_principals AS l
 INNER JOIN sys.server_role_members AS srm ON l.principal_id = srm.member_principal_id
 INNER JOIN sys.server_principals AS r ON srm.role_principal_id = r.principal_id

@@ -10,6 +10,10 @@ Importance:     CPU is a critical resource; high utilization or scheduling press
                 indicates CPU bottleneck. Runnable tasks > 10 is critical CPU starvation.
 Action:         If Historical CPU > 80%, identify top resource consumers via top_resource_queries.sql. If Signal Wait % > 25%, review MAXDOP and Cost Threshold for Parallelism settings via server_configuration_audit.sql. If Runnable Tasks > 10 sustained, CPU is oversubscribed — reduce parallelism or add cores.
 Criticality:    High
+Prerequisites:  VIEW SERVER STATE permission. Optional dbo.fn_DBA_ExcludedWaitTypes
+                in current database or DBARepository for centralized wait filtering.
+Persistence:    None. Uses only session-scoped #ExcludedWaitTypes when needed.
+Safety:         Read-only DMV/ring-buffer queries; no permanent objects are created.
 ================================================================================
 */
 
@@ -17,12 +21,68 @@ SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 SET NOCOUNT ON;
 SET QUOTED_IDENTIFIER ON;
 
-IF OBJECT_ID(N'dbo.fn_DBA_ExcludedWaitTypes', N'IF') IS NULL
-    AND NOT EXISTS (SELECT 1 FROM DBARepository.sys.objects WHERE name = N'fn_DBA_ExcludedWaitTypes' AND type = 'IF')
+IF OBJECT_ID(N'tempdb..#ExcludedWaitTypes', N'U') IS NOT NULL
+    DROP TABLE #ExcludedWaitTypes;
+
+CREATE TABLE #ExcludedWaitTypes
+(
+    wait_type NVARCHAR(60) NOT NULL PRIMARY KEY
+);
+
+DECLARE @CurrentDbExcludedWaitFunction INT = OBJECT_ID(N'dbo.fn_DBA_ExcludedWaitTypes', N'IF');
+DECLARE @DbaRepositoryExcludedWaitFunction INT = NULL;
+DECLARE @ExcludedWaitSource NVARCHAR(256) = N'Inline fallback';
+
+IF DB_ID(N'DBARepository') IS NOT NULL
 BEGIN
-    RAISERROR(N'Run 00_Framework/00_Deploy_Framework.ps1 (-ServerInstance . -Database master) to auto-deploy all required objects, or deploy fn_DBA_ExcludedWaitTypes manually.', 16, 1);
-    RETURN;
+    SET @DbaRepositoryExcludedWaitFunction = OBJECT_ID(N'DBARepository.dbo.fn_DBA_ExcludedWaitTypes', N'IF');
 END;
+
+IF @CurrentDbExcludedWaitFunction IS NOT NULL
+BEGIN
+    INSERT INTO #ExcludedWaitTypes (wait_type)
+    EXEC sys.sp_executesql N'SELECT DISTINCT wait_type FROM dbo.fn_DBA_ExcludedWaitTypes() WHERE wait_type IS NOT NULL;';
+
+    SET @ExcludedWaitSource = DB_NAME() + N'.dbo.fn_DBA_ExcludedWaitTypes';
+END
+ELSE IF @DbaRepositoryExcludedWaitFunction IS NOT NULL
+BEGIN
+    INSERT INTO #ExcludedWaitTypes (wait_type)
+    EXEC sys.sp_executesql N'SELECT DISTINCT wait_type FROM DBARepository.dbo.fn_DBA_ExcludedWaitTypes() WHERE wait_type IS NOT NULL;';
+
+    SET @ExcludedWaitSource = N'DBARepository.dbo.fn_DBA_ExcludedWaitTypes';
+END;
+
+IF NOT EXISTS (SELECT 1 FROM #ExcludedWaitTypes)
+BEGIN
+    INSERT INTO #ExcludedWaitTypes (wait_type)
+    VALUES
+        (N'BROKER_EVENTHANDLER'), (N'BROKER_RECEIVE_WAITFOR'), (N'BROKER_TASK_STOP'), (N'BROKER_TO_FLUSH'),
+        (N'BROKER_TRANSMITTER'), (N'CHECKPOINT_QUEUE'), (N'CHKPT'), (N'CLR_AUTO_EVENT'), (N'CLR_MANUAL_EVENT'),
+        (N'CLR_SEMAPHORE'), (N'DBMIRROR_DBM_EVENT'), (N'DBMIRROR_EVENTS_QUEUE'), (N'DBMIRROR_WORKER_QUEUE'),
+        (N'DBMIRRORING_CMD'), (N'DIRTY_PAGE_POLL'), (N'DIRTY_PAGE_TABLE_RELEASE'), (N'DISPATCHER_QUEUE_SEMAPHORE'), (N'EXECSYNC'),
+        (N'FSAGENT'), (N'FT_IFTS_SCHEDULER_IDLE_WAIT'), (N'FT_IFTS_SCHEDULER_VAL_KEEP_ALIVE'), (N'FT_IFTSHC_MUTEX'),
+        (N'HADR_FABRIC_CALLBACK_EVENT'), (N'HADR_FILESTREAM_IOMGR_IOCOMPLETION'),
+        (N'HADR_LOGCAPTURE_WAIT'), (N'HADR_NOTIFICATION_DEQUEUE'), (N'HADR_TIMER_TASK'), (N'HADR_WORK_QUEUE'),
+        (N'KSOURCE_WAKEUP'), (N'LAZYWRITER_SLEEP'), (N'LOGMGR_QUEUE'), (N'MEMORY_ALLOCATION_EXT'),
+        (N'ONDEMAND_TASK_QUEUE'), (N'PARALLEL_REDO_DRAIN_WORKER'), (N'PARALLEL_REDO_LOG_CACHE'),
+        (N'PARALLEL_REDO_TRAN_LIST'), (N'PARALLEL_REDO_WORKER_SYNC'), (N'PARALLEL_REDO_WORKER_WAIT_WORK'),
+        (N'PREEMPTIVE_OS_AUTHENTICATIONOPS'), (N'PREEMPTIVE_OS_FLUSHFILEBUFFERS'), (N'PREEMPTIVE_XE_GETTARGETSTATE'),
+        (N'PVS_PREALLOCATE'), (N'PWAIT_ALL_COMPONENTS_INITIALIZED'), (N'PWAIT_DIRECTLOGCONSUMER_GETNEXT'),
+        (N'QDS_ASYNC_QUEUE'), (N'QDS_CLEANUP_STALE_QUERIES_TASK_MAIN_LOOP_SLEEP'),
+        (N'QDS_PERSIST_TASK_MAIN_LOOP_SLEEP'), (N'QDS_SHUTDOWN_QUEUE'), (N'REDO_THREAD_PENDING_WORK'),
+        (N'REQUEST_FOR_DEADLOCK_SEARCH'), (N'RESOURCE_QUEUE'), (N'SERVER_IDLE_TASK'), (N'SERVER_IDLE_CHECK'),
+        (N'SLEEP_BPOOL_FLUSH'), (N'SLEEP_DBSTARTUP'), (N'SLEEP_DCOMSTARTUP'), (N'SLEEP_MASTERDBREADY'),
+        (N'SLEEP_MASTERMDREADY'), (N'SLEEP_MASTERUPGRADED'), (N'SLEEP_MSDBSTARTUP'), (N'SLEEP_SYSTEMTASK'),
+        (N'SLEEP_TASK'), (N'SLEEP_TEMPDBSTARTUP'), (N'SNI_HTTP_ACCEPT'), (N'SOS_WORK_DISPATCHER'),
+        (N'SP_SERVER_DIAGNOSTICS_SLEEP'), (N'SQLTRACE_BUFFER_FLUSH'), (N'SQLTRACE_INCREMENTAL_FLUSH_SLEEP'),
+        (N'SQLTRACE_WAIT_ENTRIES'), (N'WAIT_FOR_RESULTS'), (N'WAITFOR'), (N'WAITFOR_TASKSHUTDOWN'),
+        (N'WAIT_XTP_HOST_WAIT'), (N'WAIT_XTP_OFFLINE_CKPT_NEW_LOG'), (N'WAIT_XTP_CKPT_CLOSE'), (N'WAIT_XTP_RECOVERY'),
+        (N'XE_BUFFERMGR_ALLPROCESSED_EVENT'), (N'XE_DISPATCHER_JOIN'), (N'XE_DISPATCHER_WAIT'),
+        (N'XE_FILE_TARGET_TVF'), (N'XE_LIVE_TARGET_TVF'), (N'XE_TIMER_EVENT');
+END;
+
+PRINT N'Excluded wait filter source: ' + @ExcludedWaitSource;
 
 -- 1. Historical CPU Usage from System Health Ring Buffer
 DECLARE @ts_now BIGINT;
@@ -41,16 +101,18 @@ SELECT TOP (256)
          AS VARCHAR(1000)) AS [Metric_Context]
 FROM (
     SELECT 
-        record.value('(./Record/@id)[1]', 'int') AS record_id,
-        record.value('(./Record/SchedulerMonitorEvent/SystemHealth/SystemIdle)[1]', 'int') AS SystemIdle,
-        record.value('(./Record/SchedulerMonitorEvent/SystemHealth/ProcessUtilization)[1]', 'int') AS SQLProcessUtilization,
-        [timestamp]
+        rb_record.record.value('(./Record/@id)[1]', 'int') AS [Record_Id],
+        rb_record.record.value('(./Record/SchedulerMonitorEvent/SystemHealth/SystemIdle)[1]', 'int') AS [SystemIdle],
+        rb_record.record.value('(./Record/SchedulerMonitorEvent/SystemHealth/ProcessUtilization)[1]', 'int') AS [SQLProcessUtilization],
+        rb_record.[timestamp] AS [timestamp]
     FROM (
-        SELECT [timestamp], CONVERT(xml, record) AS [record]
-        FROM sys.dm_os_ring_buffers WITH (NOLOCK)
-        WHERE ring_buffer_type = N'RING_BUFFER_SCHEDULER_MONITOR'
-          AND record LIKE N'%<SystemHealth>%'
-    ) AS x
+        SELECT 
+            rb.[timestamp] AS [timestamp],
+            CONVERT(xml, rb.record) AS [record]
+        FROM sys.dm_os_ring_buffers AS rb WITH (NOLOCK)
+        WHERE rb.ring_buffer_type = N'RING_BUFFER_SCHEDULER_MONITOR'
+          AND rb.record LIKE N'%<SystemHealth>%'
+    ) AS rb_record
 ) AS y
 ORDER BY [Event_Time] DESC;
 
@@ -66,19 +128,19 @@ SELECT
          AS VARCHAR(1000)) AS [Metric_Context]
 FROM sys.dm_os_wait_stats
 WHERE wait_type NOT IN (
-    SELECT wait_type FROM dbo.fn_DBA_ExcludedWaitTypes()
+    SELECT excluded_waits.wait_type FROM #ExcludedWaitTypes AS excluded_waits
 );
 
 -- 3. Scheduler Pressure (Runnable Tasks)
 PRINT '--- Scheduler Health & Runnable Tasks ---';
 SELECT 
-    parent_node_id,
-    scheduler_id,
-    cpu_id,
-    status,
-    is_online,
-    runnable_tasks_count,
-    current_workers_count,
+    parent_node_id AS [Parent_Node_Id],
+    scheduler_id AS [Scheduler_Id],
+    cpu_id AS [Cpu_Id],
+    status AS [Status],
+    is_online AS [Is_Online],
+    runnable_tasks_count AS [Runnable_Tasks_Count],
+    current_workers_count AS [Current_Workers_Count],
     CASE 
         WHEN runnable_tasks_count > 10 THEN '🔴 CRITICAL: High runnable tasks indicating CPU starvation.'
         WHEN runnable_tasks_count > 0 THEN '🟡 WARNING: Threads are waiting for CPU cycles.'

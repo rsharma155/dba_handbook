@@ -5,6 +5,13 @@ sp_DBA_IndexReview — Comprehensive index health across databases
 Detects unused indexes, duplicate indexes, missing indexes, and fragmentation
 candidates across all user databases (or a specified list).
 
+Prerequisites:
+    VIEW SERVER STATE permission; database visibility/access for target databases.
+Persistence:
+    Read-only; uses session-scoped temp tables only.
+Safety:
+    No data changes. Fragmentation checks can be I/O intensive on large estates.
+
 Usage:
     EXEC dbo.sp_DBA_IndexReview;
     EXEC dbo.sp_DBA_IndexReview @DatabaseList = N'SalesDB,HRDB';
@@ -110,7 +117,22 @@ BEGIN
     CLOSE db_cursor;
     DEALLOCATE db_cursor;
 
-    SELECT TOP (@TopN) * FROM #UnusedIndexes ORDER BY UserUpdates DESC;
+    SELECT TOP (@TopN)
+        DatabaseName,
+        SchemaName,
+        TableName,
+        IndexName,
+        IndexType,
+        SizeMB,
+        UserUpdates,
+        UserSeeks,
+        UserScans,
+        UserLookups,
+        LastSeek,
+        LastScan,
+        LastUpdate
+    FROM #UnusedIndexes
+    ORDER BY UserUpdates DESC;
 
     -- Section 2: Missing Indexes (instance-wide DMV)
     IF @IncludeMissingIndexes = 1
@@ -182,7 +204,17 @@ BEGIN
         CLOSE frag_cursor;
         DEALLOCATE frag_cursor;
 
-        SELECT TOP (@TopN) * FROM #FragResults WHERE Recommendation <> 'OK' ORDER BY fragmentation_pct DESC;
+        SELECT TOP (@TopN)
+            DatabaseName,
+            SchemaName,
+            TableName,
+            IndexName,
+            fragmentation_pct AS FragmentationPct,
+            page_count AS PageCount,
+            Recommendation
+        FROM #FragResults
+        WHERE Recommendation <> 'OK'
+        ORDER BY fragmentation_pct DESC;
     END;
 
     DROP TABLE #IndexReviewDbs;

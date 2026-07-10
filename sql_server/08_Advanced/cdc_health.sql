@@ -31,7 +31,12 @@ DECLARE @DatabaseList NVARCHAR(MAX) = NULL;
 DECLARE @LatencyWarningSeconds INT = 60;
 
 PRINT N'--- CDC Enabled Databases ---';
-SELECT name AS [Database_Name], is_cdc_enabled, state_desc, recovery_model_desc
+SELECT
+    N'CDC Enabled Databases' AS [Result_Set],
+    name AS [Database_Name],
+    is_cdc_enabled AS [Is_CDC_Enabled],
+    state_desc AS [Database_State],
+    recovery_model_desc AS [Recovery_Model]
 FROM sys.databases
 WHERE is_cdc_enabled = 1;
 
@@ -109,5 +114,15 @@ BEGIN
     CLOSE db_cursor; DEALLOCATE db_cursor;
 END;
 
-SELECT * FROM #CDCHealth ORDER BY [Latest_Latency_S] DESC, [Database];
+SELECT
+    N'CDC Capture Health' AS [Result_Set],
+    [Database] AS [Database_Name],
+    [Capture_Instance],
+    [Source_Table],
+    [Captured_Columns],
+    [Latest_Latency_S] AS [Latest_Latency_Seconds],
+    [Latest_Scan_End],
+    [Latency_Status]
+FROM #CDCHealth
+ORDER BY [Latest_Latency_S] DESC, [Database];
 DROP TABLE #CDCHealth;

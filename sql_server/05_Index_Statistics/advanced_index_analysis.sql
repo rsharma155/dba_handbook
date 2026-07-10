@@ -113,10 +113,27 @@ BEGIN
 END;
 
 PRINT N'--- Index Contention & Blocking (Top 20) ---';
-SELECT TOP (20) * FROM #Contention ORDER BY (Row_Lock_Wait_ms + Page_Lock_Wait_ms) DESC;
+SELECT TOP (20)
+    N'Index Contention' AS [Result_Set],
+    [Database] AS [Database_Name],
+    [Table] AS [Table_Name],
+    [Index] AS [Index_Name],
+    [Row_Lock_Wait_ms],
+    [Page_Lock_Wait_ms],
+    ([Row_Lock_Wait_ms] + [Page_Lock_Wait_ms]) AS [Total_Lock_Wait_ms]
+FROM #Contention
+ORDER BY ([Row_Lock_Wait_ms] + [Page_Lock_Wait_ms]) DESC;
 
 PRINT N'--- Exact Duplicate Indexes (Wasteful) ---';
-SELECT * FROM #Duplicates ORDER BY [Database], [Table];
+SELECT
+    N'Exact Duplicate Indexes' AS [Result_Set],
+    [Database] AS [Database_Name],
+    [Table] AS [Table_Name],
+    [Index_1],
+    [Index_2],
+    [Column_List]
+FROM #Duplicates
+ORDER BY [Database], [Table];
 
 DROP TABLE #Contention;
 DROP TABLE #Duplicates;

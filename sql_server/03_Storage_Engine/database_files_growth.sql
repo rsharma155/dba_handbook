@@ -107,6 +107,19 @@ END;
 CLOSE db_cursor;
 DEALLOCATE db_cursor;
 
-SELECT * FROM #FileSpaceStats ORDER BY UsedPct DESC, TotalSizeMB DESC;
+SELECT
+    N'Database File Growth' AS [Result_Set],
+    [DatabaseName] AS [Database_Name],
+    [LogicalName] AS [Logical_Name],
+    [PhysicalName] AS [Physical_Name],
+    [FileType] AS [File_Type],
+    [TotalSizeMB] AS [Total_Size_MB],
+    [SpaceUsedMB] AS [Space_Used_MB],
+    [FreeSpaceMB] AS [Free_Space_MB],
+    [AutogrowthSetting] AS [Autogrowth_Setting],
+    [UsedPct] AS [Used_Pct],
+    [SpaceStatus] AS [Space_Status]
+FROM #FileSpaceStats
+ORDER BY [UsedPct] DESC, [TotalSizeMB] DESC;
 DROP TABLE #FileSpaceStats;
 DROP TABLE #DbTargets;

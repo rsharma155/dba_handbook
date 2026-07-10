@@ -6,6 +6,10 @@ Detects queries with multiple plans where the slowest recent plan is significant
 worse than the best-performing plan for the same query_id.
 
 Prerequisites: Query Store enabled per database (SQL Server 2016+).
+Persistence:
+    Read-only; uses session-scoped temp tables only.
+Safety:
+    No data changes. Scans Query Store runtime stats across selected databases.
 
 Usage:
     EXEC dbo.sp_DBA_QueryStoreRegressions;
@@ -259,7 +263,15 @@ BEGIN
         CLOSE forced_cursor;
         DEALLOCATE forced_cursor;
 
-        SELECT * FROM #QSForced ORDER BY Database_Name, Query_ID;
+        SELECT
+            Database_Name,
+            Query_ID,
+            Plan_ID,
+            Is_Forced,
+            Force_Failure_Count,
+            Query_Text
+        FROM #QSForced
+        ORDER BY Database_Name, Query_ID;
         DROP TABLE #QSForced;
     END;
 

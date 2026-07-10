@@ -1,0 +1,1862 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SQL Server Production Installation Checklist</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #1a1a2e;
+    --surface: #16213e;
+    --border: #2a2a4a;
+    --text: #e0e0e0;
+    --heading: #64ffda;
+    --accent: #0ea5e9;
+    --success: #4ade80;
+    --warn: #fbbf24;
+    --danger: #f87171;
+    --code-bg: #0d1117;
+    --code-text: #e0e0e0;
+    --muted: #9ca3af;
+    --card-bg: #16213e;
+    --progress-bg: #2a2a4a;
+    --progress-fill: #4ade80;
+    --toggle-bg: #2a2a4a;
+    --toggle-dot: #e0e0e0;
+    --checkbox-bg: #2a2a4a;
+    --checkbox-border: #4a4a6a;
+    --checkbox-checked: #4ade80;
+  }
+
+  body.light {
+    --bg: #f0f4f8;
+    --surface: #ffffff;
+    --border: #d1d5db;
+    --text: #1f2937;
+    --heading: #0d9488;
+    --accent: #2563eb;
+    --success: #16a34a;
+    --warn: #d97706;
+    --danger: #dc2626;
+    --code-bg: #f3f4f6;
+    --code-text: #1f2937;
+    --muted: #6b7280;
+    --card-bg: #ffffff;
+    --progress-bg: #e5e7eb;
+    --progress-fill: #16a34a;
+    --toggle-bg: #d1d5db;
+    --toggle-dot: #ffffff;
+    --checkbox-bg: #f9fafb;
+    --checkbox-border: #9ca3af;
+    --checkbox-checked: #16a34a;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 0;
+    transition: background 0.3s, color 0.3s;
+    min-height: 100vh;
+  }
+
+  .container { max-width: 1000px; margin: 0 auto; padding: 0 1rem 3rem; }
+
+  /* ---- Top Progress Bar ---- */
+  .progress-sticky {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0.6rem 1rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+    transition: background 0.3s;
+  }
+  .progress-sticky .bar-wrap {
+    flex: 1;
+    min-width: 120px;
+    height: 12px;
+    background: var(--progress-bg);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .progress-sticky .bar-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--progress-fill), #22d3ee);
+    border-radius: 6px;
+    transition: width 0.5s ease;
+  }
+  .progress-sticky .label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--text);
+  }
+  .progress-sticky .label span { color: var(--progress-fill); }
+
+  /* ---- Theme Toggle ---- */
+  .theme-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    user-select: none;
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-left: auto;
+  }
+  .theme-toggle .switch {
+    width: 40px;
+    height: 22px;
+    background: var(--toggle-bg);
+    border-radius: 11px;
+    position: relative;
+    transition: background 0.3s;
+  }
+  .theme-toggle .switch::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 16px;
+    height: 16px;
+    background: var(--toggle-dot);
+    border-radius: 50%;
+    transition: transform 0.3s;
+  }
+  body.light .theme-toggle .switch::after { transform: translateX(18px); }
+
+  h1 {
+    color: var(--heading);
+    font-size: 2rem;
+    border-bottom: 3px solid var(--heading);
+    padding-bottom: 0.5rem;
+    margin: 2rem 0 1rem;
+    text-align: center;
+  }
+
+  h2 {
+    color: var(--heading);
+    font-size: 1.4rem;
+    margin-top: 2.5rem;
+    margin-bottom: 1rem;
+    padding-left: 0.5rem;
+    border-left: 4px solid var(--accent);
+  }
+
+  h3 {
+    color: var(--accent);
+    font-size: 1.1rem;
+    margin-top: 1.5rem;
+    margin-bottom: 0.75rem;
+  }
+  h4 { color: var(--muted); font-size: 1rem; margin-top: 1rem; margin-bottom: 0.5rem; }
+  p { margin-bottom: 0.75rem; }
+  ul, ol { margin-bottom: 1rem; padding-left: 1.5rem; }
+  li { margin-bottom: 0.35rem; }
+
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    transition: background 0.3s, border-color 0.3s;
+  }
+  .card p:last-child { margin-bottom: 0; }
+  .card ul:last-child { margin-bottom: 0; }
+
+  code {
+    background: var(--code-bg);
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    font-size: 0.9em;
+    color: var(--code-text);
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem;
+    overflow-x: auto;
+    margin-bottom: 1rem;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    color: var(--code-text);
+  }
+  pre code { background: none; padding: 0; border-radius: 0; color: inherit; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1rem;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 0.6rem 0.8rem;
+    text-align: left;
+    transition: border-color 0.3s;
+  }
+  th { background: var(--surface); color: var(--heading); font-weight: 600; }
+  td { background: rgba(255,255,255,0.02); }
+  body.light td { background: transparent; }
+
+  .badge {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+  .badge-req { background: var(--danger); color: #000; }
+  .badge-rec { background: var(--accent); color: #000; }
+  .badge-opt { background: var(--muted); color: #000; }
+
+  .note {
+    background: rgba(14,165,233,0.1);
+    border-left: 4px solid var(--accent);
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    border-radius: 0 6px 6px 0;
+  }
+  .note-warn { background: rgba(251,191,36,0.1); border-left: 4px solid var(--warn); }
+  .note-danger { background: rgba(248,113,113,0.1); border-left: 4px solid var(--danger); }
+
+  .toc {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+  }
+  .toc h2 { margin-top: 0; border-left: none; text-align: center; }
+  .toc ul { columns: 2; list-style: none; padding: 0; }
+  .toc li { margin-bottom: 0.3rem; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; color: var(--heading); }
+
+  /* ---- Checkbox Items ---- */
+  .checklist-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    padding: 0.4rem 0;
+    cursor: pointer;
+  }
+  .checklist-item input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    min-width: 18px;
+    height: 18px;
+    border: 2px solid var(--checkbox-border);
+    border-radius: 4px;
+    background: var(--checkbox-bg);
+    cursor: pointer;
+    margin-top: 0.3rem;
+    position: relative;
+    flex-shrink: 0;
+    transition: background 0.2s, border-color 0.2s;
+  }
+  .checklist-item input[type="checkbox"]:checked {
+    background: var(--checkbox-checked);
+    border-color: var(--checkbox-checked);
+  }
+  .checklist-item input[type="checkbox"]:checked::after {
+    content: '✓';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .checklist-item .item-text { flex: 1; }
+  .checklist-item.checked .item-text { text-decoration: line-through; opacity: 0.55; }
+  .checklist-item .item-text strong { color: var(--heading); }
+
+  /* ---- Reset / Save Buttons ---- */
+  .btn-row {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.5rem;
+  }
+  .btn-row button {
+    padding: 0.5rem 1.2rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: background 0.2s, border-color 0.2s;
+  }
+  .btn-row button:hover { background: var(--border); }
+
+  @media (max-width: 600px) {
+    .toc ul { columns: 1; }
+    .container { padding: 0 0.5rem 2rem; }
+    td, th { padding: 0.4rem; }
+    .progress-sticky { padding: 0.4rem 0.6rem; gap: 0.5rem; }
+    .progress-sticky .bar-wrap { min-width: 80px; }
+    h1 { font-size: 1.5rem; }
+    .theme-toggle .label-text { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Sticky Progress Header -->
+<div class="progress-sticky">
+  <div class="label">Checklist: <span id="pctDisplaySticky">0%</span></div>
+  <div class="bar-wrap"><div class="bar-fill" id="barFillSticky"></div></div>
+  <div class="label" id="countDisplaySticky">0 / 0</div>
+  <div class="theme-toggle" id="themeToggle" title="Toggle light/dark mode">
+    <span class="label-text">☀ Dark</span>
+    <div class="switch"></div>
+  </div>
+</div>
+
+<div class="container">
+
+<h1>SQL Server Production Installation Checklist</h1>
+
+<div class="btn-row">
+  <button id="resetBtn">Reset All Checks</button>
+  <button id="saveBtn">Save Progress</button>
+</div>
+
+<div class="toc">
+<h2>Contents</h2>
+<ul>
+<li><a href="#sec1">1. Pre-Installation Architecture Planning</a></li>
+<li><a href="#sec2">2. Windows Server Preparation</a></li>
+<li><a href="#sec3">3. Windows Configuration</a></li>
+<li><a href="#sec4">4. Storage Design</a></li>
+<li><a href="#sec5">5. Storage Formatting</a></li>
+<li><a href="#sec6">6. Service Accounts &amp; Permissions</a></li>
+<li><a href="#sec7">7. SQL Server Installation</a></li>
+<li><a href="#sec8">8. Feature Selection</a></li>
+<li><a href="#sec9">9. Instance Configuration</a></li>
+<li><a href="#sec10">10. Service Accounts During Setup</a></li>
+<li><a href="#sec11">11. Database Engine Configuration</a></li>
+<li><a href="#sec12">12. Data Directory Configuration</a></li>
+<li><a href="#sec13">13. Post-Installation Configuration</a></li>
+<li><a href="#sec14">14. Memory Configuration</a></li>
+<li><a href="#sec15">15. MAXDOP Configuration</a></li>
+<li><a href="#sec16">16. Cost Threshold for Parallelism</a></li>
+<li><a href="#sec16a">16a. Max Worker Threads Verification</a></li>
+<li><a href="#sec17">17. TempDB Configuration</a></li>
+<li><a href="#sec18">18. Instant File Initialization</a></li>
+<li><a href="#sec19">19. Database File Configuration</a></li>
+<li><a href="#sec20">20. Transaction Log Configuration</a></li>
+<li><a href="#sec21">21. Recovery Model</a></li>
+<li><a href="#sec22">22. Backup Configuration</a></li>
+<li><a href="#sec23">23. Backup Compression &amp; Checksum</a></li>
+<li><a href="#sec24">24. Backup Folder Structure</a></li>
+<li><a href="#sec25">25. Index Statistics &amp; Database Maintenance</a></li>
+<li><a href="#sec26">26. SQL Agent Configuration</a></li>
+<li><a href="#sec26a">26a. Trace Flag 3226 (Error Log Sanitization)</a></li>
+<li><a href="#sec27">27. Security Hardening</a></li>
+<li><a href="#sec28">28. Network &amp; Protocol Configuration</a></li>
+<li><a href="#sec29">29. Database Mail</a></li>
+<li><a href="#sec30">30. SQL Alerts &amp; Operators</a></li>
+<li><a href="#sec31">31. Additional Security &amp; Surface Area</a></li>
+<li><a href="#sec32">32. Query Store</a></li>
+<li><a href="#sec33">33. Monitoring Baseline</a></li>
+<li><a href="#sec34">34. Page File Configuration</a></li>
+<li><a href="#sec35">35. Final Validation Checklist</a></li>
+<li><a href="#sec36">36. VM-Specific Optimization (for Virtualized SQL Server)</a></li>
+<li><a href="#sec37">37. Post-Migration Slow Server Debugging</a></li>
+</ul>
+</div>
+
+<!-- ============================================================ -->
+<section id="sec1">
+<h2>1. Pre-Installation Architecture Planning</h2>
+<div class="card">
+
+<p class="note"><strong>Goal:</strong> Treat the installation as a complete platform build, not just "install SQL Server and create databases". Every decision must support predictable performance, easy troubleshooting, workload separation, recoverability, security hardening, and operational readiness.</p>
+
+<h3>1.1 Server Role Decision</h3>
+
+<table>
+<tr><th>Component</th><th>Recommendation</th></tr>
+<tr><td>OS</td><td>Windows Server 2025 (Datacenter or Standard)</td></tr>
+<tr><td>SQL Version</td><td>SQL Server 2025 Enterprise (mission-critical) or Standard (departmental); align edition with feature requirements (Always On, 128+ core, etc.)</td></tr>
+<tr><td>Installation Type</td><td>Standalone instance unless Failover Cluster Instance (FCI) or Always On Availability Group is required</td></tr>
+<tr><td>Instance</td><td>Default instance preferred (MSSQLSERVER) — easier tooling, monitoring, connectivity</td></tr>
+<tr><td>Authentication</td><td>Windows + SQL Mixed Mode (required for legacy apps; use Windows Auth where possible)</td></tr>
+<tr><td>Service Accounts</td><td>Dedicated domain accounts or gMSA (Group Managed Service Accounts) — never use built-in accounts</td></tr>
+<tr><td>Storage</td><td>Separate volumes for OS, Data, Log, TempDB, Backups</td></tr>
+<tr><td>Backup Target</td><td>Separate storage (network share, blob, or dedicated volume) — never same volume as data</td></tr>
+<tr><td>Monitoring</td><td>Plan for monitoring from day one (DMV collection, perfmon, Query Store, Extended Events)</td></tr>
+</table>
+
+<h3>1.2 Pre-Planning Checklist</h3>
+
+<div class="checklist-item" data-id="1.2a">
+  <input type="checkbox"><span class="item-text">Confirm SQL edition and licensing model (Core vs. Server + CAL)</span>
+</div>
+<div class="checklist-item" data-id="1.2b">
+  <input type="checkbox"><span class="item-text">Document expected workload profile (OLTP, DW, mixed)</span>
+</div>
+<div class="checklist-item" data-id="1.2c">
+  <input type="checkbox"><span class="item-text">Confirm VM vs. physical — if VM, review hypervisor NUMA and vCPU pinning</span>
+</div>
+<div class="checklist-item" data-id="1.2d">
+  <input type="checkbox"><span class="item-text">Plan capacity: expected DB size, growth rate, IOPS, memory requirement</span>
+</div>
+<div class="checklist-item" data-id="1.2e">
+  <input type="checkbox"><span class="item-text">Determine High Availability / Disaster Recovery strategy <em>before</em> installing</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec2">
+<h2>2. Windows Server Preparation</h2>
+<div class="card">
+
+<h3>2.1 OS Patching (Before SQL Installation)</h3>
+<p>Install the latest Windows cumulative updates, security updates, firmware updates, storage controller drivers, and NIC drivers. Verify with <code>winver</code>.</p>
+
+<div class="checklist-item" data-id="2.1a">
+  <input type="checkbox"><span class="item-text">Windows cumulative updates installed</span>
+</div>
+<div class="checklist-item" data-id="2.1b">
+  <input type="checkbox"><span class="item-text">Security updates installed</span>
+</div>
+<div class="checklist-item" data-id="2.1c">
+  <input type="checkbox"><span class="item-text">Firmware updates applied</span>
+</div>
+<div class="checklist-item" data-id="2.1d">
+  <input type="checkbox"><span class="item-text">Storage controller drivers updated</span>
+</div>
+<div class="checklist-item" data-id="2.1e">
+  <input type="checkbox"><span class="item-text">NIC drivers updated</span>
+</div>
+
+<h3>2.2 Windows Features</h3>
+<p>Ensure required features are installed:</p>
+<div class="checklist-item" data-id="2.2a">
+  <input type="checkbox"><span class="item-text">.NET Framework (3.5 + 4.8 or later) installed</span>
+</div>
+<div class="checklist-item" data-id="2.2b">
+  <input type="checkbox"><span class="item-text">RSAT installed for remote administration</span>
+</div>
+<div class="checklist-item" data-id="2.2c">
+  <input type="checkbox"><span class="item-text">Windows Internal Database feature <strong>not</strong> installed</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec3">
+<h2>3. Windows Configuration</h2>
+<div class="card">
+
+<h3>3.1 Disable Unnecessary Services</h3>
+<div class="checklist-item" data-id="3.1a">
+  <input type="checkbox"><span class="item-text">Print Spooler disabled</span>
+</div>
+<div class="checklist-item" data-id="3.1b">
+  <input type="checkbox"><span class="item-text">Fax service disabled</span>
+</div>
+<div class="checklist-item" data-id="3.1c">
+  <input type="checkbox"><span class="item-text">Remote Registry disabled</span>
+</div>
+<div class="checklist-item" data-id="3.1d">
+  <input type="checkbox"><span class="item-text">Windows Error Reporting disabled (if crash dumps not needed)</span>
+</div>
+<div class="checklist-item" data-id="3.1e">
+  <input type="checkbox"><span class="item-text">Verified essential services running: Windows Time, DNS Client, RPC, Event Log</span>
+</div>
+
+<h3>3.2 Power Plan</h3>
+<p>Set Windows power plan to <strong>High Performance</strong>. The default <strong>Balanced</strong> plan allows the CPU to idle and throttle down cores, which causes erratic SQL Server latency — queries that should complete in milliseconds may sporadically take seconds when the CPU ramps back up.</p>
+
+<p>Activate via command line (more reliable than GUI for Server Core or remote management):</p>
+<pre><code>powercfg /list                       -- list all plans with their GUIDs
+powercfg /setactive &lt;GUID&gt;           -- e.g., 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c (High Perf)
+powercfg /getactivescheme            -- verify the active plan</code></pre>
+
+<p>For SQL Server VMs running on Hyper-V or VMware, also verify that the <strong>hypervisor host</strong> and the <strong>physical BIOS/UEFI</strong> have power management set to <strong>High Performance / Maximum Performance</strong>, not power-saving or balanced. Windows inside the guest cannot override a host or BIOS that is capping frequency.</p>
+
+<div class="checklist-item" data-id="3.2a">
+  <input type="checkbox"><span class="item-text">Windows power plan set to <strong>High Performance</strong> (use <code>powercfg /setactive</code> with GUID)</span>
+</div>
+<div class="checklist-item" data-id="3.2b">
+  <input type="checkbox"><span class="item-text">Hypervisor host power plan set to <strong>High Performance</strong> (not power-saving)</span>
+</div>
+<div class="checklist-item" data-id="3.2c">
+  <input type="checkbox"><span class="item-text">Physical BIOS/UEFI set to <strong>Maximum Performance</strong> or <strong>OS Controlled</strong></span>
+</div>
+
+<h3>3.3 Windows Defender / Antivirus Exclusions</h3>
+<div class="checklist-item" data-id="3.3a">
+  <input type="checkbox"><span class="item-text">SQL data path excluded (<code>D:\SQLData</code>)</span>
+</div>
+<div class="checklist-item" data-id="3.3b">
+  <input type="checkbox"><span class="item-text">SQL log path excluded (<code>E:\SQLLog</code>)</span>
+</div>
+<div class="checklist-item" data-id="3.3c">
+  <input type="checkbox"><span class="item-text">SQL TempDB path excluded (<code>F:\SQLTempDB</code>)</span>
+</div>
+<div class="checklist-item" data-id="3.3d">
+  <input type="checkbox"><span class="item-text">SQL Backup path excluded (<code>G:\SQLBackup</code>)</span>
+</div>
+<div class="checklist-item" data-id="3.3e">
+  <input type="checkbox"><span class="item-text">SQL Server binary path excluded (<code>C:\Program Files\Microsoft SQL Server</code>)</span>
+</div>
+<div class="checklist-item" data-id="3.3f">
+  <input type="checkbox"><span class="item-text">SQL file extensions excluded (<code>.mdf, .ldf, .ndf, .bak, .trn</code>)</span>
+</div>
+
+<h3>3.4 Windows Firewall</h3>
+<div class="checklist-item" data-id="3.4a">
+  <input type="checkbox"><span class="item-text">Firewall rule created: TCP port 1433 inbound</span>
+</div>
+<div class="checklist-item" data-id="3.4b">
+  <input type="checkbox"><span class="item-text">Firewall rule created: UDP port 1434 inbound (if named instance)</span>
+</div>
+
+<h3>3.5 Time Zone &amp; NTP</h3>
+<div class="checklist-item" data-id="3.5a">
+  <input type="checkbox"><span class="item-text">Time zone verified correct</span>
+</div>
+<div class="checklist-item" data-id="3.5b">
+  <input type="checkbox"><span class="item-text">Windows Time service syncing to reliable NTP source</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec4">
+<h2>4. Storage Design</h2>
+<div class="card">
+
+<p class="note-danger note"><strong>Critical:</strong> A production SQL Server must NOT have data, logs, or TempDB on the C: drive.</p>
+
+<table>
+<tr><th>Drive</th><th>Purpose</th></tr>
+<tr><td>C:</td><td>OS + Page File</td></tr>
+<tr><td>D:</td><td>Data files (.mdf, .ndf)</td></tr>
+<tr><td>E:</td><td>Transaction log files (.ldf)</td></tr>
+<tr><td>F:</td><td>TempDB (data + log)</td></tr>
+<tr><td>G:</td><td>Backups (dedicated, not same volume as data)</td></tr>
+</table>
+
+<div class="checklist-item" data-id="4a">
+  <input type="checkbox"><span class="item-text">Data, Log, TempDB, and Backups on separate volumes (not C:)</span>
+</div>
+<div class="checklist-item" data-id="4b">
+  <input type="checkbox"><span class="item-text">SQL Server binaries on C: drive (<code>C:\Program Files\Microsoft SQL Server</code>) — do NOT separate</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec5">
+<h2>5. Storage Formatting</h2>
+<div class="card">
+
+<h3>5.1 File System &amp; Allocation Unit</h3>
+<p>Use <strong>NTFS</strong> with 64 KB allocation unit size (65536 bytes) for all SQL volumes. On Windows Server 2022/2025, consider <strong>ReFS (Resilient File System)</strong> with 64 KB cluster size for Data and Backup volumes — ReFS leverages block cloning to accelerate file creation, instant file initialization for transaction logs, and storage-level checkpoints.</p>
+
+<div class="checklist-item" data-id="5a">
+  <input type="checkbox"><span class="item-text">All SQL volumes formatted with 64 KB allocation unit: NTFS (standard) or ReFS (modern, for Data/Backup volumes on WS 2022+)</span>
+</div>
+<div class="checklist-item" data-id="5b">
+  <input type="checkbox"><span class="item-text">Verified allocation unit size with <code>fsutil fsinfo ntfsinfo D:</code> → Bytes Per Cluster = 65536 (or ReFS equivalent)</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec6">
+<h2>6. Service Accounts &amp; Permissions</h2>
+<div class="card">
+
+<h3>6.1 Verify Accounts</h3>
+<div class="checklist-item" data-id="6.1a">
+  <input type="checkbox"><span class="item-text">SQL Engine service account (<code>DOMAIN\svc_sqlengine</code> or gMSA) created in AD</span>
+</div>
+<div class="checklist-item" data-id="6.1b">
+  <input type="checkbox"><span class="item-text">SQL Agent service account (<code>DOMAIN\svc_sqlagent</code> or gMSA) created in AD</span>
+</div>
+<div class="checklist-item" data-id="6.1c">
+  <input type="checkbox"><span class="item-text">No built-in accounts used (LocalSystem, Network Service, Administrator)</span>
+</div>
+
+<h3>6.2 Windows Permissions Granted to SQL Engine Account</h3>
+<p>Both permissions must be assigned via <strong>Local Security Policy (secpol.msc) → Local Policies → User Rights Assignment</strong>. The exact service account name (<code>DOMAIN\svc_sqlengine</code>) must be explicitly added — group membership inheritance is not sufficient.</p>
+<div class="checklist-item" data-id="6.2a">
+  <input type="checkbox"><span class="item-text"><strong>Perform Volume Maintenance Tasks</strong> granted via secpol.msc — exact account <code>DOMAIN\svc_sqlengine</code> added explicitly</span>
+</div>
+<div class="checklist-item" data-id="6.2b">
+  <input type="checkbox"><span class="item-text"><strong>Lock Pages in Memory</strong> granted via secpol.msc — exact account <code>DOMAIN\svc_sqlengine</code> added explicitly</span>
+</div>
+<div class="checklist-item" data-id="6.2c">
+  <input type="checkbox"><span class="item-text">DBA monitoring login/role created with minimum permissions — see repository <code>permission.sql</code></span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec7">
+<h2>7. SQL Server Installation</h2>
+<div class="card">
+
+<div class="checklist-item" data-id="7a">
+  <input type="checkbox"><span class="item-text">Setup launched: <strong>New SQL Server standalone installation</strong></span>
+</div>
+<div class="checklist-item" data-id="7b">
+  <input type="checkbox"><span class="item-text">Product key entered (matches license agreement)</span>
+</div>
+<div class="checklist-item" data-id="7c">
+  <input type="checkbox"><span class="item-text">CEIP (Customer Experience Improvement Program) unchecked for production</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec8">
+<h2>8. Feature Selection</h2>
+<div class="card">
+
+<table>
+<tr><th>Feature</th><th>Status</th></tr>
+<tr><td>✔ Database Engine Services</td><td><span class="badge badge-req">Required</span></td></tr>
+<tr><td>✔ SQL Server Replication</td><td><span class="badge badge-opt">If needed</span></td></tr>
+<tr><td>✔ Full-Text and Semantic Extractions for Search</td><td><span class="badge badge-opt">If needed</span></td></tr>
+<tr><td>✘ Analysis Services (SSAS)</td><td><span class="badge badge-opt">Separate server</span></td></tr>
+<tr><td>✘ Reporting Services (SSRS)</td><td><span class="badge badge-opt">Separate server</span></td></tr>
+<tr><td>✘ Integration Services (SSIS)</td><td><span class="badge badge-opt">Separate server if heavy ETL</span></td></tr>
+<tr><td>✘ Machine Learning Services (In-Database)</td><td><span class="badge badge-opt">Rarely on prod OLTP</span></td></tr>
+<tr><td>✘ PolyBase Query Service</td><td><span class="badge badge-opt">Only if needed</span></td></tr>
+</table>
+
+<div class="checklist-item" data-id="8a">
+  <input type="checkbox"><span class="item-text">Only required features selected (no SSAS/SSRS/SSIS on DB engine server)</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec9">
+<h2>9. Instance Configuration</h2>
+<div class="card">
+
+<div class="checklist-item" data-id="9a">
+  <input type="checkbox"><span class="item-text">Default instance (<strong>MSSQLSERVER</strong>) selected (or named instance if required)</span>
+</div>
+<div class="checklist-item" data-id="9b">
+  <input type="checkbox"><span class="item-text">Instance ID left as default</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec10">
+<h2>10. Service Accounts During Setup</h2>
+<div class="card">
+
+<table>
+<tr><th>Service</th><th>Account</th><th>Startup Type</th></tr>
+<tr><td>SQL Server Database Engine</td><td><code>DOMAIN\svc_sqlengine</code></td><td>Automatic</td></tr>
+<tr><td>SQL Server Agent</td><td><code>DOMAIN\svc_sqlagent</code></td><td>Automatic</td></tr>
+</table>
+
+<div class="checklist-item" data-id="10a">
+  <input type="checkbox"><span class="item-text">SQL Engine service account set to <code>DOMAIN\svc_sqlengine</code> (or gMSA)</span>
+</div>
+<div class="checklist-item" data-id="10b">
+  <input type="checkbox"><span class="item-text">SQL Agent service account set to <code>DOMAIN\svc_sqlagent</code></span>
+</div>
+<div class="checklist-item" data-id="10c">
+  <input type="checkbox"><span class="item-text">Both services set to <strong>Automatic</strong> startup</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec11">
+<h2>11. Database Engine Configuration</h2>
+<div class="card">
+
+<div class="checklist-item" data-id="11a">
+  <input type="checkbox"><span class="item-text">Authentication mode set to <strong>Mixed Mode</strong></span>
+</div>
+<div class="checklist-item" data-id="11b">
+  <input type="checkbox"><span class="item-text"><code>DOMAIN\DBA_Group</code> added as SQL Server administrator</span>
+</div>
+<div class="checklist-item" data-id="11c">
+  <input type="checkbox"><span class="item-text">sa password set to a complex password</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec12">
+<h2>12. Data Directory Configuration</h2>
+<div class="card">
+
+<p class="note-danger note"><strong>VERY IMPORTANT.</strong> Change defaults on the <strong>Data Directories</strong> tab during setup.</p>
+
+<div class="checklist-item" data-id="12a">
+  <input type="checkbox"><span class="item-text">Data root directory → <code>D:\SQLData</code></span>
+</div>
+<div class="checklist-item" data-id="12b">
+  <input type="checkbox"><span class="item-text">Log directory → <code>E:\SQLLog</code></span>
+</div>
+<div class="checklist-item" data-id="12c">
+  <input type="checkbox"><span class="item-text">Backup directory → <code>G:\SQLBackup</code></span>
+</div>
+<div class="checklist-item" data-id="12d">
+  <input type="checkbox"><span class="item-text">TempDB directory → <code>F:\SQLTempDB</code></span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec13">
+<h2>13. Post-Installation</h2>
+<div class="card">
+
+<div class="checklist-item" data-id="13a">
+  <input type="checkbox"><span class="item-text">Connected to instance via SSMS or sqlcmd to verify installation</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec14">
+<h2>14. Memory Configuration</h2>
+<div class="card">
+
+<p>SQL Server will consume all available memory unless constrained. Always set <strong>max server memory</strong>.</p>
+
+<table>
+<tr><th>Server RAM</th><th>Reserve for OS</th><th>SQL Max Server Memory</th></tr>
+<tr><td>32 GB</td><td>4 GB</td><td>28 GB (28672 MB)</td></tr>
+<tr><td>64 GB</td><td>8 GB</td><td>56 GB (57344 MB)</td></tr>
+<tr><td>128 GB</td><td>16 GB</td><td>112 GB (114688 MB)</td></tr>
+<tr><td>256 GB</td><td>20–24 GB</td><td>236 GB (~240000 MB)</td></tr>
+<tr><td>512 GB+</td><td>5–10% of total</td><td>Remainder</td></tr>
+</table>
+
+<pre><code>-- Example: 64 GB RAM server — reserve 8 GB for OS
+EXEC sp_configure 'show advanced options', 1;
+RECONFIGURE;
+EXEC sp_configure 'max server memory (MB)', 57344;  -- 56 GB
+RECONFIGURE;
+
+-- Verify
+SELECT name, value_in_use FROM sys.configurations
+WHERE name = N'max server memory (MB)';</code></pre>
+
+<div class="checklist-item" data-id="14a">
+  <input type="checkbox"><span class="item-text">Max server memory configured (leaves enough for OS, AV, monitoring agents)</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec15">
+<h2>15. MAXDOP Configuration</h2>
+<div class="card">
+
+<div class="checklist-item" data-id="15a">
+  <input type="checkbox"><span class="item-text">CPU count checked via <code>SELECT cpu_count FROM sys.dm_os_sys_info</code></span>
+</div>
+<p>Follow Microsoft guidance (KB 2806535). For NUMA systems, also consider <code>max degree of parallelism</code> together with <code>cost threshold for parallelism</code>.</p>
+
+<pre><code>-- Check logical CPUs
+SELECT cpu_count, hyperthread_ratio FROM sys.dm_os_sys_info;
+
+-- Set MAXDOP (example: 8-core server or cap at 8 for larger hosts)
+EXEC sp_configure 'show advanced options', 1;
+RECONFIGURE;
+EXEC sp_configure 'max degree of parallelism', 8;
+RECONFIGURE;</code></pre>
+
+<div class="checklist-item" data-id="15b">
+  <input type="checkbox"><span class="item-text">MAXDOP configured: ≤8 cores → same as cores; &gt;8 cores → 8 (or 16 for DW)</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec16">
+<h2>16. Cost Threshold for Parallelism</h2>
+<div class="card">
+
+<div class="checklist-item" data-id="16a">
+  <input type="checkbox"><span class="item-text">Cost threshold for parallelism changed from 5 to <strong>50</strong> (baseline)</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec16a">
+<h2>16a. Max Worker Threads Verification</h2>
+<div class="card">
+
+<p>SQL Server auto-configures max worker threads based on CPU count. For high-core production servers with heavily concurrent workloads, the default can sometimes lead to thread starvation before SQL scales. Evaluate and adjust if needed.</p>
+
+<pre><code>-- Check current setting
+SELECT max_workers_count FROM sys.dm_os_sys_info;
+
+-- Current configured value
+EXEC sp_configure 'max worker threads';</code></pre>
+
+<p>The default formula (SQL 2016+): <code>256 + ((cpu_count - 4) * 8)</code> for x64 systems. For servers with &gt; 64 cores, verify the calculated value matches your workload concurrency. Only adjust upward if you observe thread waits (<code>THREADPOOL</code> wait type) under normal load.</p>
+
+<div class="checklist-item" data-id="16a1">
+  <input type="checkbox"><span class="item-text">Max worker threads verified: <code>sys.dm_os_sys_info.max_workers_count</code> matches workload requirements</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec17">
+<h2>17. TempDB Configuration</h2>
+<div class="card">
+
+<table>
+<tr><th>Logical Cores</th><th>TempDB Files</th></tr>
+<tr><td>≤ 8</td><td>4–8</td></tr>
+<tr><td>16</td><td>8</td></tr>
+<tr><td>32+</td><td>8 (scale up only if contention detected)</td></tr>
+</table>
+
+<div class="checklist-item" data-id="17a">
+  <input type="checkbox"><span class="item-text">TempDB data files count set appropriately (max 8 initially)</span>
+</div>
+<div class="checklist-item" data-id="17b">
+  <input type="checkbox"><span class="item-text">All TempDB data files are <strong>equal initial size</strong> (e.g., 8 GB each)</span>
+</div>
+<div class="checklist-item" data-id="17c">
+  <input type="checkbox"><span class="item-text">TempDB growth set to <strong>fixed MB</strong> (e.g., 512 MB), not percent</span>
+</div>
+<div class="checklist-item" data-id="17d">
+  <input type="checkbox"><span class="item-text">TempDB log file sized appropriately and on same volume (F:)</span>
+</div>
+
+<h3>17.1 Verify TempDB Configuration (Post-Install or Post-Migration)</h3>
+<pre><code>-- File count, sizes, and growth uniformity
+SELECT name, type_desc, size * 8 / 1024 AS size_mb,
+       growth, is_percent_growth, physical_name
+FROM sys.master_files
+WHERE database_id = 2
+ORDER BY type_desc, file_id;
+
+-- Active TempDB PAGELATCH contention (allocation pages)
+SELECT session_id, wait_type, wait_duration_ms, resource_description
+FROM sys.dm_os_waiting_tasks
+WHERE wait_type LIKE 'PAGELATCH_%' AND resource_description LIKE '2:%';</code></pre>
+
+<p class="note-warn note"><strong>Remediation:</strong> Add equal-sized data files (up to 8) on a dedicated fast volume. Set identical <strong>fixed MB</strong> growth on every file. Pre-size files to expected peak — autogrowth during peak load causes PAGELATCH waits. Restart is <em>not</em> required after adding TempDB files.</p>
+
+<pre><code>-- Example: add a TempDB data file (repeat until file count matches target)
+ALTER DATABASE tempdb ADD FILE (
+    NAME = tempdev3,
+    FILENAME = N'F:\SQLTempDB\tempdev3.ndf',
+    SIZE = 8192MB,
+    FILEGROWTH = 512MB
+);</code></pre>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec18">
+<h2>18. Instant File Initialization (IFI)</h2>
+<div class="card">
+
+<div class="checklist-item" data-id="18a">
+  <input type="checkbox"><span class="item-text"><strong>Perform Volume Maintenance Tasks</strong> granted to SQL Engine account</span>
+</div>
+<div class="checklist-item" data-id="18b">
+  <input type="checkbox"><span class="item-text">SQL Server restarted after granting permission</span>
+</div>
+<div class="checklist-item" data-id="18c">
+  <input type="checkbox"><span class="item-text">IFI verified: <code>sys.dm_server_services.instant_file_initialization_enabled</code> = 1</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec19">
+<h2>19. Database File Configuration</h2>
+<div class="card">
+
+<div class="checklist-item" data-id="19a">
+  <input type="checkbox"><span class="item-text">Data file initial size = planned allocation (not tiny default)</span>
+</div>
+<div class="checklist-item" data-id="19b">
+  <input type="checkbox"><span class="item-text">Data file growth = <strong>fixed MB</strong> (e.g., 1024 MB), not percent</span>
+</div>
+<div class="checklist-item" data-id="19c">
+  <input type="checkbox"><span class="item-text">Log file growth = <strong>fixed MB</strong> (e.g., 2048 MB), not percent</span>
+</div>
+<p class="note-warn note" style="margin:-0.25rem 0 0.5rem 2.4rem;"><strong>Multi-TB databases:</strong> For databases over 500 GB, set autogrowth to at least 2048–4096 MB. A small autogrowth (e.g., 100 MB) on a large database causes excessive VLF fragmentation and frequent growth events during heavy data loads, leading to IO stalls.</p>
+<div class="checklist-item" data-id="19d">
+  <input type="checkbox"><span class="item-text"><strong>Auto Shrink</strong> OFF on all user databases</span>
+</div>
+<div class="checklist-item" data-id="19e">
+  <input type="checkbox"><span class="item-text"><strong>Auto Close</strong> OFF on all user databases</span>
+</div>
+<div class="checklist-item" data-id="19f">
+  <input type="checkbox"><span class="item-text"><strong>Page Verify</strong> = CHECKSUM on all databases</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec20">
+<h2>20. Transaction Log Configuration</h2>
+<div class="card">
+
+<div class="checklist-item" data-id="20a">
+  <input type="checkbox"><span class="item-text">Log file initial sized appropriately (e.g., 10% of DB size, min 10 GB baseline)</span>
+</div>
+<div class="checklist-item" data-id="20b">
+  <input type="checkbox"><span class="item-text">Log file growth set to fixed MB (1024–4096 MB depending on DB size)</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec21">
+<h2>21. Recovery Model</h2>
+<div class="card">
+
+<div class="checklist-item" data-id="21a">
+  <input type="checkbox"><span class="item-text">All production databases set to <strong>FULL</strong> recovery model</span>
+</div>
+<div class="checklist-item" data-id="21b">
+  <input type="checkbox"><span class="item-text">Non-prod databases (staging, dev, reporting) verified in appropriate model</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec22">
+<h2>22. Backup Configuration</h2>
+<div class="card">
+
+<table>
+<tr><th>Type</th><th>Frequency</th><th>Retention</th></tr>
+<tr><td>Full Backup</td><td>Daily (e.g., 12:00 AM)</td><td>30 days (adjust per policy)</td></tr>
+<tr><td>Differential Backup</td><td>Every 4–6 hours</td><td>7–14 days</td></tr>
+<tr><td>Transaction Log Backup</td><td>Every 5–15 minutes</td><td>Until full + diff chain break</td></tr>
+</table>
+
+<div class="checklist-item" data-id="22a">
+  <input type="checkbox"><span class="item-text">Full backup job created and tested</span>
+</div>
+<div class="checklist-item" data-id="22b">
+  <input type="checkbox"><span class="item-text">Differential backup job created</span>
+</div>
+<div class="checklist-item" data-id="22c">
+  <input type="checkbox"><span class="item-text">Transaction log backup job created (every 5–15 min)</span>
+</div>
+<div class="checklist-item" data-id="22d">
+  <input type="checkbox"><span class="item-text">System database backups (master, model, msdb) configured</span>
+</div>
+<div class="checklist-item" data-id="22e">
+  <input type="checkbox"><span class="item-text">Full restore tested on a separate instance</span>
+</div>
+<div class="checklist-item" data-id="22f">
+  <input type="checkbox"><span class="item-text">Point-in-time restore verified</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec23">
+<h2>23. Backup Compression &amp; Checksum</h2>
+<div class="card">
+
+<div class="checklist-item" data-id="23a">
+  <input type="checkbox"><span class="item-text"><code>backup compression default</code> enabled (set to 1)</span>
+</div>
+<div class="checklist-item" data-id="23b">
+  <input type="checkbox"><span class="item-text"><code>backup checksum default</code> enabled (set to 1) — SQL 2022+</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec24">
+<h2>24. Backup Folder Structure</h2>
+<div class="card">
+
+<div class="checklist-item" data-id="24a">
+  <input type="checkbox"><span class="item-text">Backup folder structure created: <code>G:\SQLBackup\FULL</code>, <code>DIFF</code>, <code>LOG</code>, <code>SYSTEM</code></span>
+</div>
+<div class="checklist-item" data-id="24b">
+  <input type="checkbox"><span class="item-text">Consistent naming convention defined and documented</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec25">
+<h2>25. Index Statistics &amp; Database Maintenance</h2>
+<div class="card">
+
+<h3>25.1 Ola Hallengren Maintenance Solution</h3>
+<div class="checklist-item" data-id="25a">
+  <input type="checkbox"><span class="item-text">Ola Hallengren Maintenance Solution deployed</span>
+</div>
+<div class="checklist-item" data-id="25b">
+  <input type="checkbox"><span class="item-text">Index maintenance job configured (defrag / reorganize) with off-peak schedule</span>
+</div>
+<div class="checklist-item" data-id="25c">
+  <input type="checkbox"><span class="item-text">Statistics update job configured</span>
+</div>
+<div class="checklist-item" data-id="25d">
+  <input type="checkbox"><span class="item-text">Integrity check job configured (DBCC CHECKDB)</span>
+</div>
+<div class="checklist-item" data-id="25e">
+  <input type="checkbox"><span class="item-text">Backup jobs integrated with Ola solution (or using native backup jobs)</span>
+</div>
+
+<h3>25.2 Index Fragmentation — Detect High Fragmentation</h3>
+<p>After migration or bulk load, index fragmentation often spikes. Use Microsoft thresholds: <strong>5–30%</strong> → reorganize; <strong>&gt;30%</strong> → rebuild (online when edition supports it). Skip small indexes (&lt;1000 pages).</p>
+
+<pre><code>-- Fragmentation report across current database (run per DB or use physical_stats_and_heaps.sql)
+SELECT
+    s.name AS schema_name,
+    t.name AS table_name,
+    i.name AS index_name,
+    ps.page_count,
+    ps.avg_fragmentation_in_percent,
+    CASE
+        WHEN ps.avg_fragmentation_in_percent &gt; 30 THEN 'REBUILD'
+        WHEN ps.avg_fragmentation_in_percent &gt; 5  THEN 'REORGANIZE'
+        ELSE 'OK'
+    END AS recommended_action
+FROM sys.dm_db_index_physical_stats(DB_ID(), NULL, NULL, NULL, N'LIMITED') AS ps
+INNER JOIN sys.tables AS t ON ps.object_id = t.object_id
+INNER JOIN sys.schemas AS s ON t.schema_id = s.schema_id
+INNER JOIN sys.indexes AS i ON ps.object_id = i.object_id AND ps.index_id = i.index_id
+WHERE ps.index_id &gt; 0
+  AND ps.page_count &gt;= 1000
+  AND ps.avg_fragmentation_in_percent &gt; 5
+ORDER BY ps.avg_fragmentation_in_percent DESC;</code></pre>
+
+<p class="note">Repository script: <code>05_Index_Statistics/physical_stats_and_heaps.sql</code> (read-only report). To apply maintenance online: <code>05_Index_Statistics/index_maintenance_online.sql</code> — set <code>@ExecuteMaintenance = 0</code> first for a dry run.</p>
+
+<h3>25.3 Remediate Fragmentation (Online)</h3>
+<pre><code>-- Reorganize (5–30% fragmentation, always online)
+ALTER INDEX [IX_OrderDate] ON [dbo].[Orders]
+    REORGANIZE WITH (LOB_COMPACTION = ON);
+
+-- Rebuild (&gt;30% fragmentation — Enterprise/Developer/Azure for ONLINE)
+ALTER INDEX [IX_OrderDate] ON [dbo].[Orders]
+    REBUILD PARTITION = ALL WITH (
+        ONLINE = ON,
+        SORT_IN_TEMPDB = ON,
+        WAIT_AT_LOW_PRIORITY (MAX_DURATION = 0 MINUTES, ABORT_AFTER_WAIT = BLOCKERS)
+    );</code></pre>
+
+<h3>25.4 Statistics Freshness — Detect Outdated Stats</h3>
+<p>Stale statistics cause bad cardinality estimates and plan regressions after migration. Flag stats where modifications exceed <strong>20–30%</strong> of row count since last update.</p>
+
+<pre><code>-- Stale statistics in current database
+SELECT
+    OBJECT_NAME(s.object_id) AS table_name,
+    s.name AS statistics_name,
+    sp.last_updated,
+    sp.rows,
+    sp.modification_counter,
+    CAST(sp.modification_counter AS DECIMAL(18,2))
+        / NULLIF(sp.rows, 0) * 100 AS modification_pct
+FROM sys.stats AS s
+CROSS APPLY sys.dm_db_stats_properties(s.object_id, s.stats_id) AS sp
+WHERE OBJECTPROPERTY(s.object_id, 'IsUserTable') = 1
+  AND CAST(sp.modification_counter AS DECIMAL(18,2))
+        / NULLIF(sp.rows, 0) * 100 &gt;= 20
+ORDER BY modification_pct DESC;</code></pre>
+
+<p class="note">Repository script: <code>05_Index_Statistics/statistics_freshness.sql</code> (all user databases).</p>
+
+<h3>25.5 Update Statistics (Remediation)</h3>
+<pre><code>-- Single statistic (preferred for large tables during business hours)
+UPDATE STATISTICS [dbo].[Orders] ([IX_OrderDate]) WITH FULLSCAN;
+
+-- Entire table (off-peak; can be expensive on large tables)
+UPDATE STATISTICS [dbo].[Orders] WITH FULLSCAN;
+
+-- Large table alternative — sampled update
+UPDATE STATISTICS [dbo].[Orders] WITH SAMPLE 30 PERCENT;
+
+-- All user databases: schedule via Ola Hallengren IndexOptimize
+-- or run statistics_freshness.sql and update flagged objects only</code></pre>
+
+<div class="checklist-item" data-id="25f">
+  <input type="checkbox"><span class="item-text">Post-migration fragmentation scan completed; indexes reorganized/rebuilt per threshold</span>
+</div>
+<div class="checklist-item" data-id="25g">
+  <input type="checkbox"><span class="item-text">Stale statistics identified and updated (FULLSCAN or SAMPLE on large tables)</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec26">
+<h2>26. SQL Agent Configuration</h2>
+<div class="card">
+
+<div class="checklist-item" data-id="26a">
+  <input type="checkbox"><span class="item-text">SQL Server Agent running and set to <strong>Automatic</strong> startup</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec26a">
+<h2>26a. Trace Flag 3226 — Error Log Sanitization</h2>
+<div class="card">
+
+<p>With transaction log backups every 5–15 minutes, the SQL Server Error Log fills rapidly with thousands of "Backup succeeded" messages, making it difficult to find real errors during an outage.</p>
+
+<p><strong>Recommendation:</strong> Add <strong>Trace Flag 3226</strong> as a startup parameter. It suppresses successful backup messages while still logging failures.</p>
+
+<p>To add: Open <strong>SQL Server Configuration Manager → SQL Server Services → right-click SQL Server → Properties → Startup Parameters</strong>. Add <code>-T3226</code> and restart.</p>
+
+<pre><code>-- Verify the trace flag is active
+DBCC TRACESTATUS(3226);</code></pre>
+
+<div class="checklist-item" data-id="26a1">
+  <input type="checkbox"><span class="item-text">Trace Flag <strong>3226</strong> added as startup parameter (suppresses success backup messages in error log)</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec27">
+<h2>27. Security Hardening</h2>
+<div class="card">
+
+<div class="checklist-item" data-id="27a">
+  <input type="checkbox"><span class="item-text">sa login disabled (<code>ALTER LOGIN sa DISABLE</code>) or renamed</span>
+</div>
+<div class="checklist-item" data-id="27b">
+  <input type="checkbox"><span class="item-text">DBA Windows group added as sysadmin (<code>DOMAIN\DBA_Group</code>)</span>
+</div>
+<div class="checklist-item" data-id="27c">
+  <input type="checkbox"><span class="item-text">Server audit for failed logins configured</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec28">
+<h2>28. Network &amp; Protocol Configuration</h2>
+<div class="card">
+
+<div class="checklist-item" data-id="28a">
+  <input type="checkbox"><span class="item-text">TCP/IP protocol <strong>enabled</strong> in SQL Server Configuration Manager</span>
+</div>
+<div class="checklist-item" data-id="28b">
+  <input type="checkbox"><span class="item-text">Static TCP port set (1433 default or custom port) — dynamic ports removed</span>
+</div>
+<div class="checklist-item" data-id="28c">
+  <input type="checkbox"><span class="item-text">Named Pipes disabled (unless legacy app requires)</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec29">
+<h2>29. Database Mail</h2>
+<div class="card">
+
+<div class="checklist-item" data-id="29a">
+  <input type="checkbox"><span class="item-text">Database Mail enabled and SMTP account configured</span>
+</div>
+<div class="checklist-item" data-id="29b">
+  <input type="checkbox"><span class="item-text">Mail profile created and set as default public profile</span>
+</div>
+<div class="checklist-item" data-id="29c">
+  <input type="checkbox"><span class="item-text">Test email sent and verified</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec30">
+<h2>30. SQL Alerts &amp; Operators</h2>
+<div class="card">
+
+<div class="checklist-item" data-id="30a">
+  <input type="checkbox"><span class="item-text">Operator(s) created with email address(es)</span>
+</div>
+<div class="checklist-item" data-id="30b">
+  <input type="checkbox"><span class="item-text">Alerts configured for severity levels <strong>16–25</strong></span>
+</div>
+<div class="checklist-item" data-id="30c">
+  <input type="checkbox"><span class="item-text">Deadlock alert (error 1205) configured</span>
+</div>
+<div class="checklist-item" data-id="30d">
+  <input type="checkbox"><span class="item-text"><strong>Fail-Safe Operator</strong> configured in SQL Agent properties — ensures alert delivery if the operator table or msdb is temporarily unavailable</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec31">
+<h2>31. Additional Security &amp; Surface Area Reduction</h2>
+<div class="card">
+
+<div class="checklist-item" data-id="31a">
+  <input type="checkbox"><span class="item-text"><strong>xp_cmdshell</strong> disabled (set to 0)</span>
+</div>
+<div class="checklist-item" data-id="31b">
+  <input type="checkbox"><span class="item-text"><strong>Ole Automation Procedures</strong> disabled (set to 0)</span>
+</div>
+<div class="checklist-item" data-id="31c">
+  <input type="checkbox"><span class="item-text"><strong>Cross DB ownership chaining</strong> disabled (set to 0)</span>
+</div>
+<div class="checklist-item" data-id="31d">
+  <input type="checkbox"><span class="item-text"><strong>CLR</strong> disabled unless required (set to 0)</span>
+</div>
+<div class="checklist-item" data-id="31e">
+  <input type="checkbox"><span class="item-text"><strong>Optimize for ad hoc workloads</strong> enabled (set to 1)</span>
+</div>
+<div class="checklist-item" data-id="31f">
+  <input type="checkbox"><span class="item-text"><strong>Remote access</strong> disabled if not needed</span>
+</div>
+<div class="checklist-item" data-id="31g">
+  <input type="checkbox"><span class="item-text">No contained databases unless explicitly required</span>
+</div>
+<div class="checklist-item" data-id="31h">
+  <input type="checkbox"><span class="item-text">Default trace enabled (verify via <code>sys.traces</code>)</span>
+</div>
+<div class="checklist-item" data-id="31i">
+  <input type="checkbox"><span class="item-text">Error log retention set to 99 files</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec32">
+<h2>32. Query Store</h2>
+<div class="card">
+
+<div class="checklist-item" data-id="32a">
+  <input type="checkbox"><span class="item-text">Query Store enabled on every production user database</span>
+</div>
+<div class="checklist-item" data-id="32b">
+  <input type="checkbox"><span class="item-text">Query Store configured: <code>READ_WRITE</code>, <code>2048 MB</code> max, <code>AUTO</code> capture mode</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec33">
+<h2>33. Monitoring Baseline</h2>
+<div class="card">
+
+<div class="checklist-item" data-id="33a">
+  <input type="checkbox"><span class="item-text">DMV collection plan in place (memory, CPU, I/O, waits, requests, indexes)</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec34">
+<h2>34. Page File Configuration</h2>
+<div class="card">
+
+<div class="checklist-item" data-id="34a">
+  <input type="checkbox"><span class="item-text">Page file size set to <strong>1.0–1.5 × total RAM</strong> on C: drive</span>
+</div>
+<div class="checklist-item" data-id="34b">
+  <input type="checkbox"><span class="item-text">Page file NOT disabled (required for crash dumps and exception handling)</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec35">
+<h2>35. Final Validation Checklist</h2>
+<div class="card">
+
+<div class="checklist-item" data-id="35a">
+  <input type="checkbox"><span class="item-text">Windows patched to latest CU</span>
+</div>
+<div class="checklist-item" data-id="35b">
+  <input type="checkbox"><span class="item-text">Antivirus exclusions configured</span>
+</div>
+<div class="checklist-item" data-id="35c">
+  <input type="checkbox"><span class="item-text">Power plan = High Performance</span>
+</div>
+<div class="checklist-item" data-id="35d">
+  <input type="checkbox"><span class="item-text">NIC and storage drivers current</span>
+</div>
+<div class="checklist-item" data-id="35e">
+  <input type="checkbox"><span class="item-text">Firewall ports open (1433 TCP, 1434 UDP if needed)</span>
+</div>
+<div class="checklist-item" data-id="35f">
+  <input type="checkbox"><span class="item-text">Max server memory configured</span>
+</div>
+<div class="checklist-item" data-id="35g">
+  <input type="checkbox"><span class="item-text">MAXDOP configured (typically 8)</span>
+</div>
+<div class="checklist-item" data-id="35h">
+  <input type="checkbox"><span class="item-text">Cost threshold for parallelism changed from 5</span>
+</div>
+<div class="checklist-item" data-id="35i">
+  <input type="checkbox"><span class="item-text">TempDB optimized (files, sizes, growth)</span>
+</div>
+<div class="checklist-item" data-id="35j">
+  <input type="checkbox"><span class="item-text">Instant File Initialization enabled</span>
+</div>
+<div class="checklist-item" data-id="35k">
+  <input type="checkbox"><span class="item-text">Page Verify = CHECKSUM on all databases</span>
+</div>
+<div class="checklist-item" data-id="35l">
+  <input type="checkbox"><span class="item-text">Auto Close / Auto Shrink OFF on all user databases</span>
+</div>
+<div class="checklist-item" data-id="35m">
+  <input type="checkbox"><span class="item-text">Backup compression default = ON</span>
+</div>
+<div class="checklist-item" data-id="35n">
+  <input type="checkbox"><span class="item-text">Backup checksum default = ON (SQL 2022+)</span>
+</div>
+<div class="checklist-item" data-id="35o">
+  <input type="checkbox"><span class="item-text">Query Store enabled on all user databases</span>
+</div>
+<div class="checklist-item" data-id="35p">
+  <input type="checkbox"><span class="item-text">Ola Hallengren maintenance solution deployed</span>
+</div>
+<div class="checklist-item" data-id="35q">
+  <input type="checkbox"><span class="item-text">Optimize for ad hoc workloads = ON</span>
+</div>
+<div class="checklist-item" data-id="35r">
+  <input type="checkbox"><span class="item-text">sa disabled or renamed</span>
+</div>
+<div class="checklist-item" data-id="35s">
+  <input type="checkbox"><span class="item-text">xp_cmdshell disabled</span>
+</div>
+<div class="checklist-item" data-id="35t">
+  <input type="checkbox"><span class="item-text">Ole Automation Procedures disabled</span>
+</div>
+<div class="checklist-item" data-id="35u">
+  <input type="checkbox"><span class="item-text">CLR disabled (if not needed)</span>
+</div>
+<div class="checklist-item" data-id="35v">
+  <input type="checkbox"><span class="item-text">Cross DB ownership chaining disabled</span>
+</div>
+<div class="checklist-item" data-id="35w">
+  <input type="checkbox"><span class="item-text">Server audit for failed logins enabled</span>
+</div>
+<div class="checklist-item" data-id="35x">
+  <input type="checkbox"><span class="item-text">Full backup tested (restore onto separate instance)</span>
+</div>
+<div class="checklist-item" data-id="35y">
+  <input type="checkbox"><span class="item-text">Transaction log backup chain verified</span>
+</div>
+<div class="checklist-item" data-id="35z">
+  <input type="checkbox"><span class="item-text">Point-in-time recovery tested</span>
+</div>
+<div class="checklist-item" data-id="35aa">
+  <input type="checkbox"><span class="item-text">Backup retention policy documented</span>
+</div>
+<div class="checklist-item" data-id="35bb">
+  <input type="checkbox"><span class="item-text">Backup files stored on separate media from data</span>
+</div>
+<div class="checklist-item" data-id="35cc">
+  <input type="checkbox"><span class="item-text">Database Mail configured and tested</span>
+</div>
+<div class="checklist-item" data-id="35dd">
+  <input type="checkbox"><span class="item-text">Operators created</span>
+</div>
+<div class="checklist-item" data-id="35ee">
+  <input type="checkbox"><span class="item-text">Alerts for severity 16–25 configured</span>
+</div>
+<div class="checklist-item" data-id="35ff">
+  <input type="checkbox"><span class="item-text">Deadlock alert (1205) configured</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec36">
+<h2>36. VM-Specific Optimization (for Virtualized SQL Server)</h2>
+<div class="card">
+
+<p class="note"><strong>Context:</strong> Most SQL Server deployments are now virtualized — on Hyper-V, VMware vSphere, or Azure. A VM that inherits default virtualization settings will leave significant performance on the table. This section covers the additional steps required when SQL Server runs inside a virtual machine.</p>
+
+<h3>36.1 vCPU Configuration</h3>
+<ul>
+<li><strong>Do not overallocate.</strong> Total vCPUs across all VMs on a host should not exceed the number of host logical processors (minus 1–2 for the root partition / hypervisor). Overcommitment causes CPU ready / co-stop contention.</li>
+<li><strong>Use whole sockets.</strong> Assign vCPUs in socket multiples (e.g., 4 vCPUs = 1 socket × 4 cores, not 4 sockets × 1 core). SQL Server licenses per core — socket alignment avoids licensing confusion and NUMA oddities.</li>
+<li><strong>Avoid oversubscription for SQL Server.</strong> Unlike web servers, SQL Server does not handle CPU overcommitment gracefully. A 1:1 or at-most 1:2 vCPU-to-pCPU ratio is recommended.</li>
+</ul>
+
+<div class="checklist-item" data-id="36a">
+  <input type="checkbox"><span class="item-text">vCPU count assigned in whole-socket multiples — avoid odd NUMA topologies</span>
+</div>
+<div class="checklist-item" data-id="36b">
+  <input type="checkbox"><span class="item-text">Host CPU not overcommitted (vCPU:pCPU ratio ≤ 1:2, ideally 1:1 for SQL)</span>
+</div>
+
+<h3>36.2 Memory — Dynamic Memory Must Be OFF</h3>
+<p class="note-danger note"><strong>Critical:</strong> Disable <strong>Dynamic Memory</strong> (Hyper-V) or <strong>Memory Ballooning</strong> (VMware) for all SQL Server VMs. SQL Server manages its own buffer pool and expects a fixed amount of memory. Ballooning/dynamic memory causes SQL to be paged out, leading to severe performance degradation or even the SQL Server process being killed by the OS memory manager.</p>
+
+<div class="checklist-item" data-id="36c">
+  <input type="checkbox"><span class="item-text"><strong>Dynamic Memory / Ballooning disabled</strong> for the SQL Server VM — fixed memory allocation</span>
+</div>
+<div class="checklist-item" data-id="36d">
+  <input type="checkbox"><span class="item-text">VM startup memory equals the max server memory + OS reservation (no oversubscription)</span>
+</div>
+
+<h3>36.3 Storage — VM Disk Configuration</h3>
+<table>
+<tr><th>Setting</th><th>Production Recommendation</th></tr>
+<tr><td>VHDX vs VHD</td><td><strong>VHDX</strong> (4 KB logical sector support, better alignment, larger max size)</td></tr>
+<tr><td>VHDX Type</td><td><strong>Fixed size</strong> for SQL data/log/TempDB volumes — never dynamically expanding</td></tr>
+<tr><td>Pass-through Disks</td><td>Acceptable but add operational complexity; modern VHDX with fixed size performs equivalently</td></tr>
+<tr><td>Host Caching</td><td>Disable host caching on SQL data/log volumes (write-through) — enable only on read-heavy volumes if supported</td></tr>
+<tr><td>Storage QoS</td><td>Set minimum IOPS reservations on the host to prevent noisy-neighbor interference</td></tr>
+</table>
+
+<div class="checklist-item" data-id="36e">
+  <input type="checkbox"><span class="item-text">VHDX format with <strong>fixed size</strong> for all SQL volumes — no dynamically expanding disks</span>
+</div>
+<div class="checklist-item" data-id="36f">
+  <input type="checkbox"><span class="item-text">Host caching disabled on data/log volumes (write-through) to prevent data loss on host failure</span>
+</div>
+<div class="checklist-item" data-id="36g">
+  <input type="checkbox"><span class="item-text">Storage QoS reservations configured to ensure minimum IOPS for SQL Server</span>
+</div>
+
+<h3>36.4 Hyper-V Enlightenments &amp; Integration Services</h3>
+<p>Windows Server VMs running on Hyper-V have access to "enlightenments" — optimized code paths that detect the hypervisor and use hypercalls instead of emulated instructions. These are enabled by default on modern Windows Server but should be verified:</p>
+<ul>
+<li>Hyper-V Integration Services: all critical components enabled (Heartbeat, Shutdown, Time Sync, Data Exchange, Key-Value Pair)</li>
+<li>Time sync: If the VM domain-joined with its own NTP source, <strong>disable host time sync</strong> to avoid clock drift conflicts</li>
+</ul>
+
+<div class="checklist-item" data-id="36h">
+  <input type="checkbox"><span class="item-text">Hyper-V Integration Services up to date (check via PowerShell <code>Get-VMIntegrationService</code>)</span>
+</div>
+<div class="checklist-item" data-id="36i">
+  <input type="checkbox"><span class="item-text">Time sync from host disabled if VM uses a domain NTP source</span>
+</div>
+
+<h3>36.5 NUMA &amp; Virtual NUMA (vNUMA)</h3>
+<p>For VMs with more than 64 vCPUs, enable <strong>Virtual NUMA</strong> so SQL Server can properly schedule across processor groups. For VMs with fewer than 64 vCPUs, let the hypervisor and SQL Server auto-manage NUMA — no manual intervention needed beyond the MAXDOP guidance in Section 15.</p>
+
+<div class="checklist-item" data-id="36j">
+  <input type="checkbox"><span class="item-text">If VM has ≥ 64 vCPUs, verify vNUMA is enabled (default in Hyper-V 2022+ for large VMs)</span>
+</div>
+
+<h3>36.6 Network — SR-IOV &amp; VMQ</h3>
+<p>For high-throughput SQL workloads (Always On synchronous replication, backup streaming), use <strong>SR-IOV (Single Root I/O Virtualization)</strong> to bypass the virtual switch and reduce latency. If SR-IOV is not available, ensure <strong>VMQ (Virtual Machine Queue)</strong> is enabled on the host for the physical NIC.</p>
+
+<div class="checklist-item" data-id="36k">
+  <input type="checkbox"><span class="item-text">SR-IOV enabled for SQL VM virtual NIC (if available on the NIC and host)</span>
+</div>
+
+<h3>36.7 Host-Level Resource Governance</h3>
+<ul>
+<li><strong>Hyper-V Root Partition:</strong> Reserve at least 2 GB RAM + 2 CPU cores for the root partition. On NUMA systems, ensure the root partition owns at least one NUMA node.</li>
+<li><strong>VM Reservations:</strong> Set CPU and memory reservations equal to the VM's configured allocation to guarantee resource availability.</li>
+<li><strong>Weight / Priority:</strong> Set the SQL Server VM to the highest relative weight so the hypervisor prioritizes it during contention.</li>
+</ul>
+
+<div class="checklist-item" data-id="36l">
+  <input type="checkbox"><span class="item-text">Hyper-V root partition has guaranteed CPU + memory (minimum 2 cores, 2 GB RAM reserved)</span>
+</div>
+<div class="checklist-item" data-id="36m">
+  <input type="checkbox"><span class="item-text">SQL Server VM configured with CPU/memory <strong>reservations</strong> (not just limits) on the host</span>
+</div>
+<div class="checklist-item" data-id="36n">
+  <input type="checkbox"><span class="item-text">SQL Server VM set to highest scheduling <strong>weight / priority</strong> on the host</span>
+</div>
+
+<h3>36.8 Anti-Virus Exclusions on the Host</h3>
+<p>Extend antivirus exclusions to the host level as well. If the host scans VHDX files while SQL Server is writing to them, it causes IO latency spikes inside the VM. Exclude <code>.vhdx</code>, <code>.vhd</code>, <code>.avhdx</code> (snapshots/checkpoints), and the VM storage path from host-side real-time scanning.</p>
+
+<div class="checklist-item" data-id="36o">
+  <input type="checkbox"><span class="item-text">Host-level AV exclusions added for <code>.vhdx</code>, <code>.vhd</code>, <code>.avhdx</code> files and VM storage path</span>
+</div>
+
+<h3>36.9 VMware-Specific (if applicable)</h3>
+<ul>
+<li><strong>Paravirtual SCSI (PVSCSI):</strong> Use PVSCSI adapters instead of LSI Logic for better throughput and lower CPU overhead.</li>
+<li><strong>VMXNET3:</strong> Use VMXNET3 network adapter (not E1000) for lower latency and higher throughput.</li>
+<li><strong>CPU Hot Add / Memory Hot Plug:</strong> Disable — not supported for SQL Server; prevents proper NUMA detection.</li>
+<li><strong>Reservation:</strong> Set CPU and memory reservations equal to the VM size to avoid ready-time contention.</li>
+</ul>
+
+<div class="checklist-item" data-id="36p">
+  <input type="checkbox"><span class="item-text">(VMware) PVSCSI adapter in use for data/log disks; VMXNET3 for network; hot-add features disabled</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="sec37">
+<h2>37. Post-Migration Slow Server Debugging</h2>
+<div class="card">
+
+<p class="note-danger note"><strong>When to use this section:</strong> The instance is online after migration but queries are slower than the source server — especially with high elapsed time, low CPU, and moderate logical reads. Work through these checks in order before chasing query hints or compatibility level changes.</p>
+
+<h3>37.1 Virtual Log Files (VLF) Fragmentation</h3>
+<p>Excessive VLFs in the transaction log slow down log backups, recovery, replication, and AG sync. Common after many small autogrowth events during migration restore.</p>
+
+<table>
+<tr><th>VLF Count</th><th>Status</th><th>Action</th></tr>
+<tr><td>&lt; 200</td><td>Good</td><td>None</td></tr>
+<tr><td>200–500</td><td>Warning</td><td>Monitor; fix autogrowth on next maintenance window</td></tr>
+<tr><td>&gt; 1000</td><td>Critical</td><td>Rebuild log during maintenance window</td></tr>
+</table>
+
+<pre><code>-- VLF count per database (SQL Server 2016+)
+SELECT
+    d.name AS database_name,
+    COUNT(*) AS vlf_count,
+    CAST(SUM(vlf_size_mb) AS DECIMAL(18,2)) AS total_log_size_mb
+FROM sys.databases AS d
+CROSS APPLY sys.dm_db_log_info(d.database_id) AS v
+WHERE d.database_id &gt; 4 AND d.state = 0
+GROUP BY d.name
+ORDER BY vlf_count DESC;</code></pre>
+
+<p><strong>Remediation (maintenance window):</strong></p>
+<ol>
+<li>Take a log backup (FULL recovery) or switch to SIMPLE temporarily if policy allows.</li>
+<li>Shrink log to minimum: <code>DBCC SHRINKFILE (N'LogLogicalName', TRUNCATEONLY);</code></li>
+<li>Grow back in large fixed increments (e.g., 4–8 GB per step) — not 10% autogrowth.</li>
+<li>Set fixed MB <code>FILEGROWTH</code> going forward.</li>
+</ol>
+<pre><code>-- Example: grow log in controlled steps after shrink
+ALTER DATABASE [YourDB] MODIFY FILE (NAME = N'YourDB_log', SIZE = 8192MB, FILEGROWTH = 2048MB);</code></pre>
+<p class="note">Repository script: <code>03_Storage_Engine/vlf_fragmentation.sql</code></p>
+
+<div class="checklist-item" data-id="37a">
+  <input type="checkbox"><span class="item-text">VLF count checked on all user databases; critical counts (&gt;1000) scheduled for remediation</span>
+</div>
+
+<h3>37.2 Disk Latency (I/O Stalls)</h3>
+<p>Post-migration slowness is frequently storage-related — especially cold buffer pool, shared VM storage, or logs on slow volumes. <code>sys.dm_io_virtual_file_stats</code> is cumulative since instance start; note <code>sqlserver_start_time</code> before comparing.</p>
+
+<table>
+<tr><th>Avg I/O Stall</th><th>Status</th></tr>
+<tr><td>&lt; 5 ms</td><td>Good</td></tr>
+<tr><td>5–15 ms</td><td>Acceptable</td></tr>
+<tr><td>15–20 ms</td><td>Warning — investigate</td></tr>
+<tr><td>&gt; 20 ms</td><td>Critical — storage remediation required</td></tr>
+</table>
+
+<pre><code>-- Per-file read/write latency
+SELECT
+    DB_NAME(vfs.database_id) AS database_name,
+    mf.name AS logical_file,
+    mf.physical_name,
+    mf.type_desc,
+    CAST(vfs.io_stall_read_ms / NULLIF(vfs.num_of_reads, 0) AS DECIMAL(10,2)) AS avg_read_ms,
+    CAST(vfs.io_stall_write_ms / NULLIF(vfs.num_of_writes, 0) AS DECIMAL(10,2)) AS avg_write_ms,
+    CAST(vfs.io_stall / NULLIF(vfs.num_of_reads + vfs.num_of_writes, 0) AS DECIMAL(10,2)) AS avg_io_ms
+FROM sys.dm_io_virtual_file_stats(NULL, NULL) AS vfs
+INNER JOIN sys.master_files AS mf
+    ON vfs.database_id = mf.database_id AND vfs.file_id = mf.file_id
+ORDER BY avg_io_ms DESC;
+
+-- Pending I/O backlog
+SELECT COUNT(*) AS pending_io, MAX(io_pending_ms_ticks) AS max_pending_ms
+FROM sys.dm_io_pending_io_requests;</code></pre>
+
+<p><strong>Remediation:</strong></p>
+<ul>
+<li>Move data/log files to faster dedicated volumes (SSD/NVMe); keep logs separate from data.</li>
+<li>Verify VM storage: fixed VHDX (not dynamic), host caching off for data/log, Storage QoS minimum IOPS.</li>
+<li>Confirm antivirus exclusions on SQL paths (guest and hypervisor host).</li>
+<li>Correlate with waits: <code>PAGEIOLATCH_*</code>, <code>WRITELOG</code>, <code>IO_COMPLETION</code>.</li>
+</ul>
+<p class="note">Repository scripts: <code>01_Server_OS/disk_latency.sql</code>, <code>Prod_Migration/08_Storage_OS/01_io_latency_deep_dive.sql</code></p>
+
+<div class="checklist-item" data-id="37b">
+  <input type="checkbox"><span class="item-text">Disk latency baseline captured; files with &gt;20 ms avg stall investigated</span>
+</div>
+
+<h3>37.3 Database File Growth Settings</h3>
+<p>Percent-based autogrowth and tiny growth increments cause repeated growth events, VLF proliferation, and I/O pauses during peak load — especially on multi-TB databases after migration.</p>
+
+<pre><code>-- Autogrowth and space utilization (all databases)
+SELECT
+    DB_NAME(database_id) AS database_name,
+    name AS logical_name,
+    type_desc,
+    size * 8 / 1024 AS size_mb,
+    CASE WHEN is_percent_growth = 1
+         THEN CAST(growth AS VARCHAR(10)) + '%'
+         ELSE CAST(growth * 8 / 1024 AS VARCHAR(10)) + ' MB'
+    END AS autogrowth,
+    is_percent_growth,
+  physical_name
+FROM sys.master_files
+WHERE database_id &gt; 4
+ORDER BY database_name, type_desc;</code></pre>
+
+<p><strong>Remediation:</strong></p>
+<ul>
+<li>Switch all files to <strong>fixed MB</strong> growth — never percent.</li>
+<li>Pre-size data and log files to planned capacity; autogrowth is a safety net, not a sizing strategy.</li>
+<li>Multi-TB databases: use 2048–4096 MB growth increments minimum.</li>
+<li>Disable <strong>Auto Shrink</strong> on all user databases.</li>
+</ul>
+<pre><code>-- Fix percent-based autogrowth
+ALTER DATABASE [YourDB] MODIFY FILE (NAME = N'YourDB', FILEGROWTH = 1024MB);
+ALTER DATABASE [YourDB] MODIFY FILE (NAME = N'YourDB_log', FILEGROWTH = 2048MB);</code></pre>
+<p class="note">Repository script: <code>03_Storage_Engine/database_files_growth.sql</code></p>
+
+<div class="checklist-item" data-id="37c">
+  <input type="checkbox"><span class="item-text">No percent-based autogrowth on production files; growth increments sized for database scale</span>
+</div>
+
+<h3>37.4 TempDB Configuration Review</h3>
+<p>TempDB contention (PAGELATCH on PFS/GAM/SGAM) affects every workload using sorts, hashes, and spools. After migration, TempDB often retains default file count, uneven sizes, or percent growth.</p>
+
+<p><strong>Checklist:</strong></p>
+<ul>
+<li>1 data file per logical core, <strong>maximum 8</strong> (add only if PAGELATCH contention persists).</li>
+<li>All data files: <strong>equal size</strong>, <strong>equal fixed MB growth</strong>, on a dedicated fast volume.</li>
+<li>Pre-size to expected peak — do not rely on autogrowth under load.</li>
+<li>Trace flag 1118 (SQL 2014 and earlier) and 1117 are unnecessary on SQL 2016+.</li>
+</ul>
+<p class="note">Repository scripts: <code>03_Storage_Engine/tempdb_configuration.sql</code>, <code>Prod_Migration/08_Storage_OS/03_tempdb_autogrowth_audit.sql</code></p>
+
+<div class="checklist-item" data-id="37d">
+  <input type="checkbox"><span class="item-text">TempDB file count, uniform sizing, and fixed MB growth verified post-migration</span>
+</div>
+
+<h3>37.5 Post-Migration Triage Order</h3>
+<ol>
+<li>Instance config audit — memory, MAXDOP, cost threshold, compatibility level.</li>
+<li>Storage I/O latency and file growth settings (this section).</li>
+<li>Wait statistics delta during slow workload reproduction.</li>
+<li>Index fragmentation and stale statistics (Section 25).</li>
+<li>Query Store / plan regressions if still unresolved.</li>
+</ol>
+<p class="note">Repository playbook: <code>Prod_Migration/01_Quick_Triage/00_RUN_FIRST_triage_playbook.sql</code></p>
+
+<div class="checklist-item" data-id="37e">
+  <input type="checkbox"><span class="item-text">Post-migration triage playbook executed; findings documented before plan-level changes</span>
+</div>
+
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section>
+<h2>Appendix: Summary of Changes from Original Document</h2>
+<div class="card">
+
+<table>
+<tr><th>#</th><th>Item</th><th>Change</th></tr>
+<tr><td>1</td><td>H: drive for SQL binaries</td><td><strong>Corrected:</strong> Binaries remain on C: drive — separating binaries is unnecessary and complicates patching.</td></tr>
+<tr><td>2</td><td>Instant File Initialization verification</td><td><strong>Corrected:</strong> Uses <code>sys.dm_server_services.instant_file_initialization_enabled</code> (SQL 2022+) instead of generic <code>SELECT *</code>.</td></tr>
+<tr><td>3</td><td>MAXDOP guidance</td><td><strong>Expanded:</strong> Added per-core count recommendations and referenced Microsoft KB 2806535.</td></tr>
+<tr><td>4</td><td>TempDB file count guidance</td><td><strong>Clarified:</strong> 8 file max unless contention observed; discourage 1:1 with cores.</td></tr>
+<tr><td>5</td><td>Page File</td><td><strong>Added:</strong> Page file sizing guidance (missing from original).</td></tr>
+<tr><td>6</td><td>Auto Close / Auto Shrink</td><td><strong>Added:</strong> Must be OFF for all production databases.</td></tr>
+<tr><td>7</td><td>Page Verify CHECKSUM</td><td><strong>Added:</strong> Verify this setting on all databases.</td></tr>
+<tr><td>8</td><td>Network configuration</td><td><strong>Added:</strong> TCP/IP enablement, Windows Firewall rules, port configuration.</td></tr>
+<tr><td>9</td><td>Security hardening</td><td><strong>Expanded:</strong> Added xp_cmdshell, Ole Automation, CLR, cross-DB chaining, ad hoc workload optimization, server audit.</td></tr>
+<tr><td>10</td><td>Backup checksum default</td><td><strong>Added:</strong> <code>backup checksum default</code> for SQL 2022+ as a best practice.</td></tr>
+<tr><td>11</td><td>Error log retention</td><td><strong>Added:</strong> Set to 99 files via registry.</td></tr>
+<tr><td>12</td><td>Operators &amp; Alerts</td><td><strong>Expanded:</strong> Added sample T-SQL for alert creation and operator setup.</td></tr>
+<tr><td>13</td><td>Database Mail</td><td><strong>Expanded:</strong> Added T-SQL creation script and testing procedure.</td></tr>
+<tr><td>14</td><td>Backup restore validation</td><td><strong>Emphasized:</strong> Added note that <code>RESTORE VERIFYONLY</code> is insufficient — must perform actual restore test.</td></tr>
+<tr><td>15</td><td>Memory reservation formula</td><td><strong>Expanded:</strong> Added table with multiple RAM sizes and noted Lock Pages in Memory behavior.</td></tr>
+<tr><td>16</td><td>ReFS support</td><td><strong>Added:</strong> ReFS with 64 KB cluster as an option for Data/Backup volumes on Windows Server 2022+.</td></tr>
+<tr><td>17</td><td>BIOS power verification</td><td><strong>Added:</strong> BIOS/UEFI power management set to Maximum Performance — Windows cannot override a restrictive BIOS.</td></tr>
+<tr><td>18</td><td>Trace Flag 3226</td><td><strong>Added:</strong> Startup parameter to suppress successful backup messages in error log; critical when log backups run every 5–15 min.</td></tr>
+<tr><td>19</td><td>Fail-Safe Operator</td><td><strong>Added:</strong> Ensures alert delivery even when msdb or operator table is unavailable.</td></tr>
+<tr><td>20</td><td>Max Worker Threads</td><td><strong>Added:</strong> Verification step for high-core servers to avoid THREADPOOL waits.</td></tr>
+<tr><td>21</td><td>LPIM clarification</td><td><strong>Clarified:</strong> Lock Pages in Memory must be assigned via secpol.msc with the exact account name — group membership is insufficient.</td></tr>
+<tr><td>22</td><td>Autogrowth for large DBs</td><td><strong>Added:</strong> Warning about insufficient autogrowth sizes (e.g., 100 MB) on multi-TB databases causing VLF fragmentation.</td></tr>
+<tr><td>23</td><td>Post-migration debugging</td><td><strong>Added:</strong> Section 37 — VLF, disk latency, file growth, TempDB triage with remediation scripts.</td></tr>
+<tr><td>24</td><td>Index statistics scripts</td><td><strong>Added:</strong> Fragmentation detection, online rebuild/reorganize, stale stats detection, and UPDATE STATISTICS examples in Section 25.</td></tr>
+<tr><td>25</td><td>Permissions reference</td><td><strong>Added:</strong> Repository <code>permission.sql</code> for SQL Server and PostgreSQL diagnostic roles.</td></tr>
+</table>
+
+</div>
+</section>
+
+</div><!-- /container -->
+
+<script>
+(function() {
+  const STORAGE_KEY = 'sql_checklist_state';
+  const THEME_KEY = 'sql_checklist_theme';
+
+  // ---- Collect all checklist items ----
+  const items = Array.from(document.querySelectorAll('.checklist-item'));
+  const total = items.length;
+
+  const pctSticky = document.getElementById('pctDisplaySticky');
+  const barSticky = document.getElementById('barFillSticky');
+  const countSticky = document.getElementById('countDisplaySticky');
+
+  function updateProgress() {
+    const checked = items.filter(i => i.classList.contains('checked')).length;
+    const pct = total ? Math.round((checked / total) * 100) : 0;
+    pctSticky.textContent = pct + '%';
+    countSticky.textContent = checked + ' / ' + total;
+    barSticky.style.width = pct + '%';
+  }
+
+  function saveState() {
+    const state = items.map(i => ({
+      id: i.getAttribute('data-id'),
+      checked: i.classList.contains('checked')
+    }));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch(e) {}
+  }
+
+  function loadState() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const state = JSON.parse(raw);
+      const map = {};
+      state.forEach(s => { map[s.id] = s.checked; });
+      items.forEach(i => {
+        const id = i.getAttribute('data-id');
+        if (map[id]) {
+          i.classList.add('checked');
+          i.querySelector('input[type="checkbox"]').checked = true;
+        }
+      });
+    } catch(e) {}
+    updateProgress();
+  }
+
+  function resetAll() {
+    items.forEach(i => {
+      i.classList.remove('checked');
+      i.querySelector('input[type="checkbox"]').checked = false;
+    });
+    updateProgress();
+    saveState();
+  }
+
+  // ---- Theme toggle ----
+  const toggle = document.getElementById('themeToggle');
+
+  function applyTheme(light) {
+    document.body.classList.toggle('light', light);
+    toggle.querySelector('.label-text').textContent = light ? '\u2600 Light' : '\u2600 Dark';
+    try { localStorage.setItem(THEME_KEY, light ? 'light' : 'dark'); } catch(e) {}
+  }
+
+  function loadTheme() {
+    try {
+      const val = localStorage.getItem(THEME_KEY);
+      if (val === 'light') applyTheme(true);
+      else applyTheme(false);
+    } catch(e) { applyTheme(false); }
+  }
+
+  toggle.addEventListener('click', function(e) {
+    const isLight = document.body.classList.toggle('light');
+    applyTheme(isLight);
+  });
+
+  // ---- Event listeners ----
+  items.forEach(item => {
+    const cb = item.querySelector('input[type="checkbox"]');
+    item.addEventListener('click', function(e) {
+      if (e.target.tagName === 'INPUT') return;
+      cb.checked = !cb.checked;
+      item.classList.toggle('checked', cb.checked);
+      updateProgress();
+      saveState();
+    });
+    cb.addEventListener('change', function() {
+      item.classList.toggle('checked', cb.checked);
+      updateProgress();
+      saveState();
+    });
+  });
+
+  document.getElementById('resetBtn').addEventListener('click', resetAll);
+  document.getElementById('saveBtn').addEventListener('click', function() {
+    saveState();
+    const btn = this;
+    const orig = btn.textContent;
+    btn.textContent = 'Saved!';
+    setTimeout(() => { btn.textContent = orig; }, 1200);
+  });
+
+  // ---- Init ----
+  loadTheme();
+  loadState();
+  updateProgress();
+
+})();
+</script>
+</body>
+</html>

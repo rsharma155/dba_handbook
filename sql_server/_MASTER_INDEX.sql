@@ -152,6 +152,14 @@
 --      Reviews file growth settings and auto-growth events.
 --      Location: 03_Storage_Engine\database_files_growth.sql
 
+-- database_size_inventory.sql
+--      Summarizes database size, compatibility, collation, log reuse wait, and file counts.
+--      Location: 03_Storage_Engine\database_size_inventory.sql
+
+-- table_size_access_dependencies.sql
+--      Lists table size, row counts, last access, and dependency details.
+--      Location: 03_Storage_Engine\table_size_access_dependencies.sql
+
 -- tempdb_configuration.sql
 --      Checks TempDB file count, size, and placement.
 --      Location: 03_Storage_Engine\tempdb_configuration.sql
@@ -180,6 +188,15 @@
 -- plan_cache_deep_dive.sql
 --      Analyzes query plan cache for compilation and reuse metrics.
 --      Location: 04_Performance_Diagnostics\plan_cache_deep_dive.sql
+
+-- implicit_conversion_analysis.sql
+--      Finds implicit conversions in cached plans and Query Store plans.
+--      Location: 04_Performance_Diagnostics\implicit_conversion_analysis.sql
+
+-- stored_procedure_performance_audit.sql
+--      Audits every stored procedure for join type mismatches, anti-patterns,
+--      and runtime implicit conversions from cached execution plans.
+--      Location: 04_Performance_Diagnostics\stored_procedure_performance_audit.sql
 
 -- top_resource_queries.sql
 --      Identifies top queries by CPU, IO, and duration.

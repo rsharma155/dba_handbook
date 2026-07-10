@@ -11,9 +11,9 @@ Updated:    2026-06-19 - Modified to use DBARepository database
 Compatible: SQL Server 2016, 2017, 2019, 2022
 
 Usage:      
-    SELECT * FROM [dbo].[vw_Current_Running_Queries];
-    SELECT * FROM [dbo].[vw_Long_Running_Queries];
-    SELECT * FROM [dbo].[vw_Alert_Summary];
+    SELECT [Session_ID], [Login_Name], [Database_Name], [Duration_Seconds], [CPU_Seconds] FROM [dbo].[vw_Current_Running_Queries];
+    SELECT [History_ID], [Login_Name], [Database_Name], [Duration_Seconds], [Captured_At] FROM [dbo].[vw_Long_Running_Queries];
+    SELECT [Alert_Type], [Severity], [Alert_Count], [Last_Alert] FROM [dbo].[vw_Alert_Summary];
 ================================================================================
 */
 
