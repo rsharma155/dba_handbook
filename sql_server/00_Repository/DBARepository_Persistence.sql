@@ -8,6 +8,7 @@ Purpose: Creates tables to persist assessment runs, findings, metrics, and
 Run after DBARepository_Create.sql. This script is idempotent (IF NOT EXISTS).
 
     sqlcmd -S YourServer -d DBARepository -i "00_Repository/DBARepository_Persistence.sql"
+Author:        Ravi Sharma
 ================================================================================
 */
 USE [DBARepository];

@@ -6,7 +6,7 @@ Purpose:    Detects active user sessions whose application name matches the
             configured blocked application list and records alerts for monitoring.
 
 Version:    2.1
-Author:     DBA Team
+Author:     Ravi Sharma
 Created:    2026-06-19
 Updated:    2026-07-09 - Added governance header and report-only mode
 Compatible: SQL Server 2016, 2017, 2019, 2022

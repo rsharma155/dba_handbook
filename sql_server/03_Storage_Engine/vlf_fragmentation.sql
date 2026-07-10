@@ -11,6 +11,7 @@ Action:         If VLF_Count > 1000 for any database, schedule a log file rebuil
                     2. Grow back in large chunks: ALTER DATABASE ... MODIFY FILE (SIZE = <new_size>, FILEGROWTH = <large_increment>)
                     Use uniform growth increments (e.g., 8GB) to prevent future VLF proliferation.
 Criticality:    Medium
+Author:        Ravi Sharma
 ================================================================================
 */
 

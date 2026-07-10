@@ -5,7 +5,7 @@
 Purpose:    Creates views for monitoring dashboards and reporting.
 
 Version:    2.0
-Author:     DBA Team
+Author:     Ravi Sharma
 Created:    2026-06-19
 Updated:    2026-06-19 - Modified to use DBARepository database
 Compatible: SQL Server 2016, 2017, 2019, 2022

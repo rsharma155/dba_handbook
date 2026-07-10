@@ -18,6 +18,7 @@ Next action:
     07_Instance_Config/02_recommended_fixes_with_rollback.sql
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 

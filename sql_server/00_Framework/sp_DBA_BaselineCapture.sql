@@ -31,6 +31,7 @@ Delta comparison:
 Usage:
     EXEC dbo.sp_DBA_BaselineCapture;
     EXEC dbo.sp_DBA_BaselineCapture @CaptureWaitStats = 1, @CaptureCounters = 1;
+Author:        Ravi Sharma
 ================================================================================
 */
 IF OBJECT_ID(N'dbo.sp_DBA_BaselineCapture', N'P') IS NULL

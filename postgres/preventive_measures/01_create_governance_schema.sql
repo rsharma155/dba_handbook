@@ -7,6 +7,7 @@ Description:
     Run in dba_repository after 00_create_repository.sql.
 
 Criticality: Low (preventive layer)
+Author:        Ravi Sharma
 ================================================================================
 */
 

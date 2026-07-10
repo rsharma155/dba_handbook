@@ -25,13 +25,14 @@ Parameters:
     @IncludeSystemDatabases - 1 includes master/model/msdb/tempdb; 0 user DBs only
 
 Criticality: Medium
+Author:        Ravi Sharma
 ================================================================================
 */
 
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 SET NOCOUNT ON;
 
-DECLARE @DatabaseList NVARCHAR(MAX) = NULL; -- e.g. N'SalesDB,HRDB'
+DECLARE @DatabaseList NVARCHAR(MAX) = NULL; -- e.g. N'userdb'
 DECLARE @IncludeSystemDatabases BIT = 1;
 
 DECLARE @InstanceCompat INT =

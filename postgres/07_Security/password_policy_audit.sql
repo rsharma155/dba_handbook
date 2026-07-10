@@ -9,6 +9,7 @@ Description:
 Action:  Use scram-sha-256; avoid trust auth in production; integrate SSO where possible.
 
 Criticality: Medium
+Author:        Ravi Sharma
 ================================================================================
 */
 

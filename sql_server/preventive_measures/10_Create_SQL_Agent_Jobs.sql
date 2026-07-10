@@ -5,7 +5,7 @@
 Purpose:    Creates SQL Agent jobs for the preventive measures framework.
 
 Version:    2.1
-Author:     DBA Team
+Author:     Ravi Sharma
 Created:    2026-06-19
 Updated:    2026-06-19 - Modified to use DBARepository database
             2026-07-09 - Confirmed dry-run gate, prerequisites, and safety notes

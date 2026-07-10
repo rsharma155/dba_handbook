@@ -15,6 +15,7 @@ Safety:
 Usage:
     EXEC dbo.sp_DBA_WaitAnalysis;
     EXEC dbo.sp_DBA_WaitAnalysis @TopN = 30, @IncludeRecommendations = 1;
+Author:        Ravi Sharma
 ================================================================================
 */
 IF OBJECT_ID(N'dbo.sp_DBA_WaitAnalysis', N'P') IS NULL

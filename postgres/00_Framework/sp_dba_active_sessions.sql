@@ -12,6 +12,7 @@ Usage:
     SELECT * FROM dba.sp_active_sessions(filter_database => 'salesdb', min_duration_sec => 30);
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 

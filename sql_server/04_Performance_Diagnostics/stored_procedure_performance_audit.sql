@@ -24,6 +24,7 @@ Action:         Align join/WHERE column types (e.g. INT to INT, NVARCHAR to NVAR
 Parameters:     @DatabaseList, @IncludeRuntimePlanAnalysis, @RuntimePlanTopPerProc,
                 @MinSeverityFilter, @IncludeEncryptedProcedures.
 Criticality:    High
+Author:        Ravi Sharma
 ================================================================================
 */
 
@@ -31,7 +32,7 @@ SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 SET NOCOUNT ON;
 SET QUOTED_IDENTIFIER ON;
 
-DECLARE @DatabaseList NVARCHAR(MAX) = NULL;          -- e.g. N'SalesDB,HRDB'; NULL = all online user DBs
+DECLARE @DatabaseList NVARCHAR(MAX) = NULL;          -- e.g. N'userdb'; NULL = all online user DBs
 DECLARE @IncludeRuntimePlanAnalysis BIT = 1;         -- Scan plan cache per procedure object_id
 DECLARE @RuntimePlanTopPerProc INT = 5;              -- Max cached-plan conversion rows per procedure
 DECLARE @MinSeverityFilter TINYINT = 1;              -- 1=All, 2=Medium+, 3=High+, 4=Critical only

@@ -9,6 +9,7 @@ Description:
 Action:  Optimize or index top offenders; reset stats only after capturing baseline.
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 

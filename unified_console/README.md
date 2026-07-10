@@ -86,9 +86,3 @@ DBA-Console.exe / DBA-Console
 | `/api/connect` | POST | Connect to database |
 | `/api/disconnect` | POST | Close connection |
 | `/api/execute` | POST | Run SQL |
-
-## Deprecated
-
-- `connector/` — Java JAR connector (replaced by Go)
-- `launcher/` — old JAR launcher
-- `connection_libraries/` — JDBC jars (drivers compiled into Go binary)

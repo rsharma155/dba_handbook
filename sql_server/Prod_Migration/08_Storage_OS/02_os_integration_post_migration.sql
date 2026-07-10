@@ -25,6 +25,7 @@ Manual OS checklist (document for ops team):
     [ ] Review Windows Event Log for disk warnings after migration
 
 Criticality: High for PREEMPTIVE waits and SSMS slowness
+Author:        Ravi Sharma
 ================================================================================
 */
 

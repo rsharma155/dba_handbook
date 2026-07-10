@@ -8,6 +8,7 @@ Description:
 Action:  Stale idle connections → reduce pool size or enable timeouts.
 
 Criticality: Medium
+Author:        Ravi Sharma
 ================================================================================
 */
 

@@ -10,6 +10,7 @@ Usage:
     SELECT * FROM dba.sp_index_review(min_size_mb => 10);
 
 Criticality: Medium
+Author:        Ravi Sharma
 ================================================================================
 */
 

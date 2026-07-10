@@ -7,7 +7,7 @@ Purpose:    LIGHTWEIGHT DMV CAPTURE - Supplements Extended Events (Layer 1).
             snapshots for trending and historical analysis.
 
 Version:    2.1
-Author:     DBA Team
+Author:     Ravi Sharma
 Created:    2026-06-19
 Updated:    2026-06-19 - Modified to use DBARepository database
             2026-07-09 - Added report-only mode and persistence governance notes

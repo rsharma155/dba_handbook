@@ -8,6 +8,7 @@ Description:
 Action:  Set monitoring alerts on replay_lag_bytes; investigate before automatic failover.
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 

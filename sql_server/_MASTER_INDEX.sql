@@ -17,6 +17,8 @@
    NOTE: A simplified deployment workflow is available via the PowerShell scripts in
          00_Framework/. Use 00_Deploy_Framework.ps1 to deploy core objects, then run
          individual scripts per section below as needed.
+
+   Author:     Ravi Sharma
 ********************************************************************************************/
 
 /*===========================================================================

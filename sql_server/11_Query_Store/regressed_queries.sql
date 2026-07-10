@@ -28,6 +28,7 @@ Parameters:
 Prerequisites: sp_DBA_QueryStoreRegressions (deploy via 00_Framework/00_Deploy_Framework.ps1)
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 

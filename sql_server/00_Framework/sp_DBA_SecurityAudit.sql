@@ -14,8 +14,9 @@ Safety:
 
 Usage:
     EXEC dbo.sp_DBA_SecurityAudit;
-    EXEC dbo.sp_DBA_SecurityAudit @DatabaseList = N'SalesDB';
+    EXEC dbo.sp_DBA_SecurityAudit @DatabaseList = N'userdb';
     EXEC dbo.sp_DBA_SecurityAudit @IncludeSysadminCheck = 1;
+Author:        Ravi Sharma
 ================================================================================
 */
 IF OBJECT_ID(N'dbo.sp_DBA_SecurityAudit', N'P') IS NULL

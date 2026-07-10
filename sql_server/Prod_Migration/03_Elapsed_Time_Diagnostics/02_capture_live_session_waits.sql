@@ -35,6 +35,7 @@ If wait_type = NULL and status = running but still slow:
     May be client-side (SSMS rendering) or async completion — use XE script.
 
 Criticality: Critical
+Author:        Ravi Sharma
 ================================================================================
 */
 

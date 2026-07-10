@@ -20,6 +20,7 @@ Usage:
         @Profile = N'Standard',
         @HealthScore = 78,
         @Findings = @Findings;
+Author:        Ravi Sharma
 ================================================================================
 */
 IF OBJECT_ID(N'dbo.sp_DBA_SaveAssessmentRun', N'P') IS NULL

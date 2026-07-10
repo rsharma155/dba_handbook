@@ -8,6 +8,7 @@ Description:
 Action:  Run VACUUM (ANALYZE) manually on top tables during low-traffic windows.
 
 Criticality: Medium
+Author:        Ravi Sharma
 ================================================================================
 */
 

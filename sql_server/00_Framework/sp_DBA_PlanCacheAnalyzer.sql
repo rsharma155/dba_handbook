@@ -24,7 +24,7 @@ Usage:
     EXEC dbo.sp_DBA_PlanCacheAnalyzer @SortOrder = 'READS', @TopN = 20;
     EXEC dbo.sp_DBA_PlanCacheAnalyzer @SortOrder = 'MEMORY', @TopN = 15;
     EXEC dbo.sp_DBA_PlanCacheAnalyzer @SortOrder = 'WARNING';
-    EXEC dbo.sp_DBA_PlanCacheAnalyzer @FilterDatabase = N'SalesDB';
+    EXEC dbo.sp_DBA_PlanCacheAnalyzer @FilterDatabase = N'userdb';
     EXEC dbo.sp_DBA_PlanCacheAnalyzer @MinExecutionCount = 10;
 
 Sort Orders:
@@ -36,6 +36,7 @@ Sort Orders:
     WRITES    - Top by logical writes
     WARNING   - Grouped by anti-pattern warning
     REGRESSION- Top by average duration (high = slow per-execution)
+Author:        Ravi Sharma
 ================================================================================
 */
 IF OBJECT_ID(N'dbo.sp_DBA_PlanCacheAnalyzer', N'P') IS NULL

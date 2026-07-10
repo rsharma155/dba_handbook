@@ -10,6 +10,7 @@ Interpretation: Agents in 'Failed' or 'Retrying' state indicate stoppage.
                 High undelivered commands suggest backlog/latency.
 Action: For agents in "Failed" state: review SQL Agent error logs and re-start the agent. For agents in "Retrying" state: check connectivity between publisher/distributor/subscriber (firewall, network, login). For high undelivered command counts: ensure the distribution agent is running and not backlogged. Consider increasing the poll interval or optimizing the publication design (filtered publications, batch processing).
 Criticality:    High
+Author:        Ravi Sharma
 ================================================================================
 */
 

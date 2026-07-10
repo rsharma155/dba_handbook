@@ -13,6 +13,7 @@ Action: For databases with Is_TDE_Enabled = 0 and sensitive data, enable TDE:
     ALTER DATABASE [DBName] SET ENCRYPTION ON;
     For connections without encryption, configure the server to force encryption via SQL Server Configuration Manager. For missing SQL Server Audits, create server and database audit specifications per compliance requirements.
 Criticality:    High
+Author:        Ravi Sharma
 ================================================================================
 */
 

@@ -8,6 +8,7 @@ Description:
 Action:  ANALYZE affected tables; consider autovacuum_analyze_scale_factor per table.
 
 Criticality: Medium
+Author:        Ravi Sharma
 ================================================================================
 */
 

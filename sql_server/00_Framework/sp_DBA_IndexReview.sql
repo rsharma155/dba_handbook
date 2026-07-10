@@ -14,8 +14,9 @@ Safety:
 
 Usage:
     EXEC dbo.sp_DBA_IndexReview;
-    EXEC dbo.sp_DBA_IndexReview @DatabaseList = N'SalesDB,HRDB';
+    EXEC dbo.sp_DBA_IndexReview @DatabaseList = N'userdb';
     EXEC dbo.sp_DBA_IndexReview @MinPageCount = 1000, @IncludeFragmentation = 0;
+Author:        Ravi Sharma
 ================================================================================
 */
 IF OBJECT_ID(N'dbo.sp_DBA_IndexReview', N'P') IS NULL

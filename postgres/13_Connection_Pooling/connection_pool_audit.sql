@@ -9,6 +9,7 @@ Description:
 Action:  When numbackends approaches max_connections, deploy PgBouncer in transaction mode.
 
 Criticality: Medium
+Author:        Ravi Sharma
 ================================================================================
 */
 

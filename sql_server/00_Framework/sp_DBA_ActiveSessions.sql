@@ -14,11 +14,12 @@ Key differences from sp_who2 / sp_whoisactive:
 
 Usage:
     EXEC dbo.sp_DBA_ActiveSessions;
-    EXEC dbo.sp_DBA_ActiveSessions @FilterDatabase = N'SalesDB';
+    EXEC dbo.sp_DBA_ActiveSessions @FilterDatabase = N'userdb';
     EXEC dbo.sp_DBA_ActiveSessions @FilterWaitType = N'LCK%';
     EXEC dbo.sp_DBA_ActiveSessions @MinCPUSeconds = 10;
     EXEC dbo.sp_DBA_ActiveSessions @IncludeSystemSessions = 1;
     EXEC dbo.sp_DBA_ActiveSessions @OutputMode = 'DETAIL';  -- DETAIL | SUMMARY | BLOCKING
+Author:        Ravi Sharma
 ================================================================================
 */
 IF OBJECT_ID(N'dbo.sp_DBA_ActiveSessions', N'P') IS NULL

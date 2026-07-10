@@ -25,6 +25,7 @@ Objects installed (in dependency order):
 Then run separately:
     6. 00_Repository/CheckIdRegistry.sql
     7. 00_Repository/DBARepository_Persistence.sql
+Author:        Ravi Sharma
 ================================================================================
 */
 USE [DBARepository];

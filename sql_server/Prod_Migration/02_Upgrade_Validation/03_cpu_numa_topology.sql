@@ -33,6 +33,7 @@ Next action:
   Parallelism waits            → 06_Optimizer_Plans/02_query_hint_guide.sql
 
 Criticality: High for Express → non-Express migrations on multi-core VMs
+Author:        Ravi Sharma
 ================================================================================
 */
 

@@ -17,6 +17,7 @@ Tiers:
     Monitor     — read-only diagnostics (default)
     Maintenance — index rebuild, UPDATE STATISTICS, VACUUM (optional notes)
     Deploy      — one-time framework install (sysadmin / superuser)
+Author:        Ravi Sharma
 ================================================================================
 */
 

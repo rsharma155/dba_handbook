@@ -8,6 +8,7 @@ Description:
 Action:  Contact app owner for head blocker; use pg_cancel_backend() or pg_terminate_backend() with care.
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 

@@ -13,6 +13,7 @@ Action:  High active count + long queries → run top_resource_queries.sql.
          Many parallel workers → review max_parallel_workers_per_gather.
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 

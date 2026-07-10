@@ -24,6 +24,7 @@ Parameters:
     @StalePctThreshold - modification % threshold for flagging (default 20)
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 

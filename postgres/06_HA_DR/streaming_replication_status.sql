@@ -8,6 +8,7 @@ Description:
 Action:  Lag > SLA → check replica I/O, network, long queries on replica, vacuum on primary.
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 

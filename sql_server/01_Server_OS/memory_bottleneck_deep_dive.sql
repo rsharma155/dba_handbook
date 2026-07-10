@@ -44,6 +44,7 @@ Action:
 Criticality: High
 Prerequisites: VIEW SERVER STATE; column set varies by version (Azure SQL / 2022+ omit some
               dm_os_process_memory and dm_os_memory_clerks columns — script uses dynamic SQL)
+Author:        Ravi Sharma
 ================================================================================
 */
 

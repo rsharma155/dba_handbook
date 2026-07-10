@@ -25,6 +25,7 @@ Prerequisites: VIEW SERVER STATE permission. Optional dbo.fn_DBA_ExcludedWaitTyp
     in current database or DBARepository for centralized wait filtering.
 Persistence: None. Uses only session-scoped #ExcludedWaitTypes when needed.
 Safety: Read-only DMV queries; no permanent objects are created.
+Author:        Ravi Sharma
 ================================================================================
 */
 

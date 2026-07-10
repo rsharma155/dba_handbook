@@ -20,7 +20,7 @@ Architecture:
     - Session termination (if policy allows)
 
 Version:    2.1
-Author:     DBA Team
+Author:     Ravi Sharma
 Created:    2026-06-19
 Updated:    2026-06-19 - Restructured as Layer 2 orchestrator
             2026-07-09 - Added report-only orchestration and governance notes

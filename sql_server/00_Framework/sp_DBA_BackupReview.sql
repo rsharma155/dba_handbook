@@ -9,7 +9,8 @@ required backups based on SLA.
 Usage:
     EXEC dbo.sp_DBA_BackupReview;
     EXEC dbo.sp_DBA_BackupReview @BackupHoursSLA = 48;
-    EXEC dbo.sp_DBA_BackupReview @DatabaseList = N'SalesDB,HRDB';
+    EXEC dbo.sp_DBA_BackupReview @DatabaseList = N'userdb';
+Author:        Ravi Sharma
 ================================================================================
 */
 IF OBJECT_ID(N'dbo.sp_DBA_BackupReview', N'P') IS NULL

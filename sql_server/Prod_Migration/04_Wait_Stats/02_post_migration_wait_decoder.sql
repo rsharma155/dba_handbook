@@ -10,6 +10,7 @@ Use with:
     Output from 01_wait_stats_delta_capture.sql OR triage playbook top waits.
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 

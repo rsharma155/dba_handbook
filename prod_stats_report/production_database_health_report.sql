@@ -46,6 +46,7 @@ Prerequisites:
     from sql_server/00_Framework for cleaner cross-database execution.
 
 Criticality: Medium (read-only report)
+Author:        Ravi Sharma
 ================================================================================
 */
 

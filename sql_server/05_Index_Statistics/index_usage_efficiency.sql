@@ -69,6 +69,7 @@ Parameters:
 
 Compatibility: SQL Server 2019 (15.x) and higher.
 Criticality: Medium
+Author:        Ravi Sharma
 ================================================================================
 */
 
@@ -79,7 +80,7 @@ SET QUOTED_IDENTIFIER ON;
 /*------------------------------------------------------------------------------
   Configuration
 ------------------------------------------------------------------------------*/
-DECLARE @DatabaseList     NVARCHAR(MAX) = '_DTRG_Dev_Hospital';   -- NULL = all user databases
+DECLARE @DatabaseList     NVARCHAR(MAX) = N'userdb';   -- NULL = all user databases
 DECLARE @IncludeReadOnly  BIT           = 0;
 DECLARE @MinIndexWrites   BIGINT        = 1000;
 DECLARE @TopActiveIndexes INT           = 100;

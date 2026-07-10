@@ -23,6 +23,7 @@ Safety:
 Persistence:
   - Executes child scripts against @TargetDB when explicitly enabled
   - Temporarily enables xp_cmdshell when needed and restores prior settings
+Author:        Ravi Sharma
 ==============================================================================
 */
 SET NOCOUNT ON;

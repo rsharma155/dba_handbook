@@ -6,7 +6,7 @@ Purpose:    Detects active user INSERT/UPDATE/DELETE/MERGE operations whose row
             counts exceed the configured governance threshold and records alerts.
 
 Version:    2.1
-Author:     DBA Team
+Author:     Ravi Sharma
 Created:    2026-06-19
 Updated:    2026-07-09 - Added governance header, report-only mode, and
                          orchestrator-compatible parameters

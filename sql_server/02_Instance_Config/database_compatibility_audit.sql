@@ -25,6 +25,7 @@ Parameters:
     @DatabaseList - comma-separated database names or NULL for all user DBs
 
 Criticality: Medium
+Author:        Ravi Sharma
 ================================================================================
 */
 

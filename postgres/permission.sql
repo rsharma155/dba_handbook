@@ -7,6 +7,7 @@ Run once as superuser (customize password first):
     psql -U postgres -f postgres/permission.sql
 
 Pair with repository root permission.sql (SQL Server section).
+Author:        Ravi Sharma
 ================================================================================
 */
 

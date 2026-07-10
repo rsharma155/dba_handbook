@@ -9,6 +9,7 @@ Description:
 Action:  Keep extensions patched with minor PG upgrades; review untrusted extensions.
 
 Criticality: Low
+Author:        Ravi Sharma
 ================================================================================
 */
 

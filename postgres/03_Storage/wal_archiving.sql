@@ -8,6 +8,7 @@ Description:
 Action:  Fix archive failures before they break PITR; verify archive_command in staging.
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 

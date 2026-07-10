@@ -6,7 +6,7 @@ Purpose:    Creates governance tables in the existing DBARepository database.
             Uses dbo schema to maintain consistency with other DBA framework objects.
 
 Version:    2.0
-Author:     DBA Team
+Author:     Ravi Sharma
 Created:    2026-06-19
 Updated:    2026-06-19 - Modified to use DBARepository database
 Compatible: SQL Server 2016, 2017, 2019, 2022

@@ -23,6 +23,7 @@ Parameters:
 Prerequisites: SQL Server 2016+ (FOR XML PATH used for column aggregation on 2016; STRING_AGG on 2017+)
 
 Criticality: Medium
+Author:        Ravi Sharma
 ================================================================================
 */
 

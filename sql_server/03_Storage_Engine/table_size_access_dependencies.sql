@@ -14,13 +14,14 @@ Interpretation: SQL Server exposes last SELECT through seek/scan/lookup timestam
 Action:         Review large, low-access tables for retention/archive candidates.
                 Check dependency columns before changing or dropping a table.
 Criticality:    Medium
+Author:        Ravi Sharma
 ================================================================================
 */
 
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 SET NOCOUNT ON;
 
-DECLARE @DatabaseList NVARCHAR(MAX) = '_DTRG_Dev_Hospital'; -- e.g. N'SalesDB,HRDB'; NULL = all online user DBs
+DECLARE @DatabaseList NVARCHAR(MAX) = N'userdb'; -- e.g. N'userdb'; NULL = all online user DBs
 DECLARE @IncludeSystemShipped BIT = 0;
 
 IF OBJECT_ID(N'tempdb..#DbTargets') IS NOT NULL DROP TABLE #DbTargets;

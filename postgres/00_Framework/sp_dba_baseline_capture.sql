@@ -12,6 +12,7 @@ Usage:
 Prerequisite: dba.baseline_snapshot table (00_Repository/00_create_repository.sql)
 
 Criticality: Low
+Author:        Ravi Sharma
 ================================================================================
 */
 

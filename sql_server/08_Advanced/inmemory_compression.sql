@@ -24,6 +24,7 @@ Parameters:
     @MinScans - minimum scan count to consider (default 1000)
 
 Criticality: Low
+Author:        Ravi Sharma
 ================================================================================
 */
 

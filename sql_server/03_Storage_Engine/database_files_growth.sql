@@ -25,13 +25,14 @@ Parameters:
     @StalePctThreshold - used space % threshold for warnings (default 80)
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 SET NOCOUNT ON;
 
-DECLARE @DatabaseList NVARCHAR(MAX) = NULL; -- e.g. N'SalesDB,HRDB'
+DECLARE @DatabaseList NVARCHAR(MAX) = NULL; -- e.g. N'userdb'
 DECLARE @StalePctThreshold DECIMAL(5,2) = 80.0;
 
 IF OBJECT_ID(N'tempdb..#FileSpaceStats') IS NOT NULL DROP TABLE #FileSpaceStats;

@@ -8,6 +8,7 @@ Description:
 Action:  Enable ssl=on; use hostssl in pg_hba.conf; require TLS 1.2+ in production.
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 

@@ -8,6 +8,7 @@ Description:
 Action:  Drop redundant index after confirming included columns and usage.
 
 Criticality: Medium
+Author:        Ravi Sharma
 ================================================================================
 */
 

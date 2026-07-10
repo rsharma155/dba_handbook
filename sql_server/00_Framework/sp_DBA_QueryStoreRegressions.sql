@@ -14,12 +14,13 @@ Safety:
 Usage:
     EXEC dbo.sp_DBA_QueryStoreRegressions;
     EXEC dbo.sp_DBA_QueryStoreRegressions
-        @DatabaseList = N'SalesDB',
+        @DatabaseList = N'userdb',
         @RegressionPctThreshold = 50,
         @RecentHours = 24,
         @LookbackHours = 168,
         @MinExecutions = 5,
         @TopPerDatabase = 10;
+Author:        Ravi Sharma
 ================================================================================
 */
 IF OBJECT_ID(N'dbo.sp_DBA_QueryStoreRegressions', N'P') IS NULL

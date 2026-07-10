@@ -4,6 +4,7 @@ fn_DBA_ExcludedWaitTypes - Centralized benign wait type filter
 ================================================================================
 Usage:
     WHERE wait_type NOT IN (SELECT wait_type FROM dbo.fn_DBA_ExcludedWaitTypes())
+Author:        Ravi Sharma
 ================================================================================
 */
 IF OBJECT_ID(N'dbo.fn_DBA_ExcludedWaitTypes', N'IF') IS NOT NULL

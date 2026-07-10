@@ -27,6 +27,7 @@ If no significant waits but high duration:
     → client-side or rare scheduler issue — test sqlcmd -W -b
 
 Criticality: High — use when hints and plan tuning failed
+Author:        Ravi Sharma
 ================================================================================
 */
 

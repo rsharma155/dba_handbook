@@ -11,8 +11,9 @@ Safety:         Read-only by default. @DeepDive = 1 can return large diagnostic
 
 Usage:
     EXEC dbo.sp_DBA_HealthCheck @DeepDive = 0;
-    EXEC dbo.sp_DBA_HealthCheck @DeepDive = 1, @DatabaseList = N'SalesDB,HRDB';
+    EXEC dbo.sp_DBA_HealthCheck @DeepDive = 1, @DatabaseList = N'userdb';
     EXEC dbo.sp_DBA_HealthCheck @BackupHoursSLA = 48;
+Author:        Ravi Sharma
 ================================================================================
 */
 IF OBJECT_ID(N'dbo.sp_DBA_HealthCheck', N'P') IS NULL

@@ -17,6 +17,7 @@ Action:
     all SQL authentication logins. Disable any unused or test logins.
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 

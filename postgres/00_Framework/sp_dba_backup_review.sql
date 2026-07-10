@@ -10,6 +10,7 @@ Usage:
     SELECT * FROM dba.sp_backup_review(backup_hours_sla => 24);
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 

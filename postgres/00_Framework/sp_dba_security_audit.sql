@@ -10,6 +10,7 @@ Usage:
     SELECT * FROM dba.sp_security_audit();
 
 Criticality: High
+Author:        Ravi Sharma
 ================================================================================
 */
 

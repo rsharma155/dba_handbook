@@ -8,6 +8,7 @@ Description:
 Action:  Increase max_wal_size if checkpoints_req dominates; enable wal_compression if supported.
 
 Criticality: Medium
+Author:        Ravi Sharma
 ================================================================================
 */
 

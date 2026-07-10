@@ -25,6 +25,7 @@ If no blocking but LCK_M_SCH_S:
     SSMS table designer or uncommitted DDL — 02_ssms_metadata_slowness.sql
 
 Criticality: Critical
+Author:        Ravi Sharma
 ================================================================================
 */
 

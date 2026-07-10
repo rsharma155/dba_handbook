@@ -27,6 +27,7 @@ Action:
 
 Criticality: High — modifies Query Store plan forcing state
 Prerequisites: Query Store enabled; ALTER permission on database
+Author:        Ravi Sharma
 ================================================================================
 */
 

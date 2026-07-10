@@ -21,6 +21,7 @@ Action:
 
 Criticality: High
 Prerequisites: Query Store enabled on current database
+Author:        Ravi Sharma
 ================================================================================
 */
 

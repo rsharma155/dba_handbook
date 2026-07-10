@@ -40,6 +40,7 @@ Next action:
     07_Instance_Config/02_recommended_fixes_with_rollback.sql (compat change)
 
 Criticality: Medium-High
+Author:        Ravi Sharma
 ================================================================================
 */
 

@@ -17,6 +17,7 @@ Output:         Cached plan implicit-conversion findings, plus optional Query St
 Parameters:     @TopRows, @CandidatePlanCount, @IncludeQueryStore,
                 @QueryStoreCandidatePlanCount, @DatabaseList.
 Criticality:    High
+Author:        Ravi Sharma
 ================================================================================
 */
 
@@ -27,7 +28,7 @@ DECLARE @TopRows INT = 100;
 DECLARE @CandidatePlanCount INT = 500; -- Inspect only top cached plans by CPU/reads to avoid long XML scans.
 DECLARE @IncludeQueryStore BIT = 0; -- Set to 1 for historical evidence; can be slower on large Query Stores.
 DECLARE @QueryStoreCandidatePlanCount INT = 250;
-DECLARE @DatabaseList NVARCHAR(MAX) = NULL; -- e.g. N'SalesDB,HRDB'; NULL = all online user DBs
+DECLARE @DatabaseList NVARCHAR(MAX) = NULL; -- e.g. N'userdb'; NULL = all online user DBs
 
 IF OBJECT_ID(N'tempdb..#DbTargets') IS NOT NULL DROP TABLE #DbTargets;
 CREATE TABLE #DbTargets (database_name SYSNAME NOT NULL PRIMARY KEY);

@@ -31,6 +31,7 @@ Next action if this script does not reveal the cause:
     → 04_Wait_Stats/01_wait_stats_delta_capture.sql (reproduce issue, capture delta)
 
 Criticality: Critical — run before changing any settings or applying hints.
+Author:        Ravi Sharma
 ================================================================================
 */
 

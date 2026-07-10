@@ -10,6 +10,7 @@ Interpretation: High "Avg_CPU_ms" for these queries indicates high-impact
                  optimization opportunities. Check Plan_XML for the specific nodes.
 Action: For Key Lookup queries (first result set), create a covering nonclustered index that includes all columns from the SELECT and WHERE clauses to eliminate the lookup. For Implicit Conversion queries (second result set), fix the data type mismatch — typically the application is passing a string (NVARCHAR) to an INT or DATETIME column, or the join columns have mismatched types. Use the Plan_XML column to identify the specific node.
 Criticality:    High
+Author:        Ravi Sharma
 ================================================================================
 */
 

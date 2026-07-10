@@ -9,6 +9,7 @@ Importance:     Disk I/O is often the slowest component; high latency directly
                 >20ms = Critical.
 Action:         If Avg_Read_Stall_ms or Avg_Write_Stall_ms > 20ms for data files, move the affected database files to faster storage (SSD/SAN). For log files with > 20ms latency, separate logs from data on different physical drives. Run tempdb_configuration.sql if tempdb files show high latency.
 Criticality:    High
+Author:        Ravi Sharma
 ================================================================================
 */
 

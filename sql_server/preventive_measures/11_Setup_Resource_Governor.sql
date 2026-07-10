@@ -5,7 +5,7 @@
 Purpose:    Configures Resource Governor for workload management.
 
 Version:    2.1
-Author:     DBA Team
+Author:     Ravi Sharma
 Created:    2026-06-19
 Updated:    2026-07-09 - Confirmed dry-run gate, prerequisites, and safety notes
 Compatible: SQL Server 2016, 2017, 2019, 2022 (Enterprise only)

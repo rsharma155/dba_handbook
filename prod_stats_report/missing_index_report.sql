@@ -30,6 +30,7 @@ Note:
 
 Prerequisites: SQL Server 2016+ (STRING_SPLIT)
 Criticality: Medium (read-only, metadata/DMV only)
+Author:        Ravi Sharma
 ================================================================================
 */
 

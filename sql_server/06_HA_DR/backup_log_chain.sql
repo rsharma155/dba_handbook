@@ -18,6 +18,7 @@ Action:
     recovery, or manual log shrink (SHRINKFILE). Run weekly to catch breaks early.
 
 Criticality: Critical
+Author:        Ravi Sharma
 ================================================================================
 */
 

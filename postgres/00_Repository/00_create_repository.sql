@@ -10,6 +10,7 @@ Action:
     Run as superuser: psql -f 00_create_repository.sql
 
 Criticality: Low (one-time setup)
+Author:        Ravi Sharma
 ================================================================================
 */
 

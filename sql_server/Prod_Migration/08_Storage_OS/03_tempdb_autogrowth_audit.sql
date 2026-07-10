@@ -22,6 +22,7 @@ Next if tempdb looks OK:
     04_Wait_Stats/03_latch_metadata_waits.sql for non-tempdb latches
 
 Criticality: High after edition upgrade with more cores
+Author:        Ravi Sharma
 ================================================================================
 */
 

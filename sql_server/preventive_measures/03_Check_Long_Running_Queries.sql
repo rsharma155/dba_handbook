@@ -6,7 +6,7 @@ Purpose:    Detects currently running user queries that exceed the configured
             governance duration threshold and records alerts for monitoring.
 
 Version:    2.1
-Author:     DBA Team
+Author:     Ravi Sharma
 Created:    2026-06-19
 Updated:    2026-07-09 - Added governance header, report-only mode, and
                          orchestrator-compatible parameters

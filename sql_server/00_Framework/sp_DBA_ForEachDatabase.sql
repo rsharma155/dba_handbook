@@ -23,7 +23,8 @@ Usage:
 
     EXEC dbo.sp_DBA_ForEachDatabase
         @Command = N'SELECT name, type_desc, physical_name, size FROM sys.database_files;',
-        @DatabaseList = N'AdventureWorks,SalesDB';
+        @DatabaseList = N'userdb';
+Author:        Ravi Sharma
 ================================================================================
 */
 IF OBJECT_ID(N'dbo.sp_DBA_ForEachDatabase', N'P') IS NULL

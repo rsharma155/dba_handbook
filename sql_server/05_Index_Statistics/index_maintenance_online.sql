@@ -48,6 +48,7 @@ Warning: dm_db_index_physical_stats can be expensive. Run off-peak.
 
 Criticality: High — modifies indexes
 Prerequisites: ALTER permission on target tables/indexes
+Author:        Ravi Sharma
 ================================================================================
 */
 

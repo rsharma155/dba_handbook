@@ -29,6 +29,7 @@ Parameters (local variables — edit before execution):
 Prerequisites: SQL Server 2019+ (STRING_AGG, STRING_SPLIT)
 
 Criticality: Medium (read-only; generates DROP suggestions for review only)
+Author:        Ravi Sharma
 ================================================================================
 */
 
@@ -51,7 +52,7 @@ END;
 /*------------------------------------------------------------------------------
   User configuration
 ------------------------------------------------------------------------------*/
-DECLARE @DatabaseList    NVARCHAR(MAX) = '_DTRG_Dev_Hospital';   -- e.g. N'SalesDB,HRDB' or NULL = all user DBs
+DECLARE @DatabaseList    NVARCHAR(MAX) = N'userdb';   -- e.g. N'userdb' or NULL = all user DBs
 DECLARE @IncludeReadOnly BIT            = 0;
 DECLARE @MinPageCount    INT            = 0;
 DECLARE @ShowDiagnostics BIT            = 1;

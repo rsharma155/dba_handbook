@@ -17,6 +17,7 @@ Execute in order against your admin database:
     11. sp_DBA_PlanCacheAnalyzer.sql       (00_Framework/)
     12. sp_DBA_BaselineCapture.sql         (00_Framework/)
     13. sp_DBA_SaveAssessmentRun.sql       (00_Framework/)
+Author:        Ravi Sharma
 ================================================================================
 */
 PRINT N'Deploy framework objects from 00_Framework and repo root .sql files (see README.md).';
