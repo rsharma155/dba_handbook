@@ -1,0 +1,6 @@
+# One-to-many destination databases on a single target SQL Server.
+# Use with: -TargetDatabaseListFile .\config\destination_databases.yml
+DestinationDatabases:
+  - Tenant_Alpha
+  - Tenant_Beta
+  - Tenant_Gamma

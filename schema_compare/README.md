@@ -279,14 +279,121 @@ Scripts and reports are written to `.\output\` by default.
 
 ---
 
+## One-to-many: one source DB → many destination databases
+
+Use this when a **single source database** (template / golden schema) should be synced to
+**many databases on one target server** (multi-tenant hosts, regional copies, etc.).
+
+The destination list comes from a file (`.txt` / `.json` / `.yml`) or from `-TargetDatabase`
+with multiple names. Sync scripts are prepared **per destination database**.
+
+### List file formats
+
+**JSON** (`config/destination_databases.json`):
+
+```json
+{ "DestinationDatabases": [ "Tenant_Alpha", "Tenant_Beta", "Tenant_Gamma" ] }
+```
+
+Also accepts a plain array, or keys `TargetDatabases` / `Databases`.
+
+**YAML** (`config/destination_databases.yml`):
+
+```yaml
+DestinationDatabases:
+  - Tenant_Alpha
+  - Tenant_Beta
+  - Tenant_Gamma
+```
+
+**Text** (`config/destination_databases.txt`) — one name per line; `#` comments allowed.
+
+### CLI examples
+
+```powershell
+# Preferred: list file
+.\Compare-SqlSchema.ps1 `
+    -SourceSqlInstance SQL-DEV-01 `
+    -TargetSqlInstance SQL-TENANT-01 `
+    -Database TemplateDb `
+    -TargetDatabaseListFile .\config\destination_databases.json `
+    -GenerateSyncScript
+
+# Same fan-out without a file (1 source, N targets)
+.\Compare-SqlSchema.ps1 `
+    -SourceSqlInstance SQL-DEV-01 `
+    -TargetSqlInstance SQL-TENANT-01 `
+    -Database TemplateDb `
+    -TargetDatabase Tenant_Alpha,Tenant_Beta,Tenant_Gamma `
+    -GenerateSyncScript
+```
+
+Rules:
+
+| Rule | Detail |
+|------|--------|
+| Source | Exactly **one** database in `-Database` when using a list file or N targets |
+| Target server | Still a **single** `-TargetSqlInstance` |
+| Missing DB | Run fails fast if any listed destination DB is missing on the target |
+| Mutual exclusion | Do not pass both `-TargetDatabase` and `-TargetDatabaseListFile` |
+
+### Output layout (multi-DB)
+
+```
+output/SchemaSync_<stamp>/
+├── _manifest.csv                 # all destinations (includes RelativeFolder)
+├── _README_MULTI_DB_INDEX.txt    # per-DB sqlcmd cheat sheet
+├── SchemaCompare_<stamp>.html
+├── Tenant_Alpha/
+│   ├── auto_Tenant_Alpha__...sql
+│   ├── _master_auto_only.sql
+│   ├── _master_migration.sql
+│   └── _README_RUN_ON_TARGET.txt
+└── Tenant_Beta/
+    └── ...
+```
+
+Run each destination’s master script **from inside that subfolder** (so `:r` paths resolve).
+
+### Pipeline config
+
+Point the target environment at a list file (path relative to `config/` or the script root):
+
+```jsonc
+{
+  "Environments": {
+    "Template": {
+      "SqlInstance": "SQL-DEV-01",
+      "Auth": "Windows",
+      "Databases": [ "TemplateDb" ]
+    },
+    "Tenants": {
+      "SqlInstance": "SQL-TENANT-01",
+      "Auth": "Windows",
+      "DestinationDatabaseListFile": "destination_databases.json"
+    }
+  },
+  "Promotions": [
+    { "Source": "Template", "Target": "Tenants", "IncludeDrops": false, "AutoApply": false }
+  ]
+}
+```
+
+```powershell
+.\Invoke-SchemaSyncPipeline.ps1 -Only Tenants
+```
+
+---
+
 ## `Compare-SqlSchema.ps1` parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `-SourceSqlInstance` | string | *required* | Source ("source of truth") instance. |
 | `-TargetSqlInstance` | string | *required* | Target instance to be synced. |
-| `-Database` | string[] | *required* | One or more databases to compare. |
-| `-TargetDatabase` | string[] | = `-Database` | Target DB names when they differ (same count/order). |
+| `-Database` | string[] | *required* | One or more source databases. For one-to-many, supply exactly one name. |
+| `-TargetDatabase` | string[] | = `-Database` | Target DB names. Same count = 1:1 pairing; one source + many names = 1:N fan-out. |
+| `-TargetDatabaseListFile` | string | — | `.txt` / `.json` / `.yml` list of destination DBs (one-to-many; requires one source DB). |
 | `-SourceCredential` | PSCredential | — | SQL auth for source (Windows auth if omitted). |
 | `-TargetCredential` | PSCredential | — | SQL auth for target. |
 | `-SourcePort` | int | `0` | TCP port for source (`server,port` when not 1433). |
@@ -478,19 +585,24 @@ Each generated `.sql` file also has these commands in its header comment block. 
 ```
 schema_compare/
 ├── Compare-SqlSchema.ps1          # Core compare + per-purpose script generator
-├── Invoke-SchemaSyncPipeline.ps1  # Dev->UAT->Prod orchestrator
+├── Invoke-SchemaSyncPipeline.ps1  # Dev->UAT->Prod / one-to-many orchestrator
 ├── Test-SqlSchemaConnection.ps1   # Connection / auth / protocol diagnostic
 ├── config/
-│   └── environments.json          # Pipeline definition
+│   ├── environments.json          # Pipeline definition
+│   ├── destination_databases.json # Sample one-to-many destination list (JSON)
+│   ├── destination_databases.yml  # Sample one-to-many destination list (YAML)
+│   └── destination_databases.txt  # Sample one-to-many destination list (text)
 ├── output/
 │   └── SchemaSync_<stamp>/        # One run:
-│       ├── auto_<db>__<obj>__<purpose>.sql
+│       ├── auto_<db>__<obj>__<purpose>.sql   # (single-DB runs: flat)
 │       ├── manual_<db>__<obj>__<purpose>.sql
-│       ├── _manifest.csv          # All files + phase, blockers, prerequisites
-│       ├── _README_RUN_ON_TARGET.txt  # Which master file + copy/paste sqlcmd
-│       ├── _master_migration.sql  # Guided runbook (TARGET) with manual checkpoints
-│       ├── _master_auto_only.sql  # One-shot auto apply (TARGET)
-│       └── SchemaCompare_<stamp>.html
+│       ├── _manifest.csv
+│       ├── _README_RUN_ON_TARGET.txt
+│       ├── _master_migration.sql
+│       ├── _master_auto_only.sql
+│       ├── SchemaCompare_<stamp>.html
+│       ├── _README_MULTI_DB_INDEX.txt        # multi-DB / one-to-many only
+│       └── <TargetDb>/                       # multi-DB: per-destination scripts + masters
 └── README.md
 ```
 

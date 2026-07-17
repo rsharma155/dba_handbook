@@ -12,6 +12,11 @@
         Dev  --(compare + script)-->  UAT
         UAT  --(compare + script)-->  Prod
 
+    One-to-many fan-out is also supported: set a single source database and point the
+    target environment at DestinationDatabaseListFile (txt/json/yml) or a longer
+    Databases array. Compare-SqlSchema.ps1 then syncs the same source schema to each
+    destination database on the target server.
+
     By default nothing is applied automatically; scripts are produced for review. Set a
     hop's "AutoApply": true in the config (or pass -Apply) to execute against the target.
 
@@ -75,6 +80,23 @@ function Get-Env {
     return $prop.Value
 }
 
+function Resolve-ListFilePath {
+    param([string]$PathHint, [string]$ConfigFile)
+    if ([string]::IsNullOrWhiteSpace($PathHint)) { return $null }
+    if ([System.IO.Path]::IsPathRooted($PathHint) -and (Test-Path -LiteralPath $PathHint)) {
+        return (Resolve-Path -LiteralPath $PathHint).Path
+    }
+    $fromConfigDir = Join-Path (Split-Path -Parent $ConfigFile) $PathHint
+    if (Test-Path -LiteralPath $fromConfigDir) {
+        return (Resolve-Path -LiteralPath $fromConfigDir).Path
+    }
+    $fromScriptRoot = Join-Path $PSScriptRoot $PathHint
+    if (Test-Path -LiteralPath $fromScriptRoot) {
+        return (Resolve-Path -LiteralPath $fromScriptRoot).Path
+    }
+    throw "DestinationDatabaseListFile not found: $PathHint (tried relative to config and script root)."
+}
+
 $hasOptions    = [bool]$cfg.PSObject.Properties['Options']
 $excludeSchema = if ($hasOptions -and $cfg.Options.PSObject.Properties['ExcludeSchema']) { @($cfg.Options.ExcludeSchema) } else { @('sys','INFORMATION_SCHEMA','guest') }
 $includeTypes  = if ($hasOptions -and $cfg.Options.PSObject.Properties['IncludeObjectType']) { @($cfg.Options.IncludeObjectType) } else { @() }
@@ -90,13 +112,22 @@ foreach ($hop in $cfg.Promotions) {
     $srcEnv = Get-Env $hop.Source
     $tgtEnv = Get-Env $hop.Target
 
-    # Databases to compare: intersection of source-listed DBs, mapped positionally to
-    # the target's DB list when they differ in name.
     $srcDbs = @($srcEnv.Databases)
+    $tgtListFile = $null
+    if ($tgtEnv.PSObject.Properties['DestinationDatabaseListFile'] -and $tgtEnv.DestinationDatabaseListFile) {
+        $tgtListFile = Resolve-ListFilePath -PathHint ([string]$tgtEnv.DestinationDatabaseListFile) -ConfigFile $ConfigPath
+    } elseif ($hop.PSObject.Properties['DestinationDatabaseListFile'] -and $hop.DestinationDatabaseListFile) {
+        $tgtListFile = Resolve-ListFilePath -PathHint ([string]$hop.DestinationDatabaseListFile) -ConfigFile $ConfigPath
+    }
+
     $tgtDbs = if ($tgtEnv.PSObject.Properties['Databases']) { @($tgtEnv.Databases) } else { $srcDbs }
 
     Write-Host "`n--- Promotion: $($hop.Source) [$($srcEnv.SqlInstance)] -> $($hop.Target) [$($tgtEnv.SqlInstance)] ---" -ForegroundColor Yellow
-    Write-Host "    Databases: $($srcDbs -join ', ')" -ForegroundColor Gray
+    if ($tgtListFile) {
+        Write-Host "    One-to-many: source DB(s) $($srcDbs -join ', ') -> destinations from $tgtListFile" -ForegroundColor Gray
+    } else {
+        Write-Host "    Databases: $($srcDbs -join ', ')" -ForegroundColor Gray
+    }
 
     $hopApply = $false
     if (-not $WhatIfScriptsOnly) {
@@ -104,15 +135,19 @@ foreach ($hop in $cfg.Promotions) {
     }
 
     $splat = @{
-        SourceSqlInstance = $srcEnv.SqlInstance
-        TargetSqlInstance = $tgtEnv.SqlInstance
-        Database          = $srcDbs
+        SourceSqlInstance  = $srcEnv.SqlInstance
+        TargetSqlInstance  = $tgtEnv.SqlInstance
+        Database           = $srcDbs
         GenerateSyncScript = $true
-        OutputPath        = $OutputPath
-        ExcludeSchema     = $excludeSchema
-        ReportFormat      = @('Console','Html')
+        OutputPath         = $OutputPath
+        ExcludeSchema      = $excludeSchema
+        ReportFormat       = @('Console','Html')
     }
-    if ($tgtDbs -and ($tgtDbs -join ',') -ne ($srcDbs -join ',')) { $splat.TargetDatabase = $tgtDbs }
+    if ($tgtListFile) {
+        $splat.TargetDatabaseListFile = $tgtListFile
+    } elseif ($tgtDbs -and ($tgtDbs -join ',') -ne ($srcDbs -join ',')) {
+        $splat.TargetDatabase = $tgtDbs
+    }
     if ($includeTypes.Count -gt 0) { $splat.IncludeObjectType = $includeTypes }
     if ($hop.PSObject.Properties['IncludeDrops'] -and [bool]$hop.IncludeDrops) { $splat.IncludeDrops = $true }
 
@@ -123,7 +158,8 @@ foreach ($hop in $cfg.Promotions) {
     if ($tgtAuth -eq 'Sql') { if (-not $Credential) { throw "Environment '$($hop.Target)' uses SQL auth; pass -Credential." }; $splat.TargetCredential = $Credential }
 
     if ($hopApply) {
-        if ($PSCmdlet.ShouldProcess("$($tgtEnv.SqlInstance)", "Apply schema sync for $($srcDbs -join ', ')")) {
+        $applyLabel = if ($tgtListFile) { "destinations from list file" } else { ($srcDbs -join ', ') }
+        if ($PSCmdlet.ShouldProcess("$($tgtEnv.SqlInstance)", "Apply schema sync for $applyLabel")) {
             $splat.Apply = $true
         }
     }

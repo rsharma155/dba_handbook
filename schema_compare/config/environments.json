@@ -1,5 +1,5 @@
 {
-    "$comment": "Define your promotion pipeline here. Each environment is a named node. 'Promotions' lists the ordered Source->Target hops (e.g. Dev->Uat->Prod). Databases can be overridden per environment when names differ across tiers.",
+    "$comment": "Define your promotion pipeline here. Each environment is a named node. 'Promotions' lists the ordered Source->Target hops (e.g. Dev->Uat->Prod). Databases can be overridden per environment when names differ across tiers. For one-to-many (one source DB -> many dest DBs on one server), set DestinationDatabaseListFile on the target environment (see Tenants example below) or pass a longer Databases array with a single source Databases entry.",
 
     "Environments": {
         "Dev": {
@@ -16,6 +16,16 @@
             "SqlInstance": "SQL-PROD-01",
             "Auth": "Windows",
             "Databases": [ "Sales", "HR" ]
+        },
+        "Template": {
+            "SqlInstance": "SQL-DEV-01",
+            "Auth": "Windows",
+            "Databases": [ "TemplateDb" ]
+        },
+        "Tenants": {
+            "SqlInstance": "SQL-TENANT-01",
+            "Auth": "Windows",
+            "DestinationDatabaseListFile": "destination_databases.json"
         }
     },
 
@@ -23,6 +33,8 @@
         { "Source": "Dev",  "Target": "Uat",  "IncludeDrops": false, "AutoApply": false },
         { "Source": "Uat",  "Target": "Prod", "IncludeDrops": false, "AutoApply": false }
     ],
+
+    "$one_to_many_example": "To fan out TemplateDb to every DB in destination_databases.json on SQL-TENANT-01, add: { \"Source\": \"Template\", \"Target\": \"Tenants\", \"IncludeDrops\": false, \"AutoApply\": false }",
 
     "Options": {
         "ExcludeSchema": [ "sys", "INFORMATION_SCHEMA", "guest", "staging" ],

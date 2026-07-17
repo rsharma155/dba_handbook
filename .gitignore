@@ -1,2 +1,5 @@
 .DS_Store
 .vs/
+
+# Local / hospital-specific adhoc scripts (not tracked)
+adhoc/

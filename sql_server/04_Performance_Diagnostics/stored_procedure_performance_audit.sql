@@ -129,7 +129,7 @@ CREATE TABLE #Findings
     Recommendation NVARCHAR(4000) NOT NULL,
     Source_Context NVARCHAR(1000) NULL,
     Left_Object NVARCHAR(517) NULL,
-    Left_Data_Type NVARCHAR(256) NULL,
+    Left_Data_Type NVARCHAR(4000) NULL,  -- also stores plan ScalarString for runtime conversions
     Right_Object NVARCHAR(517) NULL,
     Right_Data_Type NVARCHAR(256) NULL,
     Runtime_Execution_Count BIGINT NULL,
@@ -838,13 +838,16 @@ BEGIN
         N'PLAN_CACHE_CONVERT_IMPLICIT',
         CASE WHEN rc.Conversion_Expression LIKE N'%CONVERT_IMPLICIT%' THEN N'High' ELSE N'Medium' END,
         N'Runtime implicit conversion in cached plan',
-        N'Execution plan contains CONVERT_IMPLICIT on '
-            + COALESCE(rc.Referenced_Column_Schema + N'.' + rc.Referenced_Column_Table + N'.' + rc.Referenced_Column_Name, N'<column not resolved>')
-            + N'. Expression: ' + rc.Conversion_Expression,
+        LEFT(
+            N'Execution plan contains CONVERT_IMPLICIT on '
+                + COALESCE(rc.Referenced_Column_Schema + N'.' + rc.Referenced_Column_Table + N'.' + rc.Referenced_Column_Name, N'<column not resolved>')
+                + N'. Expression: ' + COALESCE(rc.Conversion_Expression, N''),
+            4000
+        ),
         N'Match parameter, variable, and join column data types. Avoid converting indexed columns. Recompile and compare plans after schema or parameter changes.',
         LEFT(COALESCE(rc.Statement_Text, N''), 1000),
         COALESCE(rc.Referenced_Column_Schema + N'.' + rc.Referenced_Column_Table + N'.' + rc.Referenced_Column_Name, NULL),
-        rc.Conversion_Expression,
+        LEFT(COALESCE(rc.Conversion_Expression, N''), 4000),
         rc.execution_count,
         rc.Total_CPU_ms,
         rc.last_execution_time

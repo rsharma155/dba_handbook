@@ -30,8 +30,20 @@
     assumed on the Target. Accepts an array: 'Sales','HR'.
 
 .PARAMETER TargetDatabase
-    Optional target database name(s) when they differ from the source names. Must be the
-    same count/order as -Database when supplied.
+    Optional target database name(s) when they differ from the source names.
+    Pairing modes:
+      * 1:1  — same count/order as -Database (existing behaviour).
+      * 1:N  — exactly one source database in -Database and two or more target names
+               (fan-out: same source schema compared to each destination database).
+
+.PARAMETER TargetDatabaseListFile
+    Path to a .txt / .json / .yml|.yaml file listing destination database names for
+    one-to-many sync. Requires exactly one source database in -Database. Cannot be
+    combined with -TargetDatabase.
+    Formats:
+      txt  — one database name per line (# comments and blank lines ignored)
+      json — { "DestinationDatabases": ["Db1","Db2"] } or a plain string array
+      yml  — DestinationDatabases: [list] or a YAML sequence of names
 
 .PARAMETER SourceCredential
     Optional PSCredential for SQL authentication against the Source. Windows auth is used
@@ -97,6 +109,12 @@
     .\Compare-SqlSchema.ps1 -SourceSqlInstance SQL-DEV-01 -TargetSqlInstance SQL-UAT-01 `
         -Database Sales,HR -GenerateSyncScript -IncludeDrops -Apply
 
+.EXAMPLE
+    # One source DB -> many destination DBs on one target server (list file)
+    .\Compare-SqlSchema.ps1 -SourceSqlInstance SQL-DEV-01 -TargetSqlInstance SQL-TENANT-01 `
+        -Database TemplateDb -TargetDatabaseListFile .\config\destination_databases.json `
+        -GenerateSyncScript
+
 .NOTES
     Requires the dbatools module (Install-Module dbatools -Scope CurrentUser).
     Table structural changes are emitted as ALTER statements where safely expressible;
@@ -109,6 +127,7 @@ param(
     [Parameter(Mandatory)] [string]   $TargetSqlInstance,
     [Parameter(Mandatory)] [string[]] $Database,
     [string[]]      $TargetDatabase,
+    [string]        $TargetDatabaseListFile,
     [pscredential]  $SourceCredential,
     [pscredential]  $TargetCredential,
     [int]           $SourcePort = 0,
@@ -218,6 +237,200 @@ function Format-SqlInstanceAddress {
     if ($Port -le 0) { return $Instance }
     if ($Instance -match ',\s*\d+\s*$') { return $Instance }
     return "$Instance,$Port"
+}
+
+function Resolve-TargetDatabaseList {
+    <#
+        Load destination database names from a .txt / .json / .yml|.yaml list file.
+        Returns a distinct, ordered string[] (empty lines and duplicates removed).
+    #>
+    param([Parameter(Mandatory)][string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        throw "Target database list file not found: $Path"
+    }
+
+    $ext = [System.IO.Path]::GetExtension($Path).ToLowerInvariant()
+    $raw = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop
+    if ([string]::IsNullOrWhiteSpace($raw)) {
+        throw "Target database list file is empty: $Path"
+    }
+
+    $names = [System.Collections.Generic.List[string]]::new()
+
+    switch ($ext) {
+        '.txt' {
+            foreach ($line in ($raw -split '\r?\n')) {
+                $t = $line.Trim()
+                if (-not $t -or $t.StartsWith('#')) { continue }
+                # Allow optional " - Name" bullet style in txt files.
+                if ($t -match '^\-\s+(.+)$') { $t = $Matches[1].Trim() }
+                if ($t) { $names.Add($t) }
+            }
+        }
+        '.json' {
+            $obj = $raw | ConvertFrom-Json
+            $list = $null
+            # PS 5.1 ConvertFrom-Json collapses a single-element array to a scalar.
+            if ($obj -is [string]) {
+                $list = @($obj)
+            } elseif ($obj -is [System.Array] -or $obj -is [object[]]) {
+                $list = @($obj)
+            } elseif ($obj.PSObject.Properties['DestinationDatabases']) {
+                $list = @($obj.DestinationDatabases)
+            } elseif ($obj.PSObject.Properties['TargetDatabases']) {
+                $list = @($obj.TargetDatabases)
+            } elseif ($obj.PSObject.Properties['Databases']) {
+                $list = @($obj.Databases)
+            } else {
+                throw "JSON list file must be a string array or contain DestinationDatabases / TargetDatabases / Databases. File: $Path"
+            }
+            foreach ($n in $list) {
+                $t = [string]$n
+                if (-not [string]::IsNullOrWhiteSpace($t)) { $names.Add($t.Trim()) }
+            }
+        }
+        { $_ -in '.yml', '.yaml' } {
+            # Minimal YAML list parser (no external module). Supports:
+            #   DestinationDatabases: / TargetDatabases: / Databases:
+            #     - Db1
+            #     - Db2
+            #   or a top-level sequence:
+            #     - Db1
+            #     - Db2
+            #   or inline: DestinationDatabases: [Db1, Db2]
+            $inList = $false
+            $keySeen = $false
+            foreach ($line in ($raw -split '\r?\n')) {
+                $stripped = ($line -replace '#.*$', '').TrimEnd()
+                if ([string]::IsNullOrWhiteSpace($stripped)) { continue }
+
+                if ($stripped -match '^(DestinationDatabases|TargetDatabases|Databases)\s*:\s*(.*)$') {
+                    $keySeen = $true
+                    $inList = $true
+                    $inline = $Matches[2].Trim()
+                    if ($inline -match '^\[(.*)\]$') {
+                        foreach ($part in ($Matches[1] -split ',')) {
+                            $t = $part.Trim().Trim('''"')
+                            if ($t) { $names.Add($t) }
+                        }
+                        $inList = $false
+                    }
+                    continue
+                }
+
+                if ($stripped -match '^\-\s+(.+)$') {
+                    if (-not $keySeen) { $inList = $true }  # top-level sequence
+                    if ($inList) {
+                        $t = $Matches[1].Trim().Trim('''"')
+                        if ($t) { $names.Add($t) }
+                    }
+                    continue
+                }
+
+                # Any other non-list key ends the current list block.
+                if ($inList -and $stripped -match '^\S') { $inList = $false }
+            }
+            if ($names.Count -eq 0) {
+                throw "YAML list file had no database names. Expected DestinationDatabases / TargetDatabases / Databases or a sequence of '- Name'. File: $Path"
+            }
+        }
+        default {
+            throw "Unsupported list file extension '$ext'. Use .txt, .json, .yml, or .yaml. File: $Path"
+        }
+    }
+
+    # Distinct, preserve first-seen order (case-insensitive).
+    $seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $unique = [System.Collections.Generic.List[string]]::new()
+    foreach ($n in $names) {
+        if ($seen.Add($n)) { $unique.Add($n) }
+    }
+    if ($unique.Count -eq 0) {
+        throw "No destination database names found in: $Path"
+    }
+    return @($unique)
+}
+
+function Resolve-CompareDatabasePairs {
+    <#
+        Build Source/Target database pairs.
+        Modes:
+          * List file  -> one source DB, N targets from file (1:N)
+          * 1 source + N TargetDatabase names -> 1:N fan-out
+          * Equal counts -> classic 1:1 positional pairing
+          * No TargetDatabase -> same names on target
+    #>
+    param(
+        [string[]]$SourceDatabases,
+        [string[]]$TargetDatabases,
+        [string]$ListFile
+    )
+
+    $src = @($SourceDatabases | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    if ($src.Count -eq 0) { throw '-Database must include at least one source database name.' }
+
+    if ($ListFile) {
+        if ($TargetDatabases -and $TargetDatabases.Count -gt 0) {
+            throw 'Specify either -TargetDatabase or -TargetDatabaseListFile, not both.'
+        }
+        if ($src.Count -ne 1) {
+            throw "-TargetDatabaseListFile requires exactly one source database in -Database (got $($src.Count))."
+        }
+        $targets = @(Resolve-TargetDatabaseList -Path $ListFile)
+        return @{
+            Mode   = 'OneToMany'
+            Pairs  = @($targets | ForEach-Object {
+                [pscustomobject]@{ Source = $src[0]; Target = $_ }
+            })
+            Source = $src[0]
+            Targets = $targets
+        }
+    }
+
+    if (-not $TargetDatabases -or $TargetDatabases.Count -eq 0) {
+        return @{
+            Mode  = 'OneToOne'
+            Pairs = @($src | ForEach-Object {
+                [pscustomobject]@{ Source = $_; Target = $_ }
+            })
+            Source = $null
+            Targets = @($src)
+        }
+    }
+
+    $tgt = @($TargetDatabases | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    if ($src.Count -eq 1 -and $tgt.Count -gt 1) {
+        return @{
+            Mode    = 'OneToMany'
+            Pairs   = @($tgt | ForEach-Object {
+                [pscustomobject]@{ Source = $src[0]; Target = $_ }
+            })
+            Source  = $src[0]
+            Targets = $tgt
+        }
+    }
+
+    if ($tgt.Count -ne $src.Count) {
+        throw "-TargetDatabase count ($($tgt.Count)) must match -Database count ($($src.Count)), or use one source database with many targets (1:N / -TargetDatabaseListFile)."
+    }
+
+    $pairs = for ($i = 0; $i -lt $src.Count; $i++) {
+        [pscustomobject]@{ Source = $src[$i]; Target = $tgt[$i] }
+    }
+    return @{
+        Mode    = 'OneToOne'
+        Pairs   = @($pairs)
+        Source  = $null
+        Targets = $tgt
+    }
+}
+
+function Get-SafeDbFolderName {
+    param([string]$DbName)
+    $safe = ($DbName -replace '[^\w.-]', '_')
+    if ([string]::IsNullOrWhiteSpace($safe)) { $safe = 'db' }
+    return $safe
 }
 
 function Get-SqlConnectionHints {
@@ -1634,9 +1847,11 @@ Test-Prerequisite
 if (-not $OutputPath) { $OutputPath = Join-Path $PSScriptRoot 'output' }
 if (-not (Test-Path $OutputPath)) { New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null }
 
-if ($TargetDatabase -and $TargetDatabase.Count -ne $Database.Count) {
-    throw "-TargetDatabase count ($($TargetDatabase.Count)) must match -Database count ($($Database.Count))."
-}
+$pairPlan = Resolve-CompareDatabasePairs -SourceDatabases $Database -TargetDatabases $TargetDatabase -ListFile $TargetDatabaseListFile
+$comparePairs = @($pairPlan.Pairs)
+$isOneToMany  = ($pairPlan.Mode -eq 'OneToMany')
+$usePerDbDirs = ($comparePairs.Count -gt 1)
+
 if ($Apply -and -not $GenerateSyncScript) {
     throw "-Apply requires -GenerateSyncScript."
 }
@@ -1651,6 +1866,22 @@ $tgtServer = Connect-Instance -Instance $TargetSqlInstance -Credential $TargetCr
 Write-Log "  Source: $($srcServer.Name) ($($srcServer.VersionString))" 'Gray'
 Write-Log "  Target: $($tgtServer.Name) ($($tgtServer.VersionString))" 'Gray'
 
+if ($isOneToMany) {
+    Write-Log "Mode: one-to-many  Source DB [$($pairPlan.Source)] -> $($comparePairs.Count) destination database(s) on [$TargetSqlInstance]" 'Cyan'
+    if ($TargetDatabaseListFile) {
+        Write-Log "  Destination list: $TargetDatabaseListFile" 'Gray'
+    }
+}
+
+# Fail fast if any listed target DB is missing on the destination server.
+$missingTargets = @()
+foreach ($p in $comparePairs) {
+    if (-not $tgtServer.Databases[$p.Target]) { $missingTargets += $p.Target }
+}
+if ($missingTargets.Count -gt 0) {
+    throw "Target database(s) not found on $($tgtServer.Name): $($missingTargets -join ', ')"
+}
+
 $stamp      = Get-Date -Format 'yyyyMMdd_HHmmss'
 $runDir     = $null
 if ($GenerateSyncScript) {
@@ -1662,10 +1893,16 @@ $summaries    = [System.Collections.Generic.List[pscustomobject]]::new()
 $manifest     = [System.Collections.Generic.List[pscustomobject]]::new()
 $databasePairs = [System.Collections.Generic.List[pscustomobject]]::new()
 
-for ($i = 0; $i -lt $Database.Count; $i++) {
-    $srcDbName = $Database[$i]
-    $tgtDbName = if ($TargetDatabase) { $TargetDatabase[$i] } else { $srcDbName }
+foreach ($pair in $comparePairs) {
+    $srcDbName = $pair.Source
+    $tgtDbName = $pair.Target
     $databasePairs.Add([pscustomobject]@{ Source = $srcDbName; Target = $tgtDbName })
+
+    $dbOutDir = $runDir
+    if ($GenerateSyncScript -and $usePerDbDirs) {
+        $dbOutDir = Join-Path $runDir (Get-SafeDbFolderName $tgtDbName)
+        if (-not (Test-Path $dbOutDir)) { New-Item -ItemType Directory -Path $dbOutDir -Force | Out-Null }
+    }
 
     Write-Log "`n=== Comparing [$srcDbName] -> [$tgtDbName] ===" 'Cyan'
     $result = Compare-Database -SrcServer $srcServer -TgtServer $tgtServer -SrcDbName $srcDbName -TgtDbName $tgtDbName
@@ -1674,11 +1911,11 @@ for ($i = 0; $i -lt $Database.Count; $i++) {
     $dbManifest = @()
     if ($GenerateSyncScript -and $result.Changes.Count -gt 0) {
         $dbManifest = @(Write-ChangeScripts -Changes $result.Changes -SrcInstance $SourceSqlInstance -SrcDbName $srcDbName `
-            -TgtInstance $TargetSqlInstance -TgtDbName $tgtDbName -OutDir $runDir)
+            -TgtInstance $TargetSqlInstance -TgtDbName $tgtDbName -OutDir $dbOutDir)
         foreach ($m in $dbManifest) { $manifest.Add($m) }
         $autoN   = @($dbManifest | Where-Object { $_.Mode -eq 'Auto' }).Count
         $manualN = @($dbManifest | Where-Object { $_.Mode -eq 'Manual' }).Count
-        Write-Log "  Wrote $($dbManifest.Count) script(s): $autoN auto_, $manualN manual_  -> $runDir" 'Green'
+        Write-Log "  Wrote $($dbManifest.Count) script(s): $autoN auto_, $manualN manual_  -> $dbOutDir" 'Green'
     } elseif ($GenerateSyncScript) {
         Write-Log "  No changes to script for [$tgtDbName]." 'Green'
     }
@@ -1701,29 +1938,74 @@ for ($i = 0; $i -lt $Database.Count; $i++) {
         DifferenceCount = $result.Differences.Count
         AutoScripts     = @($dbManifest | Where-Object { $_.Mode -eq 'Auto' }).Count
         ManualScripts   = @($dbManifest | Where-Object { $_.Mode -eq 'Manual' }).Count
-        ScriptFolder    = $runDir
+        ScriptFolder    = if ($dbOutDir) { $dbOutDir } else { $runDir }
         Manifest        = $dbManifest
         Differences     = $result.Differences
     })
 }
 
-# Write enriched manifest + master migration catalog.
+# Write enriched manifest + master migration catalog (per destination database).
 if ($GenerateSyncScript -and $manifest.Count -gt 0) {
     $enriched     = Enrich-ManifestEntries -Manifest $manifest
     $manifestPath = Join-Path $runDir '_manifest.csv'
-    $enriched | Sort-Object Order, Mode, FileName |
-        Select-Object Phase, Mode, Order, Database, Object, Purpose, ChangeCount, FileName, Blockers, Prerequisites, RequiresReview |
-        Export-Csv -Path $manifestPath -NoTypeInformation -Encoding UTF8
+    $enriched | Sort-Object Database, Order, Mode, FileName | ForEach-Object {
+        $relFolder = if ($usePerDbDirs) { Get-SafeDbFolderName $_.Database } else { '.' }
+        [pscustomobject]@{
+            Phase           = $_.Phase
+            Mode            = $_.Mode
+            Order           = $_.Order
+            Database        = $_.Database
+            RelativeFolder  = $relFolder
+            Object          = $_.Object
+            Purpose         = $_.Purpose
+            ChangeCount     = $_.ChangeCount
+            FileName        = $_.FileName
+            Blockers        = $_.Blockers
+            Prerequisites   = $_.Prerequisites
+            RequiresReview  = $_.RequiresReview
+        }
+    } | Export-Csv -Path $manifestPath -NoTypeInformation -Encoding UTF8
     Write-Log "Manifest: $manifestPath" 'Green'
 
     $masterPaths = @()
     foreach ($db in ($enriched | Select-Object -ExpandProperty Database -Unique)) {
         $dbEntries = @($enriched | Where-Object { $_.Database -eq $db })
-        $paths = Write-MasterMigrationCatalog -EnrichedManifest $dbEntries -TgtDbName $db -OutDir $runDir `
+        $dbOutDir  = if ($usePerDbDirs) { Join-Path $runDir (Get-SafeDbFolderName $db) } else { $runDir }
+        $paths = Write-MasterMigrationCatalog -EnrichedManifest $dbEntries -TgtDbName $db -OutDir $dbOutDir `
             -SrcInstance $SourceSqlInstance -TgtInstance $TargetSqlInstance
         $masterPaths += $paths
         Write-Log "  Master catalog [$db]: $($paths.Master)" 'Green'
         Write-Log "  Auto-only runner [$db]: $($paths.AutoOnly)" 'Gray'
+    }
+
+    # Top-level index for one-to-many / multi-DB runs.
+    if ($usePerDbDirs) {
+        $indexLines = [System.Collections.Generic.List[string]]::new()
+        $indexLines.Add('SCHEMA SYNC — MULTI-DATABASE RUN INDEX')
+        $indexLines.Add('======================================')
+        $indexLines.Add("Source instance : $SourceSqlInstance")
+        if ($isOneToMany) {
+            $indexLines.Add("Source database : $($pairPlan.Source)  (fan-out to each destination below)")
+        }
+        $indexLines.Add("Target instance : $TargetSqlInstance")
+        $indexLines.Add("Generated (UTC) : $([DateTime]::UtcNow.ToString('yyyy-MM-dd HH:mm:ss'))")
+        $indexLines.Add("Run folder      : $runDir")
+        $indexLines.Add('')
+        $indexLines.Add('Each destination database has its own subfolder with scripts + master runners.')
+        $indexLines.Add('Run _master_auto_only.sql (or _master_migration.sql) from INSIDE that subfolder.')
+        $indexLines.Add('')
+        foreach ($s in $summaries) {
+            $folder = Get-SafeDbFolderName $s.TargetDatabase
+            $indexLines.Add("  [$($s.TargetDatabase)]  diffs=$($s.DifferenceCount)  auto=$($s.AutoScripts)  manual=$($s.ManualScripts)")
+            $indexLines.Add("      Folder: .\$folder\")
+            $indexLines.Add("      cd `"$(Join-Path $runDir $folder)`"")
+            $indexLines.Add("      sqlcmd -S $TargetSqlInstance -d $($s.TargetDatabase) -E -C -i `".\_master_auto_only.sql`"")
+            $indexLines.Add('')
+        }
+        $indexLines.Add('Combined manifest (all DBs): .\_manifest.csv')
+        $indexPath = Join-Path $runDir '_README_MULTI_DB_INDEX.txt'
+        Set-Content -Path $indexPath -Value ($indexLines -join [Environment]::NewLine) -Encoding UTF8
+        Write-Log "Multi-DB index: $indexPath" 'Green'
     }
 }
 
