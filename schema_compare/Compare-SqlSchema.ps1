@@ -80,8 +80,10 @@
     Emit a .sql sync script into -OutputPath.
 
 .PARAMETER IncludeDrops
-    Include DROP statements for objects/columns that exist only in the Target. OFF by
-    default because drops are destructive.
+    Include DROP statements for objects/columns that exist only in the Target (views,
+    procs, indexes, constraints, etc.). OFF by default because drops are destructive.
+    DROP TABLE is ALWAYS written as a manual_ script for human review and is never
+    emitted as an auto_ script, regardless of this switch.
 
 .PARAMETER Apply
     Execute the generated sync script against the Target. Requires -GenerateSyncScript.
@@ -1241,6 +1243,23 @@ function Write-ChangeScripts {
         $mode     = $first.Mode
         $category = $first.Category
         $order    = $first.Order
+
+        # SAFETY: DROP TABLE must never ship as an auto_ script — force Manual.
+        $hasDropTable = $false
+        foreach ($it in $items) {
+            if ($it.Sql -match '(?is)\bDROP\s+TABLE\b') { $hasDropTable = $true; break }
+        }
+        if ($hasDropTable) {
+            $mode = 'Manual'
+            foreach ($it in $items) {
+                if (-not $it.RiskNote) {
+                    $it.RiskNote = 'Contains DROP TABLE — permanently destroys data. Review carefully before running.'
+                } elseif ($it.RiskNote -notmatch '(?i)DROP\s+TABLE') {
+                    $it.RiskNote = "$($it.RiskNote) | Contains DROP TABLE — requires manual review."
+                }
+            }
+        }
+
         $prefix   = if ($mode -eq 'Manual') { 'manual' } else { 'auto' }
         $dbSafe   = ($TgtDbName -replace '[^\w.-]', '_')
         $fileName = "${prefix}_${dbSafe}__$($first.ObjectKeySafe)__${category}.sql"
@@ -1257,6 +1276,10 @@ function Write-ChangeScripts {
         $head.Add(" *  Target   : $TgtInstance / $TgtDbName")
         $head.Add(" *  Generated: $([DateTime]::UtcNow.ToString('yyyy-MM-dd HH:mm:ss')) UTC")
         $head.Add(" *  Run order: $order  (apply auto_ scripts in ascending run-order)")
+        if ($hasDropTable) {
+            $head.Add(" *")
+            $head.Add(" *  !! CONTAINS DROP TABLE — forced to MANUAL for operator review !!")
+        }
         $head.Add(" *")
         $head.Add(" *  Changes ($($items.Count)):")
         foreach ($it in $items) { $head.Add(" *    - $($it.Summary)") }

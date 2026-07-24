@@ -1,0 +1,2 @@
+D:\Mac_bak\AI_Code\sql_optima\dba_essential_scripts\schema_compare_GUI\dist\SqlOptima.SchemaCompare.pdb
+D:\Mac_bak\AI_Code\sql_optima\dba_essential_scripts\schema_compare_GUI\dist\SqlOptima.SchemaCompare.exe

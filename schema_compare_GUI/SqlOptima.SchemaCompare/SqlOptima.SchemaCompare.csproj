@@ -1,0 +1,24 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>SqlOptima.SchemaCompare</RootNamespace>
+    <AssemblyName>SqlOptima.SchemaCompare</AssemblyName>
+    <Product>SQL Optima Schema Compare</Product>
+    <Description>Desktop schema compare GUI (OpenDBDiff-inspired) powered by schema_compare PowerShell engine.</Description>
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SqlOptima.SchemaCompare.Tests" />
+  </ItemGroup>
+
+</Project>

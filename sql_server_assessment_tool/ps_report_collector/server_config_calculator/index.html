@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Server Config Calculator — SQL Server & PostgreSQL</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header class="hero">
+      <p class="hero-kicker">DBA sizing &amp; tuning helper</p>
+      <h1>Server Config Calculator</h1>
+      <p>
+        Enter known hardware to get SQL Server / PostgreSQL best-practice settings,
+        or describe the application workload to estimate server size, storage, network, and HADR.
+      </p>
+    </header>
+
+    <nav class="tabs" aria-label="Calculator modes">
+      <button type="button" class="tab-btn active" data-tab="tab-config">DB configuration tuner</button>
+      <button type="button" class="tab-btn" data-tab="tab-sizing">Server sizing from app flow</button>
+    </nav>
+
+    <!-- Feature 1: hardware → DB config -->
+    <section id="tab-config" class="tab-panel active">
+      <div class="panel">
+        <h2>Current server hardware → recommended DB settings</h2>
+        <p class="lead">
+          Provide CPU, RAM, storage, and workload type. The calculator applies predefined formulas
+          for optimal / best-practice SQL Server and PostgreSQL configuration.
+        </p>
+
+        <form id="configForm">
+          <div class="grid">
+            <div class="field">
+              <label class="label-row" for="hwEngine">
+                <span>Database engine</span>
+                <button type="button" class="info-tip" aria-label="Help" data-tip="Choose which database you want recommendations for. This also shows or hides engine-specific fields (NUMA for SQL Server, max connections for PostgreSQL)."></button>
+              </label>
+              <select id="hwEngine">
+                <option value="both">SQL Server + PostgreSQL</option>
+                <option value="sqlserver">SQL Server only</option>
+                <option value="postgres">PostgreSQL only</option>
+              </select>
+            </div>
+            <div class="field">
+              <label class="label-row" for="hwWorkload">
+                <span>Workload profile</span>
+                <button type="button" class="info-tip" aria-label="Help" data-tip="How the database is mainly used. OLTP = many short transactions. Reporting = heavy reads/scans. Mixed = both. This tweaks parallelism and memory-related advice."></button>
+              </label>
+              <select id="hwWorkload">
+                <option value="oltp">OLTP</option>
+                <option value="reporting">Reporting / Analytics</option>
+                <option value="mixed">Mixed</option>
+              </select>
+            </div>
+            <div class="field">
+              <label class="label-row" for="hwCpuType">
+                <span>CPU core type</span>
+                <button type="button" class="info-tip" aria-label="Help" data-tip="Cloud/VM CPU family style. General = balanced. Compute = more CPU-focused. Memory = high RAM-to-CPU ratio. Used for guidance notes, not a hard formula input."></button>
+              </label>
+              <select id="hwCpuType">
+                <option value="general">General purpose</option>
+                <option value="compute">Compute optimized</option>
+                <option value="memory">Memory optimized</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label class="label-row" for="hwVcpu">
+                <span>vCPU / logical cores</span>
+                <button type="button" class="info-tip" aria-label="Help" data-tip="Number of logical processors the OS shows for this server/VM (Task Manager → Performance → CPU, or lscpu). Used for SQL Server MAXDOP/TempDB files and PostgreSQL parallel workers."></button>
+              </label>
+              <input id="hwVcpu" type="number" min="1" step="1" required />
+            </div>
+            <div class="field">
+              <label class="label-row" for="hwRam">
+                <span>RAM (GB)</span>
+                <button type="button" class="info-tip" aria-label="Help" data-tip="Total physical memory of the database server in gigabytes. Drives SQL Server max/min memory and PostgreSQL shared_buffers, work_mem, and related settings."></button>
+              </label>
+              <input id="hwRam" type="number" min="1" step="1" required />
+            </div>
+            <div class="field" id="fieldNuma" data-show-for="sqlserver,both">
+              <label class="label-row" for="hwNuma">
+                <span>NUMA nodes</span>
+                <button type="button" class="info-tip" aria-label="Help" data-tip="SQL Server only. How many NUMA groups the CPUs are split into (often 1 on smaller VMs; 2+ on larger physical/cloud hosts). If unsure, leave 1 — common for most VMs. Used to set a safer MAXDOP. PostgreSQL has no equivalent user setting, so this field is hidden for Postgres-only."></button>
+              </label>
+              <input id="hwNuma" type="number" min="1" step="1" value="1" />
+            </div>
+
+            <div class="field">
+              <label class="label-row" for="hwStorage">
+                <span>Storage capacity (GB)</span>
+                <button type="button" class="info-tip" aria-label="Help" data-tip="Approximate total disk space for database files (data + logs/WAL). Helps size WAL/checkpoint guidance and free-space notes. Does not need to be exact."></button>
+              </label>
+              <input id="hwStorage" type="number" min="1" step="1" />
+            </div>
+            <div class="field">
+              <label class="label-row" for="hwStorageType">
+                <span>Storage type</span>
+                <button type="button" class="info-tip" aria-label="Help" data-tip="Disk technology for the database volume. SSD/NVMe = recommended (low latency). HDD = slow for databases; the tool will warn you. Affects PostgreSQL random_page_cost and storage advice."></button>
+              </label>
+              <select id="hwStorageType">
+                <option value="ssd">SSD</option>
+                <option value="nvme">NVMe</option>
+                <option value="hdd">HDD</option>
+              </select>
+            </div>
+            <div class="field" id="fieldMaxConn" data-show-for="postgres,both">
+              <label class="label-row" for="hwMaxConn">
+                <span>Expected max connections</span>
+                <button type="button" class="info-tip" aria-label="Help" data-tip="PostgreSQL only. How many client connections you expect at peak (app servers + tools). Prefer a connection pooler (PgBouncer). Used to size work_mem and max_connections. Leave blank to auto-estimate from vCPU/workload. Hidden for SQL Server-only."></button>
+              </label>
+              <input id="hwMaxConn" type="number" min="0" step="1" placeholder="optional — auto if blank" />
+            </div>
+          </div>
+
+          <div class="actions">
+            <button type="submit" class="btn btn-primary">Calculate recommended settings</button>
+          </div>
+        </form>
+
+        <div id="configResults" class="results" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <!-- Feature 2: app flow → server size -->
+    <section id="tab-sizing" class="tab-panel">
+      <div class="panel">
+        <h2>Not sure about server size? Describe the application</h2>
+        <p class="lead">
+          Enter users, insert volume, tables, and criticality. Rules for each app type
+          produce a recommended server tier (Small / Mid / Large / X-Large), hardware, network, and HADR —
+          plus matching SQL Server / PostgreSQL settings.
+        </p>
+
+        <form id="sizingForm">
+          <div class="grid">
+            <div class="field">
+              <label class="label-row" for="appType">
+                <span>Application type</span>
+                <button type="button" class="info-tip" aria-label="Help" data-tip="Pick the closest match for your app. Each type has predefined weights for CPU, RAM, storage, IOPS, network, and HADR (see rules below)."></button>
+              </label>
+              <select id="appType"></select>
+              <p id="appTypeHelp" class="hint"></p>
+            </div>
+            <div class="field">
+              <label class="label-row" for="szEngine">
+                <span>Target database</span>
+                <button type="button" class="info-tip" aria-label="Help" data-tip="Which database you plan to run. After sizing the server, matching engine settings are also suggested."></button>
+              </label>
+              <select id="szEngine">
+                <option value="both">SQL Server + PostgreSQL</option>
+                <option value="sqlserver">SQL Server</option>
+                <option value="postgres">PostgreSQL</option>
+              </select>
+            </div>
+            <div class="field">
+              <label class="label-row" for="szCriticality">
+                <span>Business criticality</span>
+                <button type="button" class="info-tip" aria-label="Help" data-tip="How bad an outage or data loss would be. Higher criticality pushes stronger HADR (Always On / sync replicas) recommendations."></button>
+              </label>
+              <select id="szCriticality">
+                <option value="low">Low</option>
+                <option value="medium" selected>Medium</option>
+                <option value="high">High</option>
+                <option value="mission">Mission critical</option>
+              </select>
+            </div>
+
+            <div class="field full">
+              <label class="label-row" for="appAbout">
+                <span>What the app is about</span>
+                <button type="button" class="info-tip" aria-label="Help" data-tip="Short plain-language description (what users do, peak times, special loads). Shown on the result for context; not used in the math."></button>
+              </label>
+              <textarea id="appAbout" placeholder="e.g. Multi-tenant SaaS for inventory; peak at month-end; mostly OLTP with a few heavy reports."></textarea>
+            </div>
+
+            <div class="field">
+              <label class="label-row" for="szUsers">
+                <span>Total users</span>
+                <button type="button" class="info-tip" aria-label="Help" data-tip="Registered or named users of the application (not all online at once). If you leave concurrent users blank, ~10% of this is assumed as concurrent."></button>
+              </label>
+              <input id="szUsers" type="number" min="0" step="1" />
+            </div>
+            <div class="field">
+              <label class="label-row" for="szConcurrent">
+                <span>Concurrent users (optional)</span>
+                <button type="button" class="info-tip" aria-label="Help" data-tip="How many users are typically active at the same time (peak). Stronger driver of CPU/RAM than total users. Leave blank to use ~10% of total users."></button>
+              </label>
+              <input id="szConcurrent" type="number" min="0" step="1" placeholder="defaults to ~10% of users" />
+            </div>
+            <div class="field">
+              <label class="label-row" for="szTables">
+                <span>Number of tables</span>
+                <button type="button" class="info-tip" aria-label="Help" data-tip="Approximate count of database tables (user tables). Large schemas add a small complexity factor to the workload score."></button>
+              </label>
+              <input id="szTables" type="number" min="0" step="1" />
+            </div>
+
+            <div class="field">
+              <label class="label-row" for="szDailyRows">
+                <span>Rows inserted / day</span>
+                <button type="button" class="info-tip" aria-label="Help" data-tip="Rough daily INSERT/update volume in rows (new or changed). Use peak or typical business day. Helps estimate write intensity."></button>
+              </label>
+              <input id="szDailyRows" type="number" min="0" step="1" />
+            </div>
+            <div class="field">
+              <label class="label-row" for="szDailyGb">
+                <span>Data volume insert / day (GB)</span>
+                <button type="button" class="info-tip" aria-label="Help" data-tip="How much new data (in gigabytes) is written per day. Prefer this when row size varies a lot. Used for storage growth sizing."></button>
+              </label>
+              <input id="szDailyGb" type="number" min="0" step="0.1" />
+            </div>
+            <div class="field">
+              <label class="label-row" for="szWeeklyGb">
+                <span>Data volume / week (GB)</span>
+                <button type="button" class="info-tip" aria-label="Help" data-tip="Optional. Total new data per week. If blank, calculated as daily × 7."></button>
+              </label>
+              <input id="szWeeklyGb" type="number" min="0" step="0.1" placeholder="optional" />
+            </div>
+
+            <div class="field">
+              <label class="label-row" for="szMonthlyGb">
+                <span>Data volume / month (GB)</span>
+                <button type="button" class="info-tip" aria-label="Help" data-tip="Optional. Total new data per month. If blank, estimated from weekly × ~4.3. Main input for annual storage projection."></button>
+              </label>
+              <input id="szMonthlyGb" type="number" min="0" step="0.1" placeholder="optional" />
+            </div>
+            <div class="field">
+              <label class="label-row" for="szRpo">
+                <span>Target RPO (minutes)</span>
+                <button type="button" class="info-tip" aria-label="Help" data-tip="Recovery Point Objective: how many minutes of data loss is acceptable after a failure. Example: 15 means you can lose up to 15 minutes. ≤15 strongly suggests high/sync HADR."></button>
+              </label>
+              <input id="szRpo" type="number" min="0" step="1" placeholder="e.g. 15" />
+            </div>
+          </div>
+
+          <div class="actions">
+            <button type="submit" class="btn btn-primary">Recommend server size</button>
+            <button type="button" id="exportSizingBtn" class="btn btn-secondary">Export JSON</button>
+          </div>
+        </form>
+
+        <div id="sizingResults" class="results" aria-live="polite"></div>
+      </div>
+
+      <aside class="rules-ref">
+        <details open>
+          <summary>Built-in application rules (summary)</summary>
+          <div class="rule-grid" id="rulesSummary">
+            <div class="rule-item">
+              <h4>OLTP / Transactional</h4>
+              <p>Higher IOPS &amp; HADR bias. Moderate MAXDOP-style CPU; RAM for buffer cache.</p>
+            </div>
+            <div class="rule-item">
+              <h4>E-commerce</h4>
+              <p>Size for peaks; stronger network weight; premium SSD; high HADR.</p>
+            </div>
+            <div class="rule-item">
+              <h4>SaaS / Multi-tenant</h4>
+              <p>RAM &amp; connection pooling matter; growth-oriented storage; high HADR.</p>
+            </div>
+            <div class="rule-item">
+              <h4>Reporting / Analytics</h4>
+              <p>CPU/RAM/storage heavy; throughput SSD; medium HADR (often async).</p>
+            </div>
+            <div class="rule-item">
+              <h4>Mixed OLTP + Reporting</h4>
+              <p>Balanced uplift across resources; prefer read replica for reports.</p>
+            </div>
+            <div class="rule-item">
+              <h4>IoT / Telemetry</h4>
+              <p>Ingest + storage growth dominate; partition/retention planning essential.</p>
+            </div>
+            <div class="rule-item">
+              <h4>CMS / Content</h4>
+              <p>Often smaller DB tier if CDN/cache offload media; medium HADR.</p>
+            </div>
+            <div class="rule-item">
+              <h4>Batch / ETL</h4>
+              <p>CPU + throughput disk for job windows; HADR can be lower if restartable.</p>
+            </div>
+          </div>
+        </details>
+      </aside>
+    </section>
+
+    <p class="footer">
+      Local, offline calculator — no data leaves the browser. Recommendations are starting points; validate with monitoring and load tests.
+    </p>
+  </div>
+
+  <script src="js/rules.js"></script>
+  <script src="js/sql-config.js"></script>
+  <script src="js/postgres-config.js"></script>
+  <script src="js/sizing.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

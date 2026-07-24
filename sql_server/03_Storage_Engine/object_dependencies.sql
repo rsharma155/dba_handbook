@@ -8,7 +8,10 @@ Provides:       Target object identity, direction, dependency type, referencing
                 Usage_Type (SELECT_ONLY / FILTER / JOIN) plus Usage_Snippet.
 Importance:     Use before DROP, RENAME, ALTER COLUMN, archive, or refactor work.
 Interpretation: Module column usage uses sql_modules + referencing/referenced DMVs
-                + sql_expression_dependencies. Clause classification is heuristic.
+                + sql_expression_dependencies. Object-level Incoming also matches
+                deferred (NULL referenced_id) catalog rows and soft module-text
+                hits ? SQL Server often omits referenced_id for procedures.
+                Clause classification is heuristic.
 Action:         Set @ObjectList (comma-separated schema.object names) and optional
                 @ColumnName / @DatabaseName. Run in the target database context.
                 Incoming referencers scanned: views, procs, TVFs/functions,
@@ -22,7 +25,7 @@ SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 SET NOCOUNT ON;
 
 /*------------------------------------------------------------------------------
-  Parameters — edit these before execution
+  Parameters ? edit these before execution
 
   IMPORTANT: Run this in the database that owns the objects (SSMS database
   dropdown, or USE [YourDatabase];). Catalog views are database-scoped;
@@ -353,6 +356,7 @@ CREATE TABLE #Referencing
     Object_Name      SYSNAME COLLATE DATABASE_DEFAULT NULL,
     Object_Type      CHAR(2) COLLATE DATABASE_DEFAULT NULL,
     Object_Type_Desc NVARCHAR(60) COLLATE DATABASE_DEFAULT NULL,
+    Match_Source     NVARCHAR(100) COLLATE DATABASE_DEFAULT NULL,
     Processed        BIT NOT NULL DEFAULT (0)
 );
 
@@ -415,6 +419,25 @@ DECLARE @MappedUsage NVARCHAR(20);
 DECLARE @HasSelect BIT;
 DECLARE @HasFilter BIT;
 DECLARE @HasJoin BIT;
+DECLARE @ObjectNameLike NVARCHAR(258);
+DECLARE @TwoPartNamePlain NVARCHAR(517);
+DECLARE @NullDefModules INT;
+DECLARE @CatalogHitCount INT;
+DECLARE @DmvHitCount INT;
+DECLARE @ModuleHitCount INT;
+
+IF OBJECT_ID(N'tempdb..#DiscoveryDiag') IS NOT NULL DROP TABLE #DiscoveryDiag;
+CREATE TABLE #DiscoveryDiag
+(
+    Target_Schema     SYSNAME COLLATE DATABASE_DEFAULT NULL,
+    Target_Name       SYSNAME COLLATE DATABASE_DEFAULT NULL,
+    Connected_Database SYSNAME COLLATE DATABASE_DEFAULT NULL,
+    Catalog_Hits      INT NOT NULL,
+    Dmv_Hits          INT NOT NULL,
+    Module_Text_Hits  INT NOT NULL,
+    Modules_Null_Definition INT NOT NULL,
+    Notes             NVARCHAR(400) COLLATE DATABASE_DEFAULT NULL
+);
 
 /*------------------------------------------------------------------------------
   1) Target summary
@@ -468,8 +491,176 @@ BEGIN
     TRUNCATE TABLE #ModuleWork;
 
     /*--------------------------------------------------------------------
-      2a) Incoming module dependencies (views / procs / functions)
+      2a) Incoming module dependencies (views / procs / functions / triggers)
+
+      SQL Server often leaves referenced_id NULL for procs (deferred name
+      resolution / caller-dependent). Index/default/FK rows come from the
+      table catalog and do NOT prove module discovery is working.
+
+      Candidates from:
+        1) sql_expression_dependencies by object_id OR resolvable name
+        2) dm_sql_referencing_entities (bracketed + plain two-part name)
+        3) sql_modules / OBJECT_DEFINITION text search (CI, escaped LIKE)
     --------------------------------------------------------------------*/
+    SET @ObjectNameLike = REPLACE(REPLACE(REPLACE(@ObjectName, N'[', N'[[]'), N'%', N'[%]'), N'_', N'[_]');
+    SET @TwoPartNamePlain = @SchemaName + N'.' + @ObjectName;
+    SET @CatalogHitCount = 0;
+    SET @DmvHitCount = 0;
+    SET @ModuleHitCount = 0;
+    SET @NullDefModules = 0;
+
+    SELECT @NullDefModules = COUNT(*)
+    FROM sys.sql_modules AS m
+    INNER JOIN sys.objects AS o
+        ON m.object_id = o.object_id
+    WHERE o.is_ms_shipped = 0
+      AND RTRIM(o.type) IN (N'V', N'P', N'PC', N'X', N'FN', N'IF', N'TF', N'FS', N'FT', N'AF', N'TR')
+      AND m.definition IS NULL;
+
+    /* 1) Catalog dependencies ? by id, by name, or by OBJECT_ID(schema.entity) */
+    INSERT INTO #Referencing (Object_Id, Object_Schema, Object_Name, Object_Type, Object_Type_Desc, Match_Source)
+    SELECT
+        o.object_id,
+        OBJECT_SCHEMA_NAME(o.object_id),
+        o.name,
+        o.type COLLATE DATABASE_DEFAULT,
+        o.type_desc COLLATE DATABASE_DEFAULT,
+        CASE
+            WHEN MAX(CASE WHEN sed.referenced_id = @ObjectId THEN 1 ELSE 0 END) = 1
+                THEN N'sys.sql_expression_dependencies'
+            ELSE N'sys.sql_expression_dependencies (by name)'
+        END
+    FROM sys.sql_expression_dependencies AS sed
+    INNER JOIN sys.objects AS o
+        ON sed.referencing_id = o.object_id
+    WHERE sed.referencing_id <> @ObjectId
+      AND RTRIM(o.type) IN (N'V', N'P', N'PC', N'X', N'FN', N'IF', N'TF', N'FS', N'FT', N'AF', N'TR', N'U', N'C', N'D')
+      AND (
+            sed.referenced_id = @ObjectId
+            OR (
+                sed.referenced_entity_name IS NOT NULL
+                AND sed.referenced_entity_name = @ObjectName COLLATE DATABASE_DEFAULT
+                AND (
+                        sed.referenced_schema_name IS NULL
+                     OR sed.referenced_schema_name = @SchemaName COLLATE DATABASE_DEFAULT
+                    )
+                AND (
+                        sed.referenced_database_name IS NULL
+                     OR sed.referenced_database_name = @CurrentDatabase COLLATE DATABASE_DEFAULT
+                    )
+               )
+            OR (
+                sed.referenced_entity_name IS NOT NULL
+                AND OBJECT_ID(
+                        QUOTENAME(ISNULL(sed.referenced_schema_name, @SchemaName))
+                        + N'.'
+                        + QUOTENAME(sed.referenced_entity_name)
+                    ) = @ObjectId
+               )
+          )
+    GROUP BY
+        o.object_id,
+        o.name,
+        o.type,
+        o.type_desc;
+
+    SET @CatalogHitCount = (SELECT COUNT(*) FROM #Referencing);
+
+    /* 2) DMV ? try bracketed and plain two-part names */
+    BEGIN TRY
+        INSERT INTO #Referencing (Object_Id, Object_Schema, Object_Name, Object_Type, Object_Type_Desc, Match_Source)
+        SELECT DISTINCT
+            o.object_id,
+            ISNULL(re.referencing_schema_name, OBJECT_SCHEMA_NAME(o.object_id)),
+            ISNULL(re.referencing_entity_name, o.name),
+            o.type COLLATE DATABASE_DEFAULT,
+            o.type_desc COLLATE DATABASE_DEFAULT,
+            N'sys.dm_sql_referencing_entities'
+        FROM sys.dm_sql_referencing_entities(@TwoPartName, N'OBJECT') AS re
+        INNER JOIN sys.objects AS o
+            ON o.object_id = re.referencing_id
+        WHERE o.object_id <> @ObjectId
+          AND RTRIM(o.type) IN (N'V', N'P', N'PC', N'X', N'FN', N'IF', N'TF', N'FS', N'FT', N'AF', N'TR', N'U', N'C', N'D')
+          AND NOT EXISTS (SELECT 1 FROM #Referencing AS x WHERE x.Object_Id = o.object_id);
+    END TRY
+    BEGIN CATCH
+        SET @Msg = ERROR_MESSAGE();
+        PRINT N'Warning: dm_sql_referencing_entities([' + @TwoPartName + N']) skipped: ' + @Msg;
+    END CATCH;
+
+    BEGIN TRY
+        INSERT INTO #Referencing (Object_Id, Object_Schema, Object_Name, Object_Type, Object_Type_Desc, Match_Source)
+        SELECT DISTINCT
+            o.object_id,
+            ISNULL(re.referencing_schema_name, OBJECT_SCHEMA_NAME(o.object_id)),
+            ISNULL(re.referencing_entity_name, o.name),
+            o.type COLLATE DATABASE_DEFAULT,
+            o.type_desc COLLATE DATABASE_DEFAULT,
+            N'sys.dm_sql_referencing_entities'
+        FROM sys.dm_sql_referencing_entities(@TwoPartNamePlain, N'OBJECT') AS re
+        INNER JOIN sys.objects AS o
+            ON o.object_id = re.referencing_id
+        WHERE o.object_id <> @ObjectId
+          AND RTRIM(o.type) IN (N'V', N'P', N'PC', N'X', N'FN', N'IF', N'TF', N'FS', N'FT', N'AF', N'TR', N'U', N'C', N'D')
+          AND NOT EXISTS (SELECT 1 FROM #Referencing AS x WHERE x.Object_Id = o.object_id);
+    END TRY
+    BEGIN CATCH
+        SET @Msg = ERROR_MESSAGE();
+        PRINT N'Warning: dm_sql_referencing_entities(' + @TwoPartNamePlain + N') skipped: ' + @Msg;
+    END CATCH;
+
+    SET @DmvHitCount = (SELECT COUNT(*) FROM #Referencing) - @CatalogHitCount;
+
+    /* 3) Soft text search ? CI, escaped wildcards; covers deferred/dynamic SQL gaps.
+          Requires VIEW DEFINITION (definition otherwise NULL). */
+    INSERT INTO #Referencing (Object_Id, Object_Schema, Object_Name, Object_Type, Object_Type_Desc, Match_Source)
+    SELECT
+        o.object_id,
+        OBJECT_SCHEMA_NAME(o.object_id),
+        o.name,
+        o.type COLLATE DATABASE_DEFAULT,
+        o.type_desc COLLATE DATABASE_DEFAULT,
+        N'sys.sql_modules'
+    FROM sys.objects AS o
+    OUTER APPLY
+    (
+        SELECT m.definition
+        FROM sys.sql_modules AS m
+        WHERE m.object_id = o.object_id
+    ) AS moddef
+    WHERE o.is_ms_shipped = 0
+      AND o.object_id <> @ObjectId
+      AND RTRIM(o.type) IN (N'V', N'P', N'PC', N'X', N'FN', N'IF', N'TF', N'FS', N'FT', N'AF', N'TR')
+      AND COALESCE(moddef.definition, OBJECT_DEFINITION(o.object_id)) IS NOT NULL
+      AND COALESCE(moddef.definition, OBJECT_DEFINITION(o.object_id))
+            COLLATE Latin1_General_CI_AS LIKE N'%' + @ObjectNameLike + N'%' COLLATE Latin1_General_CI_AS
+      AND NOT EXISTS (SELECT 1 FROM #Referencing AS x WHERE x.Object_Id = o.object_id);
+
+    SET @ModuleHitCount = (SELECT COUNT(*) FROM #Referencing) - @CatalogHitCount - @DmvHitCount;
+
+    INSERT INTO #DiscoveryDiag
+    (
+        Target_Schema, Target_Name, Connected_Database,
+        Catalog_Hits, Dmv_Hits, Module_Text_Hits, Modules_Null_Definition, Notes
+    )
+    VALUES
+    (
+        @SchemaName,
+        @ObjectName,
+        @CurrentDatabase,
+        @CatalogHitCount,
+        @DmvHitCount,
+        @ModuleHitCount,
+        @NullDefModules,
+        CASE
+            WHEN (@CatalogHitCount + @DmvHitCount + @ModuleHitCount) = 0 AND @NullDefModules > 0
+                THEN N'No module dependents found. Many modules have NULL definition ? need VIEW DEFINITION permission, or modules are encrypted.'
+            WHEN (@CatalogHitCount + @DmvHitCount + @ModuleHitCount) = 0
+                THEN N'No module dependents found via catalog/DMV/text. Confirm USE [correct DB], object name, and that SPs/views actually reference this table (not a synonym).'
+            ELSE N'Module dependents discovered; see Incoming rows in dependency detail.'
+        END
+    );
+
     IF @FilterByColumn = 0
     BEGIN
         INSERT INTO #Deps
@@ -478,14 +669,14 @@ BEGIN
             Direction, Dependency_Type, Object_Schema, Object_Name, Object_Type, Object_Type_Desc,
             Related_Schema, Related_Name, Detail, Is_Caller_Dependent, Is_Ambiguous, Sort_Group, Match_Source
         )
-        SELECT DISTINCT
+        SELECT
             @SchemaName,
             @ObjectName,
             @ObjectType,
             @ObjectTypeDesc,
             @ObjectId,
             N'Incoming',
-            CASE o.type COLLATE DATABASE_DEFAULT
+            CASE RTRIM(r.Object_Type)
                 WHEN N'V'  THEN N'View'
                 WHEN N'P'  THEN N'StoredProcedure'
                 WHEN N'PC' THEN N'StoredProcedure'
@@ -502,65 +693,73 @@ BEGIN
                 WHEN N'D'  THEN N'DefaultConstraint'
                 ELSE N'Expression'
             END,
-            OBJECT_SCHEMA_NAME(sed.referencing_id),
-            OBJECT_NAME(sed.referencing_id),
-            o.type COLLATE DATABASE_DEFAULT,
-            o.type_desc COLLATE DATABASE_DEFAULT,
+            r.Object_Schema,
+            r.Object_Name,
+            RTRIM(r.Object_Type),
+            r.Object_Type_Desc,
             NULL,
             NULL,
             CASE
-                WHEN sed.referenced_minor_id > 0
+                WHEN sed.referenced_id = @ObjectId AND sed.referenced_minor_id > 0
                     THEN (N'Column: ' COLLATE DATABASE_DEFAULT)
                          + (COL_NAME(@ObjectId, sed.referenced_minor_id) COLLATE DATABASE_DEFAULT)
-                ELSE N'References target object' COLLATE DATABASE_DEFAULT
+                WHEN sed.referenced_id = @ObjectId
+                    THEN N'References target object' COLLATE DATABASE_DEFAULT
+                WHEN sed.referencing_id IS NOT NULL
+                    THEN N'References by name (deferred / caller-dependent)' COLLATE DATABASE_DEFAULT
+                WHEN r.Match_Source = N'sys.dm_sql_referencing_entities'
+                    THEN N'Referencing entity (DMV)' COLLATE DATABASE_DEFAULT
+                ELSE N'Target name found in module definition (soft)' COLLATE DATABASE_DEFAULT
             END,
-            sed.is_caller_dependent,
-            sed.is_ambiguous,
-            10,
-            N'sys.sql_expression_dependencies'
-        FROM sys.sql_expression_dependencies AS sed
-        INNER JOIN sys.objects AS o
-            ON sed.referencing_id = o.object_id
-        WHERE sed.referenced_id = @ObjectId
-          AND o.type COLLATE DATABASE_DEFAULT IN (SELECT type FROM @RefCatalogTypes)
-          AND sed.referencing_id <> @ObjectId;
+            ISNULL(sed.is_caller_dependent, 0),
+            ISNULL(sed.is_ambiguous, 0),
+            CASE RTRIM(r.Object_Type)
+                WHEN N'V' THEN 11
+                WHEN N'P' THEN 12
+                WHEN N'PC' THEN 12
+                WHEN N'X' THEN 12
+                WHEN N'TR' THEN 14
+                WHEN N'C' THEN 15
+                WHEN N'D' THEN 15
+                ELSE 13
+            END,
+            r.Match_Source
+        FROM #Referencing AS r
+        OUTER APPLY
+        (
+            SELECT TOP (1)
+                sed.referencing_id,
+                sed.referenced_id,
+                sed.referenced_minor_id,
+                sed.is_caller_dependent,
+                sed.is_ambiguous
+            FROM sys.sql_expression_dependencies AS sed
+            WHERE sed.referencing_id = r.Object_Id
+              AND (
+                    sed.referenced_id = @ObjectId
+                    OR (
+                        sed.referenced_entity_name = @ObjectName COLLATE DATABASE_DEFAULT
+                        AND (
+                                sed.referenced_schema_name IS NULL
+                             OR sed.referenced_schema_name = @SchemaName COLLATE DATABASE_DEFAULT
+                            )
+                       )
+                    OR (
+                        sed.referenced_entity_name IS NOT NULL
+                        AND OBJECT_ID(
+                                QUOTENAME(ISNULL(sed.referenced_schema_name, @SchemaName))
+                                + N'.'
+                                + QUOTENAME(sed.referenced_entity_name)
+                            ) = @ObjectId
+                       )
+                  )
+            ORDER BY
+                CASE WHEN sed.referenced_id = @ObjectId THEN 0 ELSE 1 END,
+                CASE WHEN sed.referenced_minor_id > 0 THEN 0 ELSE 1 END
+        ) AS sed;
     END;
     ELSE
     BEGIN
-        INSERT INTO #Referencing (Object_Id, Object_Schema, Object_Name, Object_Type, Object_Type_Desc)
-        SELECT DISTINCT
-            o.object_id,
-            OBJECT_SCHEMA_NAME(o.object_id),
-            o.name,
-            o.type COLLATE DATABASE_DEFAULT,
-            o.type_desc COLLATE DATABASE_DEFAULT
-        FROM sys.sql_expression_dependencies AS sed
-        INNER JOIN sys.objects AS o
-            ON sed.referencing_id = o.object_id
-        WHERE sed.referenced_id = @ObjectId
-          AND o.type COLLATE DATABASE_DEFAULT IN (SELECT type FROM @RefCatalogTypes)
-          AND sed.referencing_id <> @ObjectId;
-
-        BEGIN TRY
-            INSERT INTO #Referencing (Object_Id, Object_Schema, Object_Name, Object_Type, Object_Type_Desc)
-            SELECT DISTINCT
-                o.object_id,
-                re.referencing_schema_name,
-                re.referencing_entity_name,
-                o.type COLLATE DATABASE_DEFAULT,
-                o.type_desc COLLATE DATABASE_DEFAULT
-            FROM sys.dm_sql_referencing_entities(@TwoPartName, N'OBJECT') AS re
-            INNER JOIN sys.objects AS o
-                ON o.object_id = re.referencing_id
-            WHERE o.type COLLATE DATABASE_DEFAULT IN (SELECT type FROM @RefCatalogTypes)
-              AND o.object_id <> @ObjectId
-              AND NOT EXISTS (SELECT 1 FROM #Referencing AS x WHERE x.Object_Id = o.object_id);
-        END TRY
-        BEGIN CATCH
-            SET @Msg = ERROR_MESSAGE();
-            PRINT N'Warning: sys.dm_sql_referencing_entities skipped for '
-                + @TwoPartName + N': ' + @Msg;
-        END CATCH;
 
         /* Text search in modules that can contain T-SQL (views/procs/functions/triggers) */
         INSERT INTO #ModuleHits
@@ -579,24 +778,13 @@ BEGIN
         INNER JOIN sys.objects AS o
             ON m.object_id = o.object_id
         WHERE o.is_ms_shipped = 0
-          AND o.type COLLATE DATABASE_DEFAULT IN (SELECT type FROM @RefModuleTypes)
+          AND RTRIM(o.type) IN (N'V', N'P', N'PC', N'X', N'FN', N'IF', N'TF', N'FS', N'FT', N'AF', N'TR')
           AND o.object_id <> @ObjectId
           AND m.definition IS NOT NULL
-          AND (
-                   m.definition LIKE N'%[[]' + @ColActual + N']%'
-                OR m.definition LIKE N'%.' + @ColActual + N'[^A-Za-z0-9_]%'
-                OR m.definition LIKE N'%[^A-Za-z0-9_]' + @ColActual + N'[^A-Za-z0-9_]%'
-                OR m.definition LIKE @ColActual + N'[^A-Za-z0-9_]%'
-                OR m.definition LIKE N'%[^A-Za-z0-9_]' + @ColActual
-                OR m.definition = @ColActual
-              )
+          AND m.definition COLLATE Latin1_General_CI_AS LIKE N'%' + REPLACE(REPLACE(REPLACE(@ColActual, N'[', N'[[]'), N'%', N'[%]'), N'_', N'[_]') + N'%' COLLATE Latin1_General_CI_AS
           AND (
                 EXISTS (SELECT 1 FROM #Referencing AS r WHERE r.Object_Id = o.object_id)
-                OR m.definition LIKE N'%[[]' + @ObjectName + N']%'
-                OR m.definition LIKE N'%[^A-Za-z0-9_]' + @ObjectName + N'[^A-Za-z0-9_]%'
-                OR m.definition LIKE N'%.' + @ObjectName + N'[^A-Za-z0-9_]%'
-                OR m.definition LIKE @ObjectName + N'[^A-Za-z0-9_]%'
-                OR m.definition LIKE N'%[^A-Za-z0-9_]' + @ObjectName
+                OR m.definition COLLATE Latin1_General_CI_AS LIKE N'%' + @ObjectNameLike + N'%' COLLATE Latin1_General_CI_AS
               );
 
         WHILE EXISTS (SELECT 1 FROM #Referencing WHERE Processed = 0)
@@ -1449,6 +1637,21 @@ CLOSE target_cursor;
 DEALLOCATE target_cursor;
 
 /*------------------------------------------------------------------------------
+  2d) Module discovery diagnostics (why SP/view/function rows may be missing)
+------------------------------------------------------------------------------*/
+SELECT
+    Target_Schema,
+    Target_Name,
+    Connected_Database,
+    Catalog_Hits,
+    Dmv_Hits,
+    Module_Text_Hits,
+    Modules_Null_Definition,
+    Notes
+FROM #DiscoveryDiag
+ORDER BY Target_Schema, Target_Name;
+
+/*------------------------------------------------------------------------------
   3) Dependency detail
 ------------------------------------------------------------------------------*/
 SELECT
@@ -1501,3 +1704,4 @@ DROP TABLE #Referencing;
 DROP TABLE #ModuleUsages;
 DROP TABLE #ModuleWork;
 DROP TABLE #Targets;
+DROP TABLE #DiscoveryDiag;

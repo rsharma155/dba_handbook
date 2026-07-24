@@ -191,6 +191,22 @@
 --      Analyzes query plan cache for compilation and reuse metrics.
 --      Location: 04_Performance_Diagnostics\plan_cache_deep_dive.sql
 
+-- key_lookup_columns_from_plans.sql
+--      Extracts key-lookup target indexes and lookup columns from plan cache
+--      for covering-index design (complements plan_cache_deep_dive.sql).
+--      Location: 04_Performance_Diagnostics\key_lookup_columns_from_plans.sql
+--      Source: adapted from Kendal Van Dyke SQL-Server-Scripts
+
+-- table_scans_from_plans.sql
+--      Extracts TableScan operators from cached plans with query text and cost.
+--      Location: 04_Performance_Diagnostics\table_scans_from_plans.sql
+--      Source: adapted from Kendal Van Dyke SQL-Server-Scripts
+
+-- index_operators_from_plans.sql
+--      Maps IndexSeek/Scan/Lookup plan operators to specific indexes + queries.
+--      Location: 04_Performance_Diagnostics\index_operators_from_plans.sql
+--      Source: adapted from Kendal Van Dyke SQL-Server-Scripts
+
 -- implicit_conversion_analysis.sql
 --      Finds implicit conversions in cached plans and Query Store plans.
 --      Location: 04_Performance_Diagnostics\implicit_conversion_analysis.sql
@@ -225,6 +241,17 @@
 --      Identifies unused/overlapping indexes and missing indexes.
 --      Location: 05_Index_Statistics\index_usage_efficiency.sql
 
+-- missing_index_consolidation.sql
+--      Advanced missing-index analysis: density-based column reorder,
+--      consolidation of overlapping requests, overlap vs existing indexes.
+--      Location: 05_Index_Statistics\missing_index_consolidation.sql
+--      Source: adapted from Kendal Van Dyke SQL-Server-Scripts
+
+-- overlapping_statistics.sql
+--      Finds auto-created stats overlapping index/user stats (SQL 2008+).
+--      Location: 05_Index_Statistics\overlapping_statistics.sql
+--      Source: adapted from Kendal Van Dyke SQL-Server-Scripts
+
 -- physical_stats_and_heaps.sql
 --      Reviews heap tables and physical index statistics.
 --      Location: 05_Index_Statistics\physical_stats_and_heaps.sql
@@ -236,6 +263,11 @@
 -- statistics_freshness.sql
 --      Checks statistics update dates and row modification counters.
 --      Location: 05_Index_Statistics\statistics_freshness.sql
+
+-- statistics_autoupdate_forecast.sql
+--      Per-table stats detail with mods/min and projected auto-update time.
+--      Location: 05_Index_Statistics\statistics_autoupdate_forecast.sql
+--      Source: adapted from Kendal Van Dyke SQL-Server-Scripts
 
 
 /*===========================================================================
@@ -275,6 +307,31 @@
 --      Audits server logins, orphaned users, and password policies.
 --      Location: 07_Security\login_audit.sql
 
+-- script_database_permissions.sql
+--      Generates CREATE USER / role / GRANT scripts for a database.
+--      Location: 07_Security\script_database_permissions.sql
+--      Source: adapted from Kendal Van Dyke SQL-Server-Scripts
+
+-- script_server_permissions.sql
+--      Generates server role membership and server GRANT scripts.
+--      Location: 07_Security\script_server_permissions.sql
+--      Source: adapted from Kendal Van Dyke SQL-Server-Scripts
+
+-- show_database_permissions.sql
+--      Read-only inventory of DB roles and object-level permissions.
+--      Location: 07_Security\show_database_permissions.sql
+--      Source: adapted from Kendal Van Dyke SQL-Server-Scripts
+
+-- login_deletion_blockers.sql
+--      Finds users/schemas/objects/jobs blocking login deletion.
+--      Location: 07_Security\login_deletion_blockers.sql
+--      Source: adapted from Kendal Van Dyke SQL-Server-Scripts
+
+-- effective_permissions_for_login.sql
+--      Effective SERVER/DATABASE permissions via EXECUTE AS + fn_my_permissions.
+--      Location: 07_Security\effective_permissions_for_login.sql
+--      Source: adapted from Kendal Van Dyke SQL-Server-Scripts
+
 
 /*===========================================================================
    08 - ADVANCED
@@ -303,6 +360,56 @@
 -- replication_monitor.sql
 --      Monitors transactional and merge replication health.
 --      Location: 08_Advanced\replication_monitor.sql
+
+-- replication_articles_and_columns.sql
+--      Publisher inventory of publications, articles, and columns.
+--      Location: 08_Advanced\replication_articles_and_columns.sql
+--      Source: adapted from Kendal Van Dyke SQL-Server-Scripts
+
+-- replication_command_counts.sql
+--      Per-article pending vs delivered commands at distributor.
+--      Location: 08_Advanced\replication_command_counts.sql
+--      Source: adapted from Kendal Van Dyke SQL-Server-Scripts
+
+-- replication_subscriptions_topology.sql
+--      Full distributor subscription/article/agent-profile topology.
+--      Location: 08_Advanced\replication_subscriptions_topology.sql
+--      Source: adapted from Kendal Van Dyke SQL-Server-Scripts
+
+-- replication_subscriber_at_publisher.sql
+--      Publisher-side subscriptions/articles for a given subscriber.
+--      Location: 08_Advanced\replication_subscriber_at_publisher.sql
+--      Source: adapted from Kendal Van Dyke SQL-Server-Scripts
+
+-- replication_distribution_agent_profiles.sql
+--      Distribution agent to subscriber/profile mapping.
+--      Location: 08_Advanced\replication_distribution_agent_profiles.sql
+--      Source: adapted from Kendal Van Dyke SQL-Server-Scripts
+
+-- replication_logreader_agent_profiles.sql
+--      Log reader agent to publisher/profile mapping.
+--      Location: 08_Advanced\replication_logreader_agent_profiles.sql
+--      Source: adapted from Kendal Van Dyke SQL-Server-Scripts
+
+-- replication_distribution_volume_by_day.sql
+--      Daily distribution agent delivered-command volume trends.
+--      Location: 08_Advanced\replication_distribution_volume_by_day.sql
+--      Source: adapted from Kendal Van Dyke SQL-Server-Scripts
+
+-- replication_logreader_volume_by_day.sql
+--      Daily log reader agent volume trends.
+--      Location: 08_Advanced\replication_logreader_volume_by_day.sql
+--      Source: adapted from Kendal Van Dyke SQL-Server-Scripts
+
+-- replication_replicate_ddl_toggle.sql
+--      Scripts enable/disable replicate_ddl for publications.
+--      Location: 08_Advanced\replication_replicate_ddl_toggle.sql
+--      Source: adapted from Kendal Van Dyke SQL-Server-Scripts
+
+-- replication_merge_identity_ranges.sql
+--      Validates merge publication identity range values.
+--      Location: 08_Advanced\replication_merge_identity_ranges.sql
+--      Source: adapted from Kendal Van Dyke SQL-Server-Scripts
 
 -- sql_agent_job_monitor.sql
 --      Reviews SQL Agent job history, failures, and durations.
