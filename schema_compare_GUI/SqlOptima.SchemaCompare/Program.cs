@@ -1,3 +1,12 @@
+﻿// =============================================================================
+// Module:   SqlOptima.SchemaCompare.Program
+// Purpose:  Application entry point - WinForms bootstrap, global exception handling, and guaranteed resource cleanup on exit.
+// Author:   Ravi Sharma
+// Created:  2026-05-22
+// Copyright (c) 2026 Ravi Sharma
+// SPDX-License-Identifier: MIT
+// =============================================================================
+
 using SqlOptima.SchemaCompare.Forms;
 using SqlOptima.SchemaCompare.Services;
 

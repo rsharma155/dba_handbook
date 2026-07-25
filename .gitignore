@@ -3,3 +3,29 @@
 
 # Local / hospital-specific adhoc scripts (not tracked)
 adhoc/
+
+# ---------------------------------------------------------------------------
+# Schema Compare GUI — local docs, generated output, and non-source assets
+# ---------------------------------------------------------------------------
+
+# Review / design feedback (local only)
+schema_compare_GUI/docs/
+
+# Legacy HTML template used only by the PowerShell forms GUI
+schema_compare_GUI/scripts/template.html
+**/template.html
+
+# Compare engine output: SQL sync scripts, HTML reports, run folders
+schema_compare_GUI/schema_compare/output/*
+!schema_compare_GUI/schema_compare/output/.gitkeep
+schema_compare/output/
+**/SchemaSync_*/
+**/Deploy_AutoChanges_*.sql
+**/Deploy_*_MANUAL.sql
+
+# Published / local build drop folders (regenerable)
+schema_compare_GUI/dist/
+schema_compare_GUI/publish/
+schema_compare_GUI/**/bin/
+schema_compare_GUI/**/obj/
+

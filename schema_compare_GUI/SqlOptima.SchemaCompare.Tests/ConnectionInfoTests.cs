@@ -1,3 +1,12 @@
+﻿// =============================================================================
+// Module:   SqlOptima.SchemaCompare.Tests.ConnectionInfoTests
+// Purpose:  Unit tests for the ConnectionInfo model and connection-string composition.
+// Author:   Ravi Sharma
+// Created:  2026-05-22
+// Copyright (c) 2026 Ravi Sharma
+// SPDX-License-Identifier: MIT
+// =============================================================================
+
 using SqlOptima.SchemaCompare.Models;
 
 namespace SqlOptima.SchemaCompare.Tests;

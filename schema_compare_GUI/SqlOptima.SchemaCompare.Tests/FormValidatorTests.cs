@@ -1,3 +1,12 @@
+﻿// =============================================================================
+// Module:   SqlOptima.SchemaCompare.Tests.FormValidatorTests
+// Purpose:  Unit tests for FormValidator input validation rules.
+// Author:   Ravi Sharma
+// Created:  2026-05-22
+// Copyright (c) 2026 Ravi Sharma
+// SPDX-License-Identifier: MIT
+// =============================================================================
+
 using SqlOptima.SchemaCompare.Services;
 
 namespace SqlOptima.SchemaCompare.Tests;

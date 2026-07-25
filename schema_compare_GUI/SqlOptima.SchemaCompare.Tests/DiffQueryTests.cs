@@ -1,3 +1,12 @@
+﻿// =============================================================================
+// Module:   SqlOptima.SchemaCompare.Tests.DiffQueryTests
+// Purpose:  Unit tests for DiffQuery filtering, grouping, and counting.
+// Author:   Ravi Sharma
+// Created:  2026-05-22
+// Copyright (c) 2026 Ravi Sharma
+// SPDX-License-Identifier: MIT
+// =============================================================================
+
 using SqlOptima.SchemaCompare.Models;
 using SqlOptima.SchemaCompare.Services;
 
@@ -46,12 +55,23 @@ public class DiffQueryTests
     }
 
     [Fact]
-    public void GroupByDatabaseThenType_OrdersDatabases()
+    public void Filter_SmartTokens_TableAndAdded()
     {
-        var groups = DiffQuery.GroupByDatabaseThenType(Sample()).ToList();
-        Assert.Equal(2, groups.Count);
-        Assert.Equal("A", groups[0].Key);
-        Assert.Equal("B", groups[1].Key);
+        var r = DiffQuery.Filter(Sample(), "table:t1");
+        Assert.Single(r);
+        Assert.Equal("dbo.T1", r[0].ObjectName);
+
+        var added = DiffQuery.Filter(Sample(), "added");
+        Assert.Single(added);
+        Assert.Equal(DiffKind.Add, added[0].Kind);
+    }
+
+    [Fact]
+    public void DescribeObjectType_MapsCommonTypes()
+    {
+        Assert.Equal("Tables", DiffQuery.DescribeObjectType("Tables").Label);
+        Assert.Equal("table", DiffQuery.DescribeObjectType("Tables").IconKey);
+        Assert.Equal("Stored Procedures", DiffQuery.DescribeObjectType("StoredProcedures").Label);
     }
 }
 

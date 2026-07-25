@@ -1,3 +1,12 @@
+﻿// =============================================================================
+// Module:   SqlOptima.SchemaCompare.Tests.ProcessAndCleanupTests
+// Purpose:  Tests for child process tracking and runtime cleanup (temp folders, password environment).
+// Author:   Ravi Sharma
+// Created:  2026-05-22
+// Copyright (c) 2026 Ravi Sharma
+// SPDX-License-Identifier: MIT
+// =============================================================================
+
 using System.Diagnostics;
 using SqlOptima.SchemaCompare.Models;
 using SqlOptima.SchemaCompare.Services;

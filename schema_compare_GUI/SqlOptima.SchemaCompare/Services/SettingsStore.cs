@@ -1,3 +1,12 @@
+﻿// =============================================================================
+// Module:   SqlOptima.SchemaCompare.Services.SettingsStore
+// Purpose:  Persists the user session (connections, options, window placement) between application runs.
+// Author:   Ravi Sharma
+// Created:  2026-05-22
+// Copyright (c) 2026 Ravi Sharma
+// SPDX-License-Identifier: MIT
+// =============================================================================
+
 using System.Text.Json;
 using SqlOptima.SchemaCompare.Models;
 

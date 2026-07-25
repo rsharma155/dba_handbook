@@ -1,4 +1,13 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+﻿<!--
+  Module:   SqlOptima.SchemaCompare (project)
+  Purpose:  WinForms desktop GUI for SQL Server schema comparison, powered by
+            the schema_compare PowerShell engine.
+  Author:   Ravi Sharma
+  Created:  2026-05-22
+  Copyright (c) 2026 Ravi Sharma
+  SPDX-License-Identifier: MIT
+-->
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>

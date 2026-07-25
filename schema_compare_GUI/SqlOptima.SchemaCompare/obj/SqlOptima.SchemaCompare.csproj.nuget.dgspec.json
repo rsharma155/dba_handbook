@@ -10,7 +10,7 @@
         "projectUniqueName": "D:\\Mac_bak\\AI_Code\\sql_optima\\dba_essential_scripts\\schema_compare_GUI\\SqlOptima.SchemaCompare\\SqlOptima.SchemaCompare.csproj",
         "projectName": "SqlOptima.SchemaCompare",
         "projectPath": "D:\\Mac_bak\\AI_Code\\sql_optima\\dba_essential_scripts\\schema_compare_GUI\\SqlOptima.SchemaCompare\\SqlOptima.SchemaCompare.csproj",
-        "packagesPath": "C:\\Users\\Asus\\AppData\\Local\\Temp\\cursor-sandbox-cache\\00b97e403cf5840c123240caf1ad7fef\\nuget",
+        "packagesPath": "C:\\Users\\Asus\\AppData\\Local\\Temp\\cursor-sandbox-cache\\07207e00afbf73535d3679dbd9029f8a\\nuget",
         "outputPath": "D:\\Mac_bak\\AI_Code\\sql_optima\\dba_essential_scripts\\schema_compare_GUI\\SqlOptima.SchemaCompare\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
@@ -89,11 +89,6 @@
             }
           },
           "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.301/PortableRuntimeIdentifierGraph.json"
-        }
-      },
-      "runtimes": {
-        "win-x64": {
-          "#import": []
         }
       }
     }

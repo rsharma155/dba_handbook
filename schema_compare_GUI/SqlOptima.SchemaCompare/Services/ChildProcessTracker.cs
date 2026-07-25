@@ -1,3 +1,12 @@
+﻿// =============================================================================
+// Module:   SqlOptima.SchemaCompare.Services.ChildProcessTracker
+// Purpose:  Windows job-object tracking so child PowerShell processes are terminated when the application exits.
+// Author:   Ravi Sharma
+// Created:  2026-05-22
+// Copyright (c) 2026 Ravi Sharma
+// SPDX-License-Identifier: MIT
+// =============================================================================
+
 using System.Diagnostics;
 
 namespace SqlOptima.SchemaCompare.Services;

@@ -1,3 +1,15 @@
+// =============================================================================
+// Module:   SqlOptima.SchemaCompare.Forms.MainForm
+// Purpose:  Main application window - dark chrome shell (nav rail, header with
+//           workflow stepper), collapsible connection card, comparison action
+//           bar, Object Explorer + results dashboard, and graceful shutdown of
+//           child PowerShell processes on close.
+// Author:   Ravi Sharma
+// Created:  2026-05-22
+// Copyright (c) 2026 Ravi Sharma
+// SPDX-License-Identifier: MIT
+// =============================================================================
+
 using System.Diagnostics;
 using System.Text;
 using SqlOptima.SchemaCompare.Models;
@@ -6,8 +18,8 @@ using SqlOptima.SchemaCompare.Services;
 namespace SqlOptima.SchemaCompare.Forms;
 
 /// <summary>
-/// Main window inspired by OpenDBDiff: dual connection panels, Compare,
-/// difference tree, and synchronization script tabs — with clearer UX extras.
+/// Main window matching the SQL Optima mockup: Connect -> Compare -> Review ->
+/// Deploy workflow with a collapsible connection card and results dashboard.
 /// Implements full shutdown/dispose so child PowerShell processes do not linger.
 /// </summary>
 public sealed class MainForm : Form
@@ -23,30 +35,102 @@ public sealed class MainForm : Form
 
     private readonly ConnectionPanel _sourcePanel;
     private readonly ConnectionPanel _targetPanel;
+    private readonly NavRail _navRail = new();
+    private readonly WorkflowStepBar _steps = new();
+    private CollapsibleCard _connCard = null!;
     private readonly RadioButton _rbOneToOne = new() { Text = "One-to-One", AutoSize = true, Checked = true };
-    private readonly RadioButton _rbOneToMany = new() { Text = "One-to-Many (1 source -> many targets)", AutoSize = true };
+    private readonly RadioButton _rbOneToMany = new() { Text = "One-to-Many", AutoSize = true };
     private readonly TextBox _txtListFile = new();
-    private readonly ModernButton _btnBrowseList = new() { Text = "List file...", Width = 104, Height = 32 };
-    private readonly ModernButton _btnCompare = new() { Text = "Compare", Width = 128, Height = 36 };
-    private readonly ModernButton _btnSaveDeploy = new() { Text = "Save deploy script", Width = 158, Height = 36 };
-    private readonly ModernButton _btnOptions = new() { Text = "Options", Width = 104, Height = 36 };
-    private readonly ModernButton _btnOpenOutput = new() { Text = "Open output", Width = 116, Height = 36 };
-    private readonly ModernButton _btnOpenReport = new() { Text = "HTML report", Width = 116, Height = 36 };
-    private readonly ModernButton _btnCopyScript = new() { Text = "Copy script", Width = 118, Height = 32 };
-    private readonly TextBox _txtFilter = new() { PlaceholderText = "Filter objects..." };
-    private readonly TreeView _tree = new() { HideSelection = false, FullRowSelect = true };
+    private readonly ModernButton _btnBrowseList = new() { Text = "Browse list...", Width = 110, Height = 30 };
+    private Control? _listFileHost;
+    private readonly ModernButton _btnCompare = new() { Text = "Compare Schemas  \u2192", Width = 190, Height = 36 };
+    private readonly ModernButton _btnCompareNow = new() { Text = "\u25B6  Compare Now", Width = 180, Height = 38 };
+    private readonly ModernButton _btnSaveDeploy = new() { Text = "Save Script", Width = 120, Height = 34 };
+    private readonly ModernButton _btnPresets = new() { Text = "Presets  \u02C5", Width = 104, Height = 34 };
+    private readonly ModernButton _btnOptions = new() { Text = "\uE713", Width = 38, Height = 34 };
+    private readonly ModernButton _btnHelp = new() { Text = "?", Width = 38, Height = 34 };
+    private readonly ModernButton _btnCopyScript = new() { Text = "Copy script", Width = 110, Height = 30 };
+    private readonly ModernButton _btnSwap = new() { Text = "\u21C4", Width = 40, Height = 40 };
+    private readonly ModernButton _btnAdvanced = new() { Text = "Advanced Options  \u02C5", Height = 30 };
+    private readonly ModernButton _btnExplorerRefresh = new() { Text = "\uE72C", Width = 26, Height = 24 };
+    private readonly ComboBox _cmbProfile = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 150 };
+    private readonly ModernButton _btnEditProfile = new() { Text = "\uE70F", Width = 32, Height = 27 };
+    private readonly ModernButton _btnIgnoreRules = new() { Text = "\u2699  Configure ignore rules", Height = 28 };
+    private readonly ModernButton _btnObjectTypes = new() { Height = 28 };
+    private readonly ContextMenuStrip _typeMenu = new();
+    private readonly ContextMenuStrip _presetsMenu = new();
+    private static readonly string[] TypeCategories =
+    {
+        "Tables", "Views", "Stored Procedures", "User Defined Functions",
+        "Indexes", "Triggers", "Schemas", "Others"
+    };
+    private readonly HashSet<string> _enabledTypes = new(TypeCategories, StringComparer.OrdinalIgnoreCase);
+    private readonly TextBox _txtFilter = new() { PlaceholderText = "Search objects..." };
+    private readonly TreeView _tree = new() { HideSelection = false, FullRowSelect = true, BorderStyle = BorderStyle.None, BackColor = Color.White };
     private readonly TabControl _tabs = new();
-    private readonly TextBox _txtScript = new() { Multiline = true, ScrollBars = ScrollBars.Both, Font = new Font("Consolas", 9.5f), ReadOnly = true, WordWrap = false };
-    private readonly TextBox _txtManual = new() { Multiline = true, ScrollBars = ScrollBars.Both, Font = new Font("Consolas", 9.5f), ReadOnly = true, WordWrap = false, ForeColor = Color.FromArgb(140, 40, 20) };
-    private readonly TextBox _txtDetails = new() { Multiline = true, ScrollBars = ScrollBars.Vertical, ReadOnly = true, Font = new Font("Segoe UI", 9.5f) };
-    private readonly TextBox _txtLog = new() { Multiline = true, ScrollBars = ScrollBars.Both, ReadOnly = true, Font = new Font("Consolas", 8.5f) };
+    private readonly TextBox _txtScript = new() { Multiline = true, ScrollBars = ScrollBars.Both, Font = new Font("Consolas", 9.5f), ReadOnly = true, WordWrap = false, BorderStyle = BorderStyle.None, BackColor = Color.FromArgb(0x1E, 0x1E, 0x1E), ForeColor = Color.FromArgb(0xD4, 0xD4, 0xD4) };
+    private readonly TextBox _txtManual = new() { Multiline = true, ScrollBars = ScrollBars.Both, Font = new Font("Consolas", 9.5f), ReadOnly = true, WordWrap = false, BorderStyle = BorderStyle.None, ForeColor = Color.FromArgb(140, 40, 20) };
+    private readonly TextBox _txtDetails = new() { Multiline = true, ScrollBars = ScrollBars.Vertical, ReadOnly = true, Font = new Font("Segoe UI", 10f), BorderStyle = BorderStyle.None };
+    private readonly TextBox _txtLog = new() { Multiline = true, ScrollBars = ScrollBars.Both, ReadOnly = true, Font = new Font("Consolas", 8.5f), BorderStyle = BorderStyle.None };
+    private readonly TextBox _txtOverview = new() { Multiline = true, ScrollBars = ScrollBars.Vertical, ReadOnly = true, Font = new Font("Segoe UI", 10f), BorderStyle = BorderStyle.None, BackColor = Color.White };
+    private TabPage? _tabOverview;
+    private TabPage? _tabDetails;
+    private TabPage? _tabScript;
     private TabPage? _tabManual;
+    private TabPage? _tabLog;
+    private readonly Panel _overviewEmpty = new() { Dock = DockStyle.Fill, BackColor = Color.White };
+    private readonly Panel _overviewDash = new() { Dock = DockStyle.Fill, BackColor = Color.White, Visible = false, Padding = new Padding(12) };
     private DeployScriptResult? _deployResult;
-    private readonly Label _lblSummary = new() { AutoSize = true, Font = new Font("Segoe UI Semibold", 9.5f) };
-    private readonly ProgressBar _progress = new() { Style = ProgressBarStyle.Marquee, MarqueeAnimationSpeed = 0, Height = 18 };
-    private readonly StatusStrip _status = new();
+    private readonly SummaryCard _cardAdded = new("Added", UiTheme.AddAccent, "Objects");
+    private readonly SummaryCard _cardChanged = new("Changed", UiTheme.ChangeAccent, "Objects");
+    private readonly SummaryCard _cardExtra = new("Removed", UiTheme.ExtraAccent, "Objects");
+    private readonly SummaryCard _cardManual = new("Warnings", UiTheme.WarnAccent, "Warnings");
+    private readonly StatusBadge _badgeAdded = new("Added", UiTheme.BadgeAdded);
+    private readonly StatusBadge _badgeRemoved = new("Removed", UiTheme.BadgeRemoved);
+    private readonly StatusBadge _badgeChanged = new("Changed", UiTheme.BadgeChanged);
+    private readonly StatusBadge _badgeIdentical = new("Identical", UiTheme.BadgeIdentical);
+    private readonly StatusBadge _badgeIgnored = new("Ignored", UiTheme.BadgeIgnored);
+    private readonly Label _lblProgressStage = new() { AutoSize = true, Text = "Ready to connect", ForeColor = UiTheme.TextMuted, Font = UiTheme.UiFont(9.5f) };
+    private readonly Label _lblElapsed = new() { AutoSize = true, Text = "Elapsed  00:00", ForeColor = UiTheme.TextMuted, Font = UiTheme.UiFont(9.5f) };
+    private readonly Label _lblTreePlaceholder = new()
+    {
+        Text = "No objects yet.\r\n\r\nConnect and select a database to browse objects,\r\nor click Compare Now.",
+        TextAlign = ContentAlignment.MiddleCenter,
+        Dock = DockStyle.Fill,
+        ForeColor = UiTheme.TextMuted,
+        Font = UiTheme.UiFont(10.5f),
+        BackColor = Color.White
+    };
+    private readonly Label _lblDetailPlaceholder = new()
+    {
+        Text = "Select an object in the explorer\r\nto review impact, details, and scripts.",
+        TextAlign = ContentAlignment.MiddleCenter,
+        Dock = DockStyle.Fill,
+        ForeColor = UiTheme.TextMuted,
+        Font = UiTheme.UiFont(10.5f),
+        BackColor = Color.White
+    };
+    private readonly ProgressBar _progress = new() { Style = ProgressBarStyle.Continuous, Height = 8, Maximum = 100 };
+    private readonly StatusStrip _status = new() { BackColor = Color.White, SizingGrip = false };
     private readonly ToolStripStatusLabel _statusText = new() { Text = "Ready", Spring = true, TextAlign = ContentAlignment.MiddleLeft };
+    private readonly ToolStripStatusLabel _statusSource = new() { Text = "Source: Not selected", BorderSides = ToolStripStatusLabelBorderSides.Left, BorderStyle = Border3DStyle.Etched };
+    private readonly ToolStripStatusLabel _statusTarget = new() { Text = "Target: Not selected", BorderSides = ToolStripStatusLabelBorderSides.Left, BorderStyle = Border3DStyle.Etched };
+    private readonly ToolStripStatusLabel _statusObjects = new() { Text = "Objects: 0", BorderSides = ToolStripStatusLabelBorderSides.Left, BorderStyle = Border3DStyle.Etched };
+    private readonly ToolStripStatusLabel _statusTime = new() { Text = "Elapsed: \u2014", BorderSides = ToolStripStatusLabelBorderSides.Left, BorderStyle = Border3DStyle.Etched };
     private readonly ImageList _treeImages = new() { ImageSize = new Size(16, 16), ColorDepth = ColorDepth.Depth32Bit };
+    private DateTime? _compareStarted;
+    private Panel? _headerBar;
+    private Panel? _summaryStrip;
+    private Panel? _connHost;
+    private Panel? _actionBar;
+    private SplitContainer? _mainSplit;
+    private IReadOnlyList<SchemaObjectInfo> _sourceObjects = Array.Empty<SchemaObjectInfo>();
+    private IReadOnlyList<SchemaObjectInfo> _targetObjects = Array.Empty<SchemaObjectInfo>();
+    private string _sourceBrowseDb = "";
+    private string _targetBrowseDb = "";
+    private CancellationTokenSource? _browseCts;
+    private CancellationTokenSource? _scriptCts;
+    private string? _browseScriptSnapshot;
 
     public MainForm()
         : this(null)
@@ -59,212 +143,750 @@ public sealed class MainForm : Form
         _engine = engine ?? new CompareEngine();
         _options.OutputPath = Path.Combine(_engine.SchemaCompareRoot, "output");
 
-        Text = "SQL Optima Schema Compare";
-        Width = 1180;
-        Height = 820;
+        Text = "SQL Optima  \u00B7  Schema Compare";
+        Width = 1400;
+        Height = 880;
         StartPosition = FormStartPosition.CenterScreen;
-        MinimumSize = new Size(1000, 700);
+        MinimumSize = new Size(1200, 720);
         Font = UiTheme.UiFont();
         BackColor = UiTheme.AppBackground;
         ForeColor = UiTheme.TextPrimary;
+        AutoScaleMode = AutoScaleMode.Dpi;
+        AutoScaleDimensions = new SizeF(96F, 96F);
 
         BuildImageList();
         _tree.ImageList = _treeImages;
+        _tree.ShowLines = false;
+        _tree.Indent = 22;
 
-        var header = new Panel
+        _sourcePanel = new ConnectionPanel("Source");
+        _targetPanel = new ConnectionPanel("Target", multiSelectTargets: true);
+
+        BuildHeaderBar();
+        BuildConnectionCard();
+        BuildActionBar();
+        BuildProgressStrip();
+        BuildMainSplit();
+        BuildStatusBar();
+
+        // Dock order: last Add is docked first (outermost edge). Build inner -> outer.
+        SuspendLayout();
+        Controls.Add(_mainSplit);
+        Controls.Add(_summaryStrip);
+        Controls.Add(_actionBar);
+        Controls.Add(_connHost);
+        Controls.Add(_status);
+        Controls.Add(_headerBar);
+        Controls.Add(_navRail);
+        ResumeLayout(true);
+
+        WireEvents();
+        if (Environment.GetEnvironmentVariable("SQLOPTIMA_NO_SETTINGS") != "1")
+            LoadSettings();
+        ApplyMainSplitterDistance(300);
+        UpdateModeUi();
+        _steps.Active = WorkflowStep.Connect;
+        UpdateSummaryCounts(Array.Empty<DifferenceItem>());
+        UpdateHeaderProject();
+        SetStatus("Ready");
+    }
+
+    // ------------------------------------------------------------------
+    //  Shell builders (mockup layout)
+    // ------------------------------------------------------------------
+
+    private void BuildHeaderBar()
+    {
+        _headerBar = new Panel { Dock = DockStyle.Top, Height = 64, BackColor = UiTheme.HeaderBackground };
+        _headerBar.Controls.Add(new Panel { Dock = DockStyle.Bottom, Height = 1, BackColor = Color.FromArgb(0x1E, 0x2A, 0x3F) });
+
+        var brand = new Panel { Dock = DockStyle.Left, Width = 180, BackColor = Color.Transparent };
+        brand.Controls.Add(new Label
         {
-            Dock = DockStyle.Top,
-            Height = 72,
-            BackColor = UiTheme.HeaderBackground
-        };
-        var accent = new Panel { Dock = DockStyle.Bottom, Height = 4, BackColor = UiTheme.HeaderAccent };
-        var title = new Label
-        {
-            Text = "SQL Optima Schema Compare",
+            Text = "SQL Optima",
             ForeColor = UiTheme.TextOnDark,
-            Font = new Font("Segoe UI", 16f, FontStyle.Bold),
+            Font = UiTheme.TitleFont(),
             AutoSize = true,
-            Location = new Point(20, 12)
-        };
-        var subtitle = new Label
+            Location = new Point(16, 10),
+            BackColor = Color.Transparent
+        });
+        brand.Controls.Add(new Label
         {
-            Text = "Source of truth  \u2192  Target     \u00B7     One-to-one and one-to-many schema sync",
+            Text = "Schema Compare",
             ForeColor = UiTheme.TextOnDarkMuted,
-            Font = UiTheme.UiFont(9f),
+            Font = UiTheme.UiFont(8.5f),
             AutoSize = true,
-            Location = new Point(22, 44)
-        };
-        header.Controls.Add(subtitle);
-        header.Controls.Add(title);
-        header.Controls.Add(accent);
-        Controls.Add(header);
+            Location = new Point(17, 36),
+            BackColor = Color.Transparent
+        });
 
-        var strip = new Panel { Dock = DockStyle.Top, Height = 60, Padding = new Padding(14, 12, 14, 12), BackColor = Color.White };
-        var stripBorder = new Panel { Dock = DockStyle.Bottom, Height = 1, BackColor = UiTheme.CardBorder };
-        strip.Controls.Add(stripBorder);
-        _rbOneToOne.Location = new Point(16, 20);
-        _rbOneToOne.ForeColor = UiTheme.TextPrimary;
-        _rbOneToOne.Font = UiTheme.SemiBold(9.5f);
-        _rbOneToMany.Location = new Point(130, 20);
-        _rbOneToMany.ForeColor = UiTheme.TextPrimary;
-        _rbOneToMany.Font = UiTheme.SemiBold(9.5f);
-        strip.Controls.Add(_rbOneToOne);
-        strip.Controls.Add(_rbOneToMany);
-
-        UiTheme.StyleSuccess(_btnCompare);
-        UiTheme.StylePrimary(_btnSaveDeploy);
-        UiTheme.StyleSecondary(_btnOptions);
-        UiTheme.StyleSecondary(_btnOpenOutput);
-        UiTheme.StyleSecondary(_btnOpenReport);
+        UiTheme.StyleHeaderSecondary(_btnPresets);
+        UiTheme.StyleHeaderSecondary(_btnSaveDeploy);
         _btnSaveDeploy.Enabled = false;
-        strip.Controls.Add(_btnCompare);
-        strip.Controls.Add(_btnSaveDeploy);
-        strip.Controls.Add(_btnOptions);
-        strip.Controls.Add(_btnOpenOutput);
-        strip.Controls.Add(_btnOpenReport);
-        Controls.Add(strip);
+        UiTheme.StyleHeaderSecondary(_btnOptions);
+        _btnOptions.Font = UiTheme.IconFont(11f);
+        _btnOptions.AccessibleName = "Settings";
+        UiTheme.StyleHeaderSecondary(_btnHelp);
+        _btnHelp.AccessibleName = "Help";
+        UiTheme.StyleCta(_btnCompare);
+        _btnCompare.Height = 36;
 
-        var connHost = new Panel { Dock = DockStyle.Top, Height = 310, Padding = new Padding(14, 8, 14, 8), BackColor = UiTheme.AppBackground };
-        _sourcePanel = new ConnectionPanel("Source database (source of truth)");
-        _targetPanel = new ConnectionPanel("Destination database (will be updated)", multiSelectTargets: true);
-        _sourcePanel.Location = new Point(14, 6);
-        _sourcePanel.Width = 560;
-        _targetPanel.Location = new Point(590, 6);
-        _targetPanel.Width = 560;
-        connHost.Controls.Add(_sourcePanel);
-        connHost.Controls.Add(_targetPanel);
+        UiTheme.FitButton(_btnPresets, 96);
+        UiTheme.FitButton(_btnSaveDeploy, 100);
+        _btnOptions.Width = 38;
+        _btnHelp.Width = 38;
+        UiTheme.FitButton(_btnCompare, 170);
 
-        var listLabel = new Label { Text = "Destination list file (optional):", AutoSize = true, Location = new Point(14, 280), ForeColor = UiTheme.TextMuted, Font = UiTheme.UiFont(9f) };
-        UiTheme.StyleTextBox(_txtListFile);
-        _txtListFile.SetBounds(200, 276, 420, 26);
-        _btnBrowseList.Location = new Point(630, 274);
-        UiTheme.StyleSecondary(_btnBrowseList);
-        connHost.Controls.Add(listLabel);
-        connHost.Controls.Add(_txtListFile);
-        connHost.Controls.Add(_btnBrowseList);
-        Controls.Add(connHost);
+        _presetsMenu.Items.Add(new ToolStripMenuItem("Default Profile") { Checked = true });
 
-        var mid = new Panel { Dock = DockStyle.Top, Height = 40, Padding = new Padding(12, 4, 12, 4) };
-        _lblSummary.Text = "Add: 0   Update: 0   Extra: 0   Total: 0";
-        _lblSummary.Location = new Point(12, 10);
-        _progress.SetBounds(400, 12, 740, 16);
-        mid.Controls.Add(_lblSummary);
-        mid.Controls.Add(_progress);
-        Controls.Add(mid);
+        var actions = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Right,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            BackColor = Color.Transparent,
+            Padding = new Padding(0, 14, 12, 0),
+            Margin = new Padding(0)
+        };
+        foreach (var b in new[] { _btnPresets, _btnSaveDeploy, _btnOptions, _btnHelp, _btnCompare })
+        {
+            b.Margin = new Padding(0, 0, 8, 0);
+            actions.Controls.Add(b);
+        }
+        _btnCompare.Margin = new Padding(4, 0, 0, 0);
 
-        var split = new SplitContainer
+        _steps.OnDark = true;
+        _steps.Dock = DockStyle.Fill;
+        var stepHost = new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent, Padding = new Padding(8, 4, 8, 4) };
+        stepHost.Controls.Add(_steps);
+
+        _headerBar.Controls.Add(stepHost);
+        _headerBar.Controls.Add(actions);
+        _headerBar.Controls.Add(brand);
+    }
+
+    private void BuildConnectionCard()
+    {
+        _connCard = new CollapsibleCard("1. Connect to Source and Target", "Select databases to compare.")
         {
             Dock = DockStyle.Fill,
-            SplitterDistance = 360,
-            BorderStyle = BorderStyle.FixedSingle
+            // One stable height for One-to-One and One-to-Many — avoids flicker/jump
+            // when the mode radios toggle the target list row.
+            ExpandedHeight = 360
         };
 
-        var left = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8) };
-        var treeLabel = new Label
+        var connGrid = new TableLayoutPanel
         {
-            Text = "Schema differences",
-            Font = UiTheme.SemiBold(9.5f),
-            ForeColor = UiTheme.TextPrimary,
-            Dock = DockStyle.Top,
-            Height = 22
+            Dock = DockStyle.Fill,
+            ColumnCount = 3,
+            RowCount = 1,
+            BackColor = Color.Transparent
         };
-        _txtFilter.Dock = DockStyle.Top;
-        _txtFilter.Height = 26;
-        _tree.Dock = DockStyle.Fill;
-        left.Controls.Add(_tree);
-        left.Controls.Add(_txtFilter);
-        left.Controls.Add(treeLabel);
-        split.Panel1.Controls.Add(left);
+        connGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
+        connGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 56));
+        connGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
+        connGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+        _sourcePanel.Dock = DockStyle.Fill;
+        _targetPanel.Dock = DockStyle.Fill;
+        _sourcePanel.Margin = new Padding(0, 2, 0, 2);
+        _targetPanel.Margin = new Padding(0, 2, 0, 2);
 
-        var tabSchema = new TabPage("Object detail");
-        tabSchema.Controls.Add(_txtDetails);
-        _txtDetails.Dock = DockStyle.Fill;
+        // Swap source/target (mockup: circular swap glyph between the panels)
+        _btnSwap.CornerRadius = 20;
+        _btnSwap.Font = new Font("Segoe UI", 13f, FontStyle.Bold);
+        _btnSwap.ApplyColors(Color.White, UiTheme.Primary, UiTheme.NeutralHover, UiTheme.Neutral);
+        _btnSwap.AccessibleName = "Swap source and target";
+        _btnSwap.Anchor = AnchorStyles.None;
+        _btnSwap.Size = new Size(40, 40);
+        var swapHost = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 1, BackColor = Color.Transparent, Margin = new Padding(0) };
+        swapHost.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        swapHost.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+        swapHost.Controls.Add(_btnSwap, 0, 0);
 
-        var tabScript = new TabPage("Deployable script");
-        var scriptHost = new Panel { Dock = DockStyle.Fill };
-        var scriptBar = new Panel { Dock = DockStyle.Top, Height = 40, Padding = new Padding(6) };
-        _btnCopyScript.Location = new Point(8, 5);
-        UiTheme.StyleSecondary(_btnCopyScript);
-        var scriptHint = new Label
+        connGrid.Controls.Add(_sourcePanel, 0, 0);
+        connGrid.Controls.Add(swapHost, 1, 0);
+        connGrid.Controls.Add(_targetPanel, 2, 0);
+
+        // Bottom row inside the card: compare mode | list file (1:N) | Advanced Options
+        var modeRow = new TableLayoutPanel
         {
-            Text = "Self-contained auto/safe changes. Run on the TARGET server (SSMS or sqlcmd).",
+            Dock = DockStyle.Bottom,
+            Height = 40,
+            BackColor = Color.Transparent,
+            ColumnCount = 3,
+            RowCount = 1,
+            Padding = new Padding(0),
+            Margin = new Padding(0)
+        };
+        modeRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        modeRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        modeRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        modeRow.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+        StyleModeRadio(_rbOneToOne);
+        StyleModeRadio(_rbOneToMany);
+        _rbOneToOne.Margin = new Padding(0, 6, 12, 0);
+        _rbOneToMany.Margin = new Padding(0, 6, 8, 0);
+
+        var radioFlow = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            BackColor = Color.Transparent,
+            Padding = new Padding(0),
+            Margin = new Padding(0),
+            Dock = DockStyle.Fill
+        };
+        radioFlow.Controls.Add(_rbOneToOne);
+        radioFlow.Controls.Add(_rbOneToMany);
+
+        var listLabel = new Label
+        {
+            Text = "Optional destination list file",
             AutoSize = true,
             ForeColor = UiTheme.TextMuted,
-            Location = new Point(128, 12)
+            Font = UiTheme.UiFont(9f),
+            BackColor = Color.Transparent,
+            Margin = new Padding(8, 10, 8, 0)
         };
-        scriptBar.Controls.Add(scriptHint);
+        UiTheme.StyleTextBox(_txtListFile);
+        _txtListFile.Width = 260;
+        _txtListFile.Margin = new Padding(0, 5, 8, 0);
+        UiTheme.StyleSecondary(_btnBrowseList);
+        _btnBrowseList.Height = 30;
+        UiTheme.FitButton(_btnBrowseList, 110, 24);
+        _btnBrowseList.Margin = new Padding(0, 4, 0, 0);
+
+        var listFlow = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            BackColor = Color.Transparent,
+            Padding = new Padding(0),
+            Margin = new Padding(0),
+            Visible = false
+        };
+        listFlow.Controls.Add(listLabel);
+        listFlow.Controls.Add(_txtListFile);
+        listFlow.Controls.Add(_btnBrowseList);
+        _listFileHost = listFlow;
+
+        UiTheme.StyleSecondary(_btnAdvanced);
+        _btnAdvanced.Height = 30;
+        UiTheme.FitButton(_btnAdvanced, 150);
+        _btnAdvanced.Margin = new Padding(8, 4, 0, 0);
+
+        modeRow.Controls.Add(radioFlow, 0, 0);
+        modeRow.Controls.Add(listFlow, 1, 0);
+        modeRow.Controls.Add(_btnAdvanced, 2, 0);
+
+        _connCard.ContentHost.Controls.Add(connGrid);
+        _connCard.ContentHost.Controls.Add(modeRow);
+
+        _connHost = new Panel { Dock = DockStyle.Top, Padding = new Padding(16, 12, 16, 4), BackColor = UiTheme.AppBackground };
+        _connHost.Controls.Add(_connCard);
+        _connCard.CollapsedChanged += (_, _) => SyncConnCardHeight();
+        SyncConnCardHeight();
+    }
+
+    private void SyncConnCardHeight()
+    {
+        if (_connHost == null) return;
+        var cardH = _connCard.Collapsed ? 52 : _connCard.ExpandedHeight;
+        _connHost.Height = cardH + _connHost.Padding.Vertical;
+    }
+
+    private void BuildActionBar()
+    {
+        _actionBar = new Panel { Dock = DockStyle.Top, Height = 70, BackColor = UiTheme.AppBackground, Padding = new Padding(16, 4, 16, 8) };
+        var bar = new Panel { Dock = DockStyle.Fill, BackColor = Color.White };
+        bar.Paint += (_, e) =>
+        {
+            using var pen = new Pen(UiTheme.CardBorder);
+            e.Graphics.DrawRectangle(pen, 0, 0, bar.Width - 1, bar.Height - 1);
+        };
+
+        UiTheme.StyleCta(_btnCompareNow);
+        _btnCompareNow.Height = 38;
+        UiTheme.FitButton(_btnCompareNow, 170);
+        var right = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Right,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            BackColor = Color.Transparent,
+            Padding = new Padding(0, 10, 12, 0),
+            Margin = new Padding(0)
+        };
+        right.Controls.Add(_btnCompareNow);
+
+        var flow = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            BackColor = Color.Transparent,
+            Padding = new Padding(12, 6, 0, 0),
+            Margin = new Padding(0)
+        };
+        flow.Controls.Add(MakeCaptionedCluster("Comparison Profile", BuildProfileCluster()));
+        flow.Controls.Add(MakeCaptionedCluster("Ignore Rules", BuildIgnoreCluster()));
+        flow.Controls.Add(MakeCaptionedCluster("Object Types", BuildTypesCluster()));
+
+        bar.Controls.Add(flow);
+        bar.Controls.Add(right);
+        _actionBar.Controls.Add(bar);
+    }
+
+    private static Panel MakeCaptionedCluster(string caption, Control control)
+    {
+        var host = new Panel { BackColor = Color.Transparent, Margin = new Padding(0, 0, 28, 0), Height = 52 };
+        var lbl = new Label
+        {
+            Text = caption,
+            AutoSize = true,
+            Font = UiTheme.SemiBold(8f),
+            ForeColor = UiTheme.TextMuted,
+            Location = new Point(0, 0),
+            BackColor = Color.Transparent
+        };
+        control.Location = new Point(0, 18);
+        host.Controls.Add(lbl);
+        host.Controls.Add(control);
+        host.Width = Math.Max(lbl.PreferredWidth, control.Width) + 4;
+        return host;
+    }
+
+    private Control BuildProfileCluster()
+    {
+        UiTheme.StyleCombo(_cmbProfile);
+        _cmbProfile.Items.Add("Default Profile");
+        _cmbProfile.SelectedIndex = 0;
+        _cmbProfile.Width = 150;
+        UiTheme.StyleSecondary(_btnEditProfile);
+        _btnEditProfile.Font = UiTheme.IconFont(10f);
+        _btnEditProfile.Size = new Size(32, 27);
+        _btnEditProfile.AccessibleName = "Edit comparison profile";
+        _btnEditProfile.Click += (_, _) => SafeUi(() => ShowOptionsDialog(OptionsFocus.Profile));
+        var host = new Panel { BackColor = Color.Transparent, Height = 30 };
+        _cmbProfile.Location = new Point(0, 2);
+        _btnEditProfile.Location = new Point(_cmbProfile.Width + 6, 1);
+        host.Controls.Add(_cmbProfile);
+        host.Controls.Add(_btnEditProfile);
+        host.Width = _btnEditProfile.Right + 2;
+        return host;
+    }
+
+    private Control BuildIgnoreCluster()
+    {
+        UiTheme.StyleGhost(_btnIgnoreRules);
+        _btnIgnoreRules.Height = 28;
+        UiTheme.FitButton(_btnIgnoreRules, 160);
+        _btnIgnoreRules.Click += (_, _) => SafeUi(() => ShowOptionsDialog(OptionsFocus.IgnoreRules));
+        return _btnIgnoreRules;
+    }
+
+    private Control BuildTypesCluster()
+    {
+        foreach (var cat in TypeCategories)
+        {
+            var item = new ToolStripMenuItem(cat) { Checked = true, CheckOnClick = true };
+            item.CheckedChanged += (_, _) => SafeUi(() => OnTypeMenuChanged(item));
+            _typeMenu.Items.Add(item);
+        }
+        UiTheme.StyleSecondary(_btnObjectTypes);
+        _btnObjectTypes.Height = 28;
+        UpdateObjectTypesCaption();
+        _btnObjectTypes.Click += (_, _) => _typeMenu.Show(_btnObjectTypes, new Point(0, _btnObjectTypes.Height));
+        return _btnObjectTypes;
+    }
+
+    private void OnTypeMenuChanged(ToolStripMenuItem item)
+    {
+        var name = item.Text ?? "";
+        if (item.Checked) _enabledTypes.Add(name);
+        else _enabledTypes.Remove(name);
+        UpdateObjectTypesCaption();
+        RebuildTree(_txtFilter.Text.Trim());
+    }
+
+    private void UpdateObjectTypesCaption()
+    {
+        _btnObjectTypes.Text = $"{_enabledTypes.Count} selected  \u02C5";
+        UiTheme.FitButton(_btnObjectTypes, 110);
+    }
+
+    private void BuildProgressStrip()
+    {
+        _summaryStrip = new Panel { Dock = DockStyle.Bottom, Height = 32, Padding = new Padding(16, 2, 16, 2), BackColor = UiTheme.AppBackground, Visible = false };
+        var t = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, BackColor = Color.Transparent };
+        t.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        t.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        t.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+        _lblProgressStage.Anchor = AnchorStyles.Left;
+        _lblProgressStage.Margin = new Padding(0, 0, 16, 0);
+        _lblElapsed.Anchor = AnchorStyles.Left;
+        _lblElapsed.Margin = new Padding(0, 0, 16, 0);
+        _progress.Dock = DockStyle.Fill;
+        _progress.Margin = new Padding(0, 10, 0, 10);
+        t.Controls.Add(_lblProgressStage, 0, 0);
+        t.Controls.Add(_lblElapsed, 1, 0);
+        t.Controls.Add(_progress, 2, 0);
+        _summaryStrip.Controls.Add(t);
+    }
+
+    private void BuildMainSplit()
+    {
+        // Do not set Panel1MinSize / Panel2MinSize / SplitterDistance here:
+        // SplitContainer defaults to a narrow Width and throws
+        // "SplitterDistance must be between Panel1MinSize and Width - Panel2MinSize".
+        _mainSplit = new SplitContainer
+        {
+            Dock = DockStyle.Fill,
+            Orientation = Orientation.Vertical,
+            FixedPanel = FixedPanel.None,
+            IsSplitterFixed = false,
+            SplitterWidth = 6,
+            BackColor = UiTheme.AppBackground,
+            BorderStyle = BorderStyle.None
+        };
+        var split = _mainSplit;
+
+        var left = new Panel { Dock = DockStyle.Fill, Padding = new Padding(16, 2, 6, 8), BackColor = UiTheme.AppBackground };
+        var leftCard = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, Padding = new Padding(8) };
+        leftCard.Paint += (_, e) =>
+        {
+            using var pen = new Pen(UiTheme.CardBorder);
+            e.Graphics.DrawRectangle(pen, 0, 0, leftCard.Width - 1, leftCard.Height - 1);
+        };
+
+        var explorerHeader = new Panel { Dock = DockStyle.Top, Height = 26, BackColor = Color.White };
+        var treeLabel = new Label
+        {
+            Text = "Object Explorer",
+            Font = UiTheme.SemiBold(10f),
+            ForeColor = UiTheme.TextPrimary,
+            AutoSize = true,
+            Location = new Point(0, 4),
+            BackColor = Color.White
+        };
+        _btnExplorerRefresh.Font = UiTheme.IconFont(9f);
+        _btnExplorerRefresh.CornerRadius = 6;
+        _btnExplorerRefresh.ApplyColors(Color.White, UiTheme.TextMuted, UiTheme.NeutralHover, UiTheme.Neutral);
+        _btnExplorerRefresh.AccessibleName = "Refresh object explorer";
+        explorerHeader.Controls.Add(treeLabel);
+        explorerHeader.Controls.Add(_btnExplorerRefresh);
+        explorerHeader.Resize += (_, _) => _btnExplorerRefresh.Location = new Point(explorerHeader.Width - _btnExplorerRefresh.Width - 2, 1);
+
+        UiTheme.StyleTextBox(_txtFilter);
+        _txtFilter.Dock = DockStyle.Top;
+        _txtFilter.Height = 28;
+        _tree.Dock = DockStyle.Fill;
+        leftCard.Controls.Add(_lblTreePlaceholder);
+        leftCard.Controls.Add(_tree);
+        leftCard.Controls.Add(_txtFilter);
+        leftCard.Controls.Add(explorerHeader);
+        left.Controls.Add(leftCard);
+        split.Panel1.Controls.Add(left);
+
+        var right = new Panel { Dock = DockStyle.Fill, Padding = new Padding(6, 2, 16, 8), BackColor = UiTheme.AppBackground };
+        var rightCard = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, Padding = new Padding(2) };
+        rightCard.Paint += (_, e) =>
+        {
+            using var pen = new Pen(UiTheme.CardBorder);
+            e.Graphics.DrawRectangle(pen, 0, 0, rightCard.Width - 1, rightCard.Height - 1);
+        };
+
+        // Badge row per mockup: Added / Removed / Changed / Identical / Ignored
+        var badgeStrip = new Panel { Dock = DockStyle.Top, Height = 34, BackColor = Color.White };
+        var badgeFlow = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Right,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            BackColor = Color.Transparent,
+            Padding = new Padding(0, 4, 8, 0),
+            Margin = new Padding(0)
+        };
+        foreach (var b in new[] { _badgeAdded, _badgeRemoved, _badgeChanged, _badgeIdentical, _badgeIgnored })
+        {
+            b.Margin = new Padding(0, 0, 6, 0);
+            badgeFlow.Controls.Add(b);
+        }
+        badgeStrip.Controls.Add(badgeFlow);
+
+        _tabOverview = new TabPage("Overview") { BackColor = Color.White };
+        BuildOverviewTab(_tabOverview);
+
+        _tabDetails = new TabPage("Object Details") { BackColor = Color.White };
+        var detailHost = new Panel { Dock = DockStyle.Fill, BackColor = Color.White };
+        detailHost.Controls.Add(_lblDetailPlaceholder);
+        detailHost.Controls.Add(_txtDetails);
+        _txtDetails.Dock = DockStyle.Fill;
+        _tabDetails.Controls.Add(detailHost);
+
+        _tabScript = new TabPage("Script Preview") { BackColor = Color.White };
+        var scriptHost = new Panel { Dock = DockStyle.Fill, BackColor = Color.White };
+        var scriptBar = new Panel { Dock = DockStyle.Top, Height = 40, BackColor = Color.FromArgb(248, 250, 252) };
+        _btnCopyScript.Location = new Point(10, 5);
+        UiTheme.StyleSecondary(_btnCopyScript);
+        scriptBar.Controls.Add(new Label
+        {
+            Text = "Self-contained auto/safe changes - run on the TARGET",
+            AutoSize = true,
+            ForeColor = UiTheme.TextMuted,
+            Location = new Point(130, 12),
+            BackColor = Color.Transparent
+        });
         scriptBar.Controls.Add(_btnCopyScript);
         _txtScript.Dock = DockStyle.Fill;
         scriptHost.Controls.Add(_txtScript);
         scriptHost.Controls.Add(scriptBar);
-        tabScript.Controls.Add(scriptHost);
+        _tabScript.Controls.Add(scriptHost);
 
-        _tabManual = new TabPage("Manual actions");
+        _tabManual = new TabPage("Manual Actions") { BackColor = Color.White };
         var manualHost = new Panel { Dock = DockStyle.Fill };
-        var manualBar = new Panel { Dock = DockStyle.Top, Height = 40, Padding = new Padding(6), BackColor = Color.FromArgb(253, 245, 230) };
-        var manualHint = new Label
+        var manualBar = new Panel { Dock = DockStyle.Top, Height = 40, BackColor = Color.FromArgb(255, 247, 237) };
+        manualBar.Controls.Add(new Label
         {
-            Text = "\u26A0  These changes are NOT applied automatically. Review and run them manually on the TARGET.",
+            Text = "Manual review required - including any DROP TABLE. Not auto-applied.",
             AutoSize = true,
             ForeColor = UiTheme.Warning,
             Font = UiTheme.SemiBold(9f),
-            Location = new Point(10, 12)
-        };
-        manualBar.Controls.Add(manualHint);
+            Location = new Point(12, 12),
+            BackColor = Color.Transparent
+        });
         _txtManual.Dock = DockStyle.Fill;
         manualHost.Controls.Add(_txtManual);
         manualHost.Controls.Add(manualBar);
         _tabManual.Controls.Add(manualHost);
 
-        var tabLog = new TabPage("Progress log");
-        tabLog.Controls.Add(_txtLog);
+        _tabLog = new TabPage("Progress Log") { BackColor = Color.White };
+        _tabLog.Controls.Add(_txtLog);
         _txtLog.Dock = DockStyle.Fill;
 
         _tabs.Dock = DockStyle.Fill;
-        _tabs.TabPages.Add(tabSchema);
-        _tabs.TabPages.Add(tabScript);
+        _tabs.Font = UiTheme.UiFont(9.5f);
+        _tabs.TabPages.Add(_tabOverview);
+        _tabs.TabPages.Add(_tabDetails);
+        _tabs.TabPages.Add(_tabScript);
         _tabs.TabPages.Add(_tabManual);
-        _tabs.TabPages.Add(tabLog);
-        split.Panel2.Controls.Add(_tabs);
-        Controls.Add(split);
+        _tabs.TabPages.Add(_tabLog);
+        rightCard.Controls.Add(_tabs);
+        rightCard.Controls.Add(badgeStrip);
+        right.Controls.Add(rightCard);
+        split.Panel2.Controls.Add(right);
+    }
 
+    private void BuildOverviewTab(TabPage tab)
+    {
+        // Empty state (mockup): illustration + call to action
+        var emptyTable = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 5, BackColor = Color.White };
+        emptyTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        emptyTable.RowStyles.Add(new RowStyle(SizeType.Percent, 40f));
+        emptyTable.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        emptyTable.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        emptyTable.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        emptyTable.RowStyles.Add(new RowStyle(SizeType.Percent, 60f));
+        var icon = new Label
+        {
+            Text = "\uE7C3",
+            Font = UiTheme.IconFont(38f),
+            ForeColor = Color.FromArgb(0xC9, 0xD4, 0xE3),
+            AutoSize = true,
+            Anchor = AnchorStyles.None,
+            BackColor = Color.Transparent,
+            Margin = new Padding(0, 0, 0, 10)
+        };
+        var title = new Label
+        {
+            Text = "Run a comparison to see summary and results",
+            Font = UiTheme.SemiBold(11f),
+            ForeColor = UiTheme.TextPrimary,
+            AutoSize = true,
+            Anchor = AnchorStyles.None,
+            BackColor = Color.Transparent
+        };
+        var sub = new Label
+        {
+            Text = "Click \"Compare Now\" to analyse differences between selected databases",
+            Font = UiTheme.UiFont(9.5f),
+            ForeColor = UiTheme.TextMuted,
+            AutoSize = true,
+            Anchor = AnchorStyles.None,
+            BackColor = Color.Transparent,
+            Margin = new Padding(0, 6, 0, 0)
+        };
+        emptyTable.Controls.Add(icon, 0, 1);
+        emptyTable.Controls.Add(title, 0, 2);
+        emptyTable.Controls.Add(sub, 0, 3);
+        _overviewEmpty.Controls.Add(emptyTable);
+
+        // Post-compare dashboard: summary cards + run summary
+        var cardsFlow = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            Height = 76,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            BackColor = Color.White,
+            Padding = new Padding(0, 8, 0, 8),
+            Margin = new Padding(0)
+        };
+        foreach (var c in new[] { _cardAdded, _cardChanged, _cardExtra, _cardManual })
+        {
+            c.Width = 170;
+            c.Height = 54;
+            c.Margin = new Padding(0, 0, 12, 0);
+            cardsFlow.Controls.Add(c);
+        }
+        _txtOverview.Dock = DockStyle.Fill;
+        _overviewDash.Controls.Add(_txtOverview);
+        _overviewDash.Controls.Add(cardsFlow);
+
+        tab.Controls.Add(_overviewDash);
+        tab.Controls.Add(_overviewEmpty);
+    }
+
+    private void BuildStatusBar()
+    {
         _status.Dock = DockStyle.Bottom;
         _status.Items.Add(_statusText);
-        Controls.Add(_status);
+        _status.Items.Add(_statusSource);
+        _status.Items.Add(_statusTarget);
+        _status.Items.Add(_statusObjects);
+        _status.Items.Add(_statusTime);
+    }
 
-        Controls.SetChildIndex(split, 0);
-        Controls.SetChildIndex(_status, 0);
+    private void ShowOptionsDialog(OptionsFocus focus = OptionsFocus.Settings)
+    {
+        using var dlg = new OptionsForm(_options, focus);
+        if (dlg.ShowDialog(this) == DialogResult.OK)
+            _options = dlg.Options;
+    }
 
-        WireEvents();
-        LoadSettings();
-        UpdateModeUi();
-        SetStatus($"Engine: {_engine.SchemaCompareRoot}");
+    /// <summary>Swaps the source and target connections (mockup swap control).</summary>
+    internal void SwapConnections()
+    {
+        var src = _sourcePanel.GetConnectionInfo();
+        var tgt = _targetPanel.GetConnectionInfo();
+        _sourcePanel.Apply(tgt);
+        _sourcePanel.SetPassword(tgt.Password);
+        _targetPanel.Apply(src);
+        _targetPanel.SetPassword(src.Password);
+        _sourceBrowseDb = "";
+        _targetBrowseDb = "";
+        _sourceObjects = Array.Empty<SchemaObjectInfo>();
+        _targetObjects = Array.Empty<SchemaObjectInfo>();
+        UpdateHeaderProject();
+        if (_lastResult == null)
+            RebuildTree(_txtFilter.Text);
+        SetStatus("Source and target swapped.");
+    }
+
+    /// <summary>Auto-collapses the connection card so results get the workspace.</summary>
+    internal void CollapseConnectionCardForCompare() => _connCard.Collapsed = true;
+
+    // ----- Test seams (internal; exercised by unit tests) -----
+    internal TabControl Tabs => _tabs;
+    internal IReadOnlyList<StatusBadge> Badges =>
+        new[] { _badgeAdded, _badgeRemoved, _badgeChanged, _badgeIdentical, _badgeIgnored };
+    internal CollapsibleCard ConnectionCard => _connCard;
+    internal NavRail Rail => _navRail;
+    internal ModernButton CompareHeaderButton => _btnCompare;
+    internal ModernButton CompareNowButton => _btnCompareNow;
+    internal ModernButton SaveScriptButton => _btnSaveDeploy;
+    internal ModernButton PresetsButton => _btnPresets;
+    internal ConnectionPanel SourcePanelForTest => _sourcePanel;
+    internal ConnectionPanel TargetPanelForTest => _targetPanel;
+    internal TextBox ExplorerSearchBox => _txtFilter;
+    internal string StatusTextForTest => _statusText.Text ?? "";
+    internal string StatusSourceForTest => _statusSource.Text ?? "";
+    internal string StatusTargetForTest => _statusTarget.Text ?? "";
+    internal string StatusObjectsForTest => _statusObjects.Text ?? "";
+
+    /// <summary>
+    /// Applies min sizes and SplitterDistance only when the split has a usable Width.
+    /// Safe to call from constructor, Shown, and Resize — never throws on init.
+    /// </summary>
+    private void ApplyMainSplitterDistance(int preferredDistance = 280)
+    {
+        if (_mainSplit == null || _mainSplit.IsDisposed) return;
+        var split = _mainSplit;
+        const int panel1Min = 160;
+        const int panel2Min = 200;
+        try
+        {
+            var minWidth = panel1Min + panel2Min + split.SplitterWidth;
+            if (split.Width < minWidth) return;
+
+            // Set mins only once Width can satisfy them (setting earlier throws).
+            if (split.Panel1MinSize != panel1Min) split.Panel1MinSize = panel1Min;
+            if (split.Panel2MinSize != panel2Min) split.Panel2MinSize = panel2Min;
+
+            // Keep splitter user-draggable
+            split.IsSplitterFixed = false;
+            split.FixedPanel = FixedPanel.None;
+
+            var maxDist = split.Width - split.SplitterWidth - split.Panel2MinSize;
+            if (maxDist < split.Panel1MinSize) return;
+
+            split.SplitterDistance = Math.Clamp(preferredDistance, split.Panel1MinSize, maxDist);
+        }
+        catch
+        {
+            /* ignore until control is fully laid out */
+        }
     }
 
     private void BuildImageList()
     {
-        AddGlyph("root", Color.FromArgb(27, 79, 114));
-        AddGlyph("type", Color.SteelBlue);
-        AddGlyph("add", Color.FromArgb(39, 174, 96));
-        AddGlyph("upd", Color.FromArgb(243, 156, 18));
-        AddGlyph("extra", Color.FromArgb(192, 57, 43));
+        AddGlyph("root", UiTheme.Primary);
+        AddGlyph("type", Color.FromArgb(100, 116, 139));
+        AddGlyph("table", Color.FromArgb(37, 99, 235));
+        AddGlyph("view", Color.FromArgb(8, 145, 178));
+        AddGlyph("proc", Color.FromArgb(124, 58, 237));
+        AddGlyph("func", Color.FromArgb(217, 119, 6));
+        AddGlyph("trig", Color.FromArgb(225, 29, 72));
+        AddGlyph("index", Color.FromArgb(22, 163, 74));
+        AddGlyph("column", Color.FromArgb(14, 165, 233));
+        AddGlyph("key", Color.FromArgb(234, 179, 8));
+        AddGlyph("constraint", Color.FromArgb(168, 85, 247));
+        AddGlyph("folder", Color.FromArgb(100, 116, 139));
+        AddGlyph("add", UiTheme.AddAccent);
+        AddGlyph("upd", UiTheme.ChangeAccent);
+        AddGlyph("extra", UiTheme.ExtraAccent);
         AddGlyph("other", Color.Gray);
     }
 
     private void AddGlyph(string key, Color color)
     {
-        var bmp = MakeGlyph(color);
+        var bmp = MakeGlyph(color, key);
         _ownedBitmaps.Add(bmp);
         _treeImages.Images.Add(key, bmp);
     }
 
-    private static Bitmap MakeGlyph(Color color)
+    private static Bitmap MakeGlyph(Color color, string key)
     {
         var bmp = new Bitmap(16, 16);
         using var g = Graphics.FromImage(bmp);
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
         g.Clear(Color.Transparent);
         using var b = new SolidBrush(color);
-        g.FillEllipse(b, 2, 2, 12, 12);
+        if (key is "add" or "upd" or "extra")
+            g.FillEllipse(b, 2, 2, 12, 12);
+        else
+            g.FillRectangle(b, 2, 2, 12, 12);
         return bmp;
     }
 
@@ -277,13 +899,40 @@ public sealed class MainForm : Form
         _targetPanel.TestClicked += async (_, _) => await TestSideAsync(false);
         _sourcePanel.RefreshClicked += async (_, _) => await RefreshSideAsync(true);
         _targetPanel.RefreshClicked += async (_, _) => await RefreshSideAsync(false);
+        _sourcePanel.DatabaseSelectionChanged += (_, _) => SafeUi(() => _ = LoadBrowseObjectsAsync(true));
+        _targetPanel.DatabaseSelectionChanged += (_, _) => SafeUi(() => _ = LoadBrowseObjectsAsync(false));
 
-        _btnOptions.Click += (_, _) => SafeUi(() =>
+        _btnOptions.Click += (_, _) => SafeUi(() => ShowOptionsDialog(OptionsFocus.Settings));
+        _btnAdvanced.Click += (_, _) => SafeUi(() => ShowOptionsDialog(OptionsFocus.Advanced));
+        _btnSwap.Click += (_, _) => SafeUi(SwapConnections);
+        _btnPresets.Click += (_, _) => SafeUi(() =>
+            _presetsMenu.Show(_btnPresets, new Point(0, _btnPresets.Height)));
+        _btnHelp.Click += (_, _) => SafeUi(() => MessageBox.Show(this,
+            "Workflow\r\n\r\n" +
+            "1. Connect - enter Source and Target, Test Connection, pick databases.\r\n" +
+            "2. Compare - click Compare Now (or Compare Schemas).\r\n" +
+            "3. Review - browse differences in the Object Explorer and result tabs.\r\n" +
+            "4. Deploy - Save Script and run it on the TARGET server.\r\n\r\n" +
+            "Navigation\r\n\r\n" +
+            "History - opens the shared output folder (SchemaSync_* compare runs).\r\n" +
+            "Scripts - shows Script Preview in the app, or the same output folder.\r\n" +
+            "Reports - opens the latest HTML report from that same output root.\r\n" +
+            "Settings - connection defaults (protocol / timeout / TLS).\r\n\r\n" +
+            "Options entry points\r\n\r\n" +
+            "Configure ignore rules - schemas to skip during compare.\r\n" +
+            "Advanced Options / Profile pencil - script generation and apply behaviour.\r\n" +
+            "Settings (gear / rail) - connection defaults; all tabs remain available.\r\n\r\n" +
+            "All generated SQL scripts and reports use one output root:\r\n" +
+            "  schema_compare\\output\\  (or the folder set under Output).",
+            "Help", MessageBoxButtons.OK, MessageBoxIcon.Information));
+        _btnExplorerRefresh.Click += (_, _) => SafeUi(() =>
         {
-            using var dlg = new OptionsForm(_options);
-            if (dlg.ShowDialog(this) == DialogResult.OK)
-                _options = dlg.Options;
+            _sourceBrowseDb = "";
+            _targetBrowseDb = "";
+            _ = LoadBrowseObjectsAsync(true);
+            _ = LoadBrowseObjectsAsync(false);
         });
+        _navRail.ItemClicked += (_, key) => SafeUi(() => OnRailItemClicked(key));
 
         _btnBrowseList.Click += (_, _) => SafeUi(() =>
         {
@@ -302,6 +951,7 @@ public sealed class MainForm : Form
         });
 
         _btnCompare.Click += async (_, _) => await RunCompareAsync();
+        _btnCompareNow.Click += async (_, _) => await RunCompareAsync();
         _btnSaveDeploy.Click += (_, _) => SafeUi(SaveDeployScript);
         _btnCopyScript.Click += (_, _) => SafeUi(() =>
         {
@@ -309,26 +959,216 @@ public sealed class MainForm : Form
             Clipboard.SetText(_txtScript.Text);
             SetStatus("Deployable script copied to clipboard.");
         });
-        _btnOpenOutput.Click += (_, _) => SafeUi(OpenOutputFolder);
-        _btnOpenReport.Click += (_, _) => SafeUi(OpenHtmlReport);
 
         _txtFilter.TextChanged += (_, _) => SafeUi(() => RebuildTree(_txtFilter.Text.Trim()));
+        _tree.BeforeExpand += (_, e) =>
+        {
+            if (_lastResult != null) return;
+            SafeUi(() => _ = LoadTableFolderChildrenAsync(e.Node));
+        };
         _tree.AfterSelect += (_, e) => SafeUi(() =>
         {
+            if (e.Node?.Tag is TableChildItem child)
+            {
+                _txtDetails.Text = string.IsNullOrWhiteSpace(child.DetailText)
+                    ? child.DisplayText
+                    : child.DetailText;
+                _lblDetailPlaceholder.Visible = false;
+                _txtDetails.BringToFront();
+                _tabs.SelectedTab = _tabDetails;
+                return;
+            }
+
+            if (e.Node?.Tag is TableFolderNode folder)
+            {
+                _txtDetails.Text =
+                    $"Folder\r\n  {ObjectExplorerFormat.FolderLabel(folder.Kind)}\r\n\r\n" +
+                    $"Table\r\n  {folder.Table.FullName}\r\n\r\n" +
+                    $"Database\r\n  {folder.Table.Side.Database}\r\n\r\n" +
+                    "Tip\r\n  Expand to load children from system catalogs.";
+                _lblDetailPlaceholder.Visible = false;
+                _txtDetails.BringToFront();
+                _tabs.SelectedTab = _tabDetails;
+                return;
+            }
+
+            if (e.Node?.Tag is TableBrowseNode tableNode)
+            {
+                _txtDetails.Text =
+                    $"Table\r\n  {tableNode.FullName}\r\n\r\n" +
+                    $"Database\r\n  {tableNode.Side.Database}\r\n\r\n" +
+                    $"Side\r\n  {(tableNode.Side.IsSource ? "Source" : "Target")}\r\n\r\n" +
+                    "Scripting CREATE TABLE from system catalogs...";
+                _lblDetailPlaceholder.Visible = false;
+                _txtDetails.BringToFront();
+                _tabs.SelectedTab = _tabDetails;
+                _ = ScriptTableAsync(tableNode);
+                return;
+            }
+
+            if (e.Node?.Tag is SchemaObjectInfo obj)
+            {
+                _txtDetails.Text =
+                    $"Object\r\n  {obj.FullName}\r\n\r\n" +
+                    $"Type\r\n  {obj.ObjectType}\r\n\r\n" +
+                    $"Schema\r\n  {obj.SchemaName}\r\n\r\n" +
+                    $"Name\r\n  {obj.ObjectName}\r\n\r\n" +
+                    "Tip\r\n  Run Compare schemas to see differences vs the other side.";
+                _lblDetailPlaceholder.Visible = false;
+                _txtDetails.BringToFront();
+                _tabs.SelectedTab = _tabDetails;
+                return;
+            }
+
             if (e.Node?.Tag is not DifferenceItem d) return;
+            var impact = d.Kind switch
+            {
+                DiffKind.Add => "Low — object will be created",
+                DiffKind.Update => "Medium — definition will change",
+                DiffKind.Extra => "High — target-only object (review before drop)",
+                _ => "Unknown"
+            };
             _txtDetails.Text =
-                $"Object: {d.ObjectName}\r\n" +
-                $"Type: {d.ObjectType}\r\n" +
-                $"Database: {d.Database}\r\n" +
-                $"Status: {d.Status}\r\n" +
-                $"Action: {d.ActionLabel}\r\n\r\n" +
-                $"Details:\r\n{d.Details}";
-            _tabs.SelectedIndex = 0;
+                $"Object\r\n  {d.ObjectName}\r\n\r\n" +
+                $"Type\r\n  {d.ObjectType}\r\n\r\n" +
+                $"Database\r\n  {d.Database}\r\n\r\n" +
+                $"Difference\r\n  {d.ActionLabel}  ({d.Status})\r\n\r\n" +
+                $"Impact\r\n  {impact}\r\n\r\n" +
+                $"Details\r\n  {d.Details}";
+            _tabs.SelectedTab = _tabDetails;
+            _steps.Active = WorkflowStep.Review;
+            _lblDetailPlaceholder.Visible = false;
+            _txtDetails.BringToFront();
         });
 
         FormClosing += OnFormClosing;
-        Resize += (_, _) => SafeUi(LayoutActionButtons);
-        LayoutActionButtons();
+        Shown += (_, _) => SafeUi(() => ApplyMainSplitterDistance(300));
+        Resize += (_, _) => SafeUi(() => ApplyMainSplitterDistance(_mainSplit?.SplitterDistance ?? 300));
+    }
+
+    private void OnRailItemClicked(string key)
+    {
+        switch (key)
+        {
+            case "history":
+                OpenHistory();
+                break;
+            case "scripts":
+                OpenScripts();
+                break;
+            case "reports":
+                OpenReports();
+                break;
+            case "settings":
+                ShowOptionsDialog(OptionsFocus.Settings);
+                break;
+            case "compare":
+            default:
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Single root for generated scripts, HTML reports, and SchemaSync run folders.
+    /// Always under the bundled engine unless the user overrides it in Options.
+    /// </summary>
+    internal string EnsureOutputRoot()
+    {
+        var root = _options.OutputPath;
+        if (string.IsNullOrWhiteSpace(root))
+            root = Path.Combine(_engine.SchemaCompareRoot, "output");
+        try { Directory.CreateDirectory(root); } catch { /* best effort */ }
+        _options.OutputPath = root;
+        return root;
+    }
+
+    /// <summary>History = past SchemaSync_* compare runs under the shared output root.</summary>
+    private void OpenHistory()
+    {
+        var root = EnsureOutputRoot();
+        var latest = FindLatestRunFolder(root);
+        var open = latest ?? root;
+        SetStatus($"History — {open}");
+        Process.Start(new ProcessStartInfo("explorer.exe", $"\"{open}\"") { UseShellExecute = true });
+    }
+
+    /// <summary>
+    /// Scripts = show the in-app Script Preview when available; otherwise open the
+    /// shared output root (same folder Save Script / compare writes to).
+    /// </summary>
+    private void OpenScripts()
+    {
+        var root = EnsureOutputRoot();
+        if (_tabScript != null && !string.IsNullOrWhiteSpace(_txtScript.Text) &&
+            !_txtScript.Text.StartsWith("-- No", StringComparison.Ordinal))
+        {
+            _tabs.SelectedTab = _tabScript;
+            SetStatus($"Scripts — preview (saved under {root})");
+            return;
+        }
+
+        SetStatus($"Scripts — {root}");
+        Process.Start(new ProcessStartInfo("explorer.exe", $"\"{root}\"") { UseShellExecute = true });
+    }
+
+    /// <summary>Reports = open the latest HTML report under the shared output root.</summary>
+    private void OpenReports()
+    {
+        var root = EnsureOutputRoot();
+        var report = _lastResult?.ReportPath;
+        if (string.IsNullOrWhiteSpace(report) || !File.Exists(report))
+            report = FindLatestHtmlReport(root);
+
+        if (!string.IsNullOrWhiteSpace(report) && File.Exists(report))
+        {
+            SetStatus($"Reports — {Path.GetFileName(report)}");
+            Process.Start(new ProcessStartInfo(report) { UseShellExecute = true });
+            return;
+        }
+
+        MessageBox.Show(this,
+            "No HTML report found yet.\r\n\r\nRun a comparison first — reports are written to:\r\n" + root,
+            "Reports", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        SetStatus($"Reports — none in {root}");
+    }
+
+    private static string? FindLatestRunFolder(string outputRoot)
+    {
+        if (!Directory.Exists(outputRoot)) return null;
+        return Directory.EnumerateDirectories(outputRoot, "SchemaSync_*")
+            .OrderByDescending(d => d, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault();
+    }
+
+    private static string? FindLatestHtmlReport(string outputRoot)
+    {
+        if (!Directory.Exists(outputRoot)) return null;
+        return Directory.EnumerateFiles(outputRoot, "SchemaCompare_*.html", SearchOption.AllDirectories)
+            .OrderByDescending(f => f, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault();
+    }
+
+    private void OpenOutputFolder()
+    {
+        var root = EnsureOutputRoot();
+        var dir = _lastResult?.RunFolder;
+        if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir))
+            dir = root;
+        Process.Start(new ProcessStartInfo("explorer.exe", $"\"{dir}\"") { UseShellExecute = true });
+        SetStatus($"Output — {dir}");
+    }
+
+    private void OpenHtmlReport() => OpenReports();
+
+    private static void StyleModeRadio(RadioButton rb)
+    {
+        rb.AutoSize = true;
+        rb.FlatStyle = FlatStyle.System;
+        rb.ForeColor = UiTheme.TextPrimary;
+        rb.Font = UiTheme.SemiBold(10f);
+        rb.BackColor = Color.Transparent;
+        rb.UseCompatibleTextRendering = true;
+        rb.MinimumSize = new Size(TextRenderer.MeasureText(rb.Text, rb.Font).Width + 28, 22);
     }
 
     private void OnFormClosing(object? sender, FormClosingEventArgs e)
@@ -360,6 +1200,13 @@ public sealed class MainForm : Form
         try
         {
             try { _cts?.Cancel(); } catch { /* ignore */ }
+            try { _browseCts?.Cancel(); } catch { /* ignore */ }
+            try { _browseCts?.Dispose(); } catch { /* ignore */ }
+            _browseCts = null;
+            try { _scriptCts?.Cancel(); } catch { /* ignore */ }
+            try { _scriptCts?.Dispose(); } catch { /* ignore */ }
+            _scriptCts = null;
+            _browseScriptSnapshot = null;
             try { _engine.CancelActiveProcess(); } catch { /* ignore */ }
             try { _engine.Shutdown(); } catch { /* ignore */ }
 
@@ -432,27 +1279,35 @@ public sealed class MainForm : Form
         }
     }
 
-    private void LayoutActionButtons()
-    {
-        if (IsDisposed) return;
-        var right = ClientSize.Width - 16;
-        _btnOpenReport.Left = Math.Max(12, right - _btnOpenReport.Width);
-        _btnOpenOutput.Left = Math.Max(12, _btnOpenReport.Left - 8 - _btnOpenOutput.Width);
-        _btnOptions.Left = Math.Max(12, _btnOpenOutput.Left - 8 - _btnOptions.Width);
-        _btnSaveDeploy.Left = Math.Max(12, _btnOptions.Left - 8 - _btnSaveDeploy.Width);
-        _btnCompare.Left = Math.Max(12, _btnSaveDeploy.Left - 8 - _btnCompare.Width);
-        _btnCompare.Top = _btnSaveDeploy.Top = _btnOptions.Top = _btnOpenOutput.Top = _btnOpenReport.Top = 11;
-    }
-
     private void UpdateModeUi()
     {
         var many = _rbOneToMany.Checked;
-        _txtListFile.Enabled = many;
-        _btnBrowseList.Enabled = many;
-        _targetPanel.SetMultiSelectVisible(many);
+
+        SuspendLayout();
+        _connCard.SuspendLayout();
+        try
+        {
+            _txtListFile.Enabled = many;
+            _btnBrowseList.Enabled = many;
+            if (_listFileHost != null)
+                _listFileHost.Visible = many;
+
+            _targetPanel.SetMultiSelectVisible(many);
+            // Keep ExpandedHeight stable — height jumps caused the flicker/spacing.
+            SyncConnCardHeight();
+        }
+        finally
+        {
+            _connCard.ResumeLayout(true);
+            ResumeLayout(true);
+        }
+
         SetStatus(many
             ? "One-to-Many: pick one source DB, then check multiple destination DBs (or use a list file)."
-            : "One-to-One: source DB is compared to one destination DB (check a single target).");
+            : "One-to-One: select one source database and one destination database.");
+        UpdateHeaderProject();
+        if (_lastResult == null)
+            RebuildTree(_txtFilter.Text);
     }
 
     private void SetStatus(string text)
@@ -467,11 +1322,28 @@ public sealed class MainForm : Form
         if (IsDisposed) return;
         UseWaitCursor = busy;
         _btnCompare.Enabled = !busy;
+        _btnCompareNow.Enabled = !busy;
         _btnOptions.Enabled = !busy;
         _btnSaveDeploy.Enabled = !busy && (_deployResult?.HasAuto == true || _deployResult?.HasManual == true);
-        _progress.MarqueeAnimationSpeed = busy ? 35 : 0;
-        _progress.Style = busy ? ProgressBarStyle.Marquee : ProgressBarStyle.Blocks;
-        if (!busy) _progress.Value = 0;
+        if (_summaryStrip != null)
+            _summaryStrip.Visible = busy;
+        if (busy)
+        {
+            _progress.Style = ProgressBarStyle.Marquee;
+            _progress.MarqueeAnimationSpeed = 30;
+        }
+        else
+        {
+            _progress.Style = ProgressBarStyle.Continuous;
+            _progress.MarqueeAnimationSpeed = 0;
+            _progress.Value = 0;
+            if (_compareStarted is DateTime started)
+            {
+                var elapsed = DateTime.Now - started;
+                _lblElapsed.Text = $"Elapsed  {elapsed:mm\\:ss}";
+                _statusTime.Text = $"Elapsed: {elapsed.TotalSeconds:0}s";
+            }
+        }
     }
 
     private void AppendLogUi(string line)
@@ -480,11 +1352,24 @@ public sealed class MainForm : Form
         void Write()
         {
             _logBuffer.AppendLine(line);
-            // Keep TextBox in sync without unbounded growth: refresh from capped buffer periodically.
             if (_txtLog.TextLength > CompareEngine.MaxLogChars)
                 _txtLog.Text = _logBuffer.Snapshot();
             else
                 _txtLog.AppendText(line + Environment.NewLine);
+
+            if (_compareStarted is DateTime started)
+                _lblElapsed.Text = $"Elapsed  {(DateTime.Now - started):mm\\:ss}";
+
+            // Surface stage hints from PowerShell log lines
+            var lower = line.ToLowerInvariant();
+            if (lower.Contains("connecting") || lower.Contains("connect"))
+                _lblProgressStage.Text = "Connecting...";
+            else if (lower.Contains("comparing"))
+                _lblProgressStage.Text = "Comparing objects...";
+            else if (lower.Contains("script") || lower.Contains("writing"))
+                _lblProgressStage.Text = "Generating scripts...";
+            else if (lower.Contains("report"))
+                _lblProgressStage.Text = "Building report...";
         }
 
         if (InvokeRequired)
@@ -497,42 +1382,17 @@ public sealed class MainForm : Form
         }
     }
 
-    private void OpenOutputFolder()
-    {
-        var dir = _lastResult?.RunFolder;
-        if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir))
-            dir = _options.OutputPath;
-        if (!string.IsNullOrWhiteSpace(dir) && Directory.Exists(dir))
-        {
-            Process.Start(new ProcessStartInfo("explorer.exe", $"\"{dir}\"") { UseShellExecute = true });
-        }
-        else
-        {
-            MessageBox.Show(this, "No output folder yet.", "Open output",
-                MessageBoxButtons.OK, MessageBoxIcon.Information);
-        }
-    }
-
-    private void OpenHtmlReport()
-    {
-        var path = _lastResult?.ReportPath;
-        if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
-            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
-        else
-            MessageBox.Show(this, "No HTML report from this session.", "HTML report",
-                MessageBoxButtons.OK, MessageBoxIcon.Information);
-    }
-
     private void UpdateManualTabCaption()
     {
         if (_tabManual == null) return;
         var count = _deployResult?.ManualFileCount ?? 0;
-        _tabManual.Text = count > 0 ? $"\u26A0 Manual actions ({count})" : "Manual actions";
+        _tabManual.Text = count > 0 ? $"\u26A0 Manual Actions ({count})" : "Manual Actions";
     }
 
     /// <summary>
     /// Exports a single self-contained, deployable .sql for the auto/safe changes,
     /// and (when present) a separate manual .sql the operator must run by hand.
+    /// Always defaults to the same shared output root used by compare / History / Scripts.
     /// </summary>
     private void SaveDeployScript()
     {
@@ -544,17 +1404,16 @@ public sealed class MainForm : Form
         }
 
         var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+        var outputRoot = EnsureOutputRoot();
         using var dlg = new SaveFileDialog
         {
             Title = "Save deployable SQL script",
             Filter = "SQL script (*.sql)|*.sql|All files|*.*",
             FileName = $"Deploy_AutoChanges_{stamp}.sql",
-            OverwritePrompt = true
+            OverwritePrompt = true,
+            // Same root directory as compare output / History / Scripts / Reports.
+            InitialDirectory = outputRoot
         };
-        if (!string.IsNullOrWhiteSpace(_lastResult?.RunFolder) && Directory.Exists(_lastResult.RunFolder))
-            dlg.InitialDirectory = _lastResult.RunFolder;
-        else if (!string.IsNullOrWhiteSpace(_options.OutputPath) && Directory.Exists(_options.OutputPath))
-            dlg.InitialDirectory = _options.OutputPath;
 
         if (dlg.ShowDialog(this) != DialogResult.OK) return;
 
@@ -589,6 +1448,9 @@ public sealed class MainForm : Form
         MessageBox.Show(this, msg.ToString(), "Save deploy script",
             MessageBoxButtons.OK,
             _deployResult.HasManual ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
+        _steps.Active = WorkflowStep.Deploy;
+        _lblProgressStage.Text = "Deploy script saved — run on the TARGET server";
+        _lblProgressStage.ForeColor = UiTheme.Success;
         SetStatus("Deploy script saved.");
 
         var r = MessageBox.Show(this, "Open the folder containing the saved script?",
@@ -606,7 +1468,7 @@ public sealed class MainForm : Form
         if (_busy || _isShuttingDown) return;
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(
             _cts?.Token ?? CancellationToken.None);
-        linked.CancelAfter(TimeSpan.FromSeconds(45));
+        linked.CancelAfter(TimeSpan.FromSeconds(60));
         try
         {
             SetBusy(true);
@@ -615,9 +1477,29 @@ public sealed class MainForm : Form
             SetStatus($"Testing {(source ? "source" : "target")} connection...");
             await SqlConnectionService.TestAsync(info, linked.Token).ConfigureAwait(true);
             if (_isShuttingDown || IsDisposed) return;
-            MessageBox.Show(this, "Connection successful.", "Test connection",
-                MessageBoxButtons.OK, MessageBoxIcon.Information);
-            SetStatus("Connection OK.");
+
+            SetStatus($"Loading {(source ? "source" : "target")} databases...");
+            var dbs = await SqlConnectionService.ListUserDatabasesAsync(info, linked.Token).ConfigureAwait(true);
+            if (_isShuttingDown || IsDisposed) return;
+            if (source)
+            {
+                _sourceBrowseDb = "";
+                _sourceObjects = Array.Empty<SchemaObjectInfo>();
+                _sourcePanel.SetDatabases(dbs);
+                _sourcePanel.SetConnectionStatus(true, $"{dbs.Count} databases");
+            }
+            else
+            {
+                _targetBrowseDb = "";
+                _targetObjects = Array.Empty<SchemaObjectInfo>();
+                _targetPanel.SetDatabases(dbs);
+                _targetPanel.SetConnectionStatus(true, $"{dbs.Count} databases");
+            }
+
+            _steps.Active = WorkflowStep.Connect;
+            UpdateHeaderProject();
+            SetStatus($"Connected — select a database ({dbs.Count} available).");
+            _lblProgressStage.Text = "Select a database";
         }
         catch (OperationCanceledException)
         {
@@ -625,6 +1507,9 @@ public sealed class MainForm : Form
         }
         catch (Exception ex)
         {
+            if (source) _sourcePanel.SetConnectionStatus(false, "Failed");
+            else _targetPanel.SetConnectionStatus(false, "Failed");
+            UpdateHeaderProject();
             if (!_isShuttingDown && !IsDisposed)
                 MessageBox.Show(this, ex.Message, "Connection failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
             SetStatus("Connection failed.");
@@ -644,11 +1529,26 @@ public sealed class MainForm : Form
             var info = source ? _sourcePanel.GetConnectionInfo(false) : _targetPanel.GetConnectionInfo(false);
             info.TrustServerCertificate = _options.TrustServerCertificate;
             SetStatus($"Refreshing {(source ? "source" : "target")} databases...");
+            _lblProgressStage.Text = "Reading databases...";
             var dbs = await SqlConnectionService.ListUserDatabasesAsync(info, linked.Token).ConfigureAwait(true);
             if (_isShuttingDown || IsDisposed) return;
-            if (source) _sourcePanel.SetDatabases(dbs);
-            else _targetPanel.SetDatabases(dbs);
-            SetStatus($"Loaded {dbs.Count} database(s).");
+            if (source)
+            {
+                _sourceBrowseDb = "";
+                _sourceObjects = Array.Empty<SchemaObjectInfo>();
+                _sourcePanel.SetDatabases(dbs);
+                _sourcePanel.SetConnectionStatus(true, $"{dbs.Count} databases");
+            }
+            else
+            {
+                _targetBrowseDb = "";
+                _targetObjects = Array.Empty<SchemaObjectInfo>();
+                _targetPanel.SetDatabases(dbs);
+                _targetPanel.SetConnectionStatus(true, $"{dbs.Count} databases");
+            }
+            _steps.Active = WorkflowStep.Connect;
+            SetStatus($"Loaded {dbs.Count} database(s). Select a database to browse objects.");
+            _lblProgressStage.Text = "Select a database";
         }
         catch (OperationCanceledException)
         {
@@ -665,6 +1565,85 @@ public sealed class MainForm : Form
             SetStatus("Refresh failed.");
         }
         finally { if (!_isShuttingDown) SetBusy(false); }
+    }
+
+    private async Task LoadBrowseObjectsAsync(bool source)
+    {
+        if (_isShuttingDown || IsDisposed) return;
+
+        var panel = source ? _sourcePanel : _targetPanel;
+        var db = panel.SelectedDatabase;
+        if (string.IsNullOrWhiteSpace(db))
+        {
+            if (source)
+            {
+                _sourceObjects = Array.Empty<SchemaObjectInfo>();
+                _sourceBrowseDb = "";
+            }
+            else
+            {
+                _targetObjects = Array.Empty<SchemaObjectInfo>();
+                _targetBrowseDb = "";
+            }
+            if (_lastResult == null)
+                RebuildTree(_txtFilter.Text);
+            UpdateHeaderProject();
+            return;
+        }
+
+        if (source && string.Equals(_sourceBrowseDb, db, StringComparison.OrdinalIgnoreCase) && _sourceObjects.Count > 0)
+            return;
+        if (!source && string.Equals(_targetBrowseDb, db, StringComparison.OrdinalIgnoreCase) && _targetObjects.Count > 0)
+            return;
+
+        _browseCts?.Cancel();
+        _browseCts?.Dispose();
+        _browseCts = new CancellationTokenSource();
+        var ct = _browseCts.Token;
+
+        try
+        {
+            var info = panel.GetConnectionInfo(false);
+            info.TrustServerCertificate = _options.TrustServerCertificate;
+            SetStatus($"Loading objects from {(source ? "source" : "target")}  ·  {db}...");
+            _lblProgressStage.Text = $"Reading {db}...";
+
+            var objects = await SqlConnectionService.ListSchemaObjectsAsync(info, db, ct).ConfigureAwait(true);
+            if (_isShuttingDown || IsDisposed || ct.IsCancellationRequested) return;
+
+            if (source)
+            {
+                _sourceObjects = objects;
+                _sourceBrowseDb = db;
+            }
+            else
+            {
+                _targetObjects = objects;
+                _targetBrowseDb = db;
+            }
+
+            panel.SetConnectionStatus(true, db);
+            UpdateHeaderProject();
+
+            if (_lastResult == null)
+                RebuildTree(_txtFilter.Text);
+
+            SetStatus($"Loaded {objects.Count} object(s) from {db}.");
+            _lblProgressStage.Text = "Ready to compare";
+            _steps.Active = WorkflowStep.Connect;
+        }
+        catch (OperationCanceledException)
+        {
+            // newer selection cancelled this load
+        }
+        catch (Exception ex)
+        {
+            if (!_isShuttingDown && !IsDisposed)
+            {
+                SetStatus($"Could not list objects: {ex.Message}");
+                _lblProgressStage.Text = "Object list failed";
+            }
+        }
     }
 
     private async Task RunCompareAsync()
@@ -743,6 +1722,13 @@ public sealed class MainForm : Form
 
             _cts?.Dispose();
             _cts = new CancellationTokenSource();
+            _compareStarted = DateTime.Now;
+            // Mockup behaviour: reclaim workspace once the comparison starts.
+            CollapseConnectionCardForCompare();
+            _steps.Active = WorkflowStep.Compare;
+            _lblProgressStage.Text = "Comparing schemas...";
+            _lblProgressStage.ForeColor = UiTheme.Primary;
+            _lblElapsed.Text = "Elapsed  00:00";
             SetBusy(true);
             _logBuffer.Clear();
             _txtLog.Clear();
@@ -777,19 +1763,28 @@ public sealed class MainForm : Form
 
             RebuildTree(_txtFilter.Text.Trim());
             UpdateSummaryCounts(result.AllDifferences);
+            UpdateOverviewDashboard(result.Success ? result : null);
 
             if (!result.Success)
             {
+                _steps.Active = WorkflowStep.Compare;
+                _lblProgressStage.Text = "Compare failed";
+                _lblProgressStage.ForeColor = UiTheme.Danger;
                 MessageBox.Show(this, result.Error ?? "Compare failed. See Progress log.",
                     "Compare failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 SetStatus("Compare failed.");
             }
             else
             {
-                _tabs.SelectedIndex = result.AllDifferences.Count > 0 ? 0 : 1;
+                _steps.Active = WorkflowStep.Review;
+                _lblProgressStage.Text = result.AllDifferences.Count == 0
+                    ? "Schemas match — nothing to deploy"
+                    : "Review differences, then save deploy script";
+                _lblProgressStage.ForeColor = UiTheme.Success;
+                _tabs.SelectedTab = _tabOverview;
                 var manualNote = _deployResult.HasManual
                     ? $"\r\n\r\n\u26A0  {_deployResult.ManualFileCount} MANUAL script(s) were produced.\r\n" +
-                      "These are NOT applied automatically - open the 'Manual actions' tab\r\nand run them by hand on the target after review.\r\n" +
+                      "These are NOT applied automatically - open the 'Manual Actions' tab\r\nand run them by hand on the target after review.\r\n" +
                       "(DROP TABLE is always manual.)"
                     : "";
                 MessageBox.Show(this,
@@ -825,11 +1820,77 @@ public sealed class MainForm : Form
 
     private void UpdateSummaryCounts(IReadOnlyList<DifferenceItem> diffs)
     {
-        var (add, upd, extra, total) = DiffQuery.CountByKind(diffs);
-        _lblSummary.Text = $"Add: {add}    Update: {upd}    Extra: {extra}    Total: {total}";
-        _lblSummary.ForeColor = total == 0
-            ? Color.FromArgb(39, 174, 96)
-            : Color.FromArgb(27, 79, 114);
+        var (add, upd, extra, _) = DiffQuery.CountByKind(diffs);
+        _cardAdded.SetValue(add);
+        _cardChanged.SetValue(upd);
+        _cardExtra.SetValue(extra);
+        _cardManual.SetValue(_deployResult?.ManualFileCount ?? 0);
+        _badgeAdded.SetValue(add);
+        _badgeRemoved.SetValue(extra);
+        _badgeChanged.SetValue(upd);
+        // Identical / Ignored are reserved for future engine metrics; keep visible at 0 per mockup.
+        _badgeIdentical.SetValue(0);
+        _badgeIgnored.SetValue(_deployResult?.ManualFileCount ?? 0);
+        _statusObjects.Text = $"Objects: {diffs.Count:N0}";
+        UpdateHeaderProject();
+    }
+
+    private void UpdateHeaderProject()
+    {
+        try
+        {
+            var src = _sourcePanel.GetConnectionInfo();
+            var tgt = _targetPanel.GetConnectionInfo(false);
+            var srcDb = _sourcePanel.SelectedDatabase;
+            var tgtDb = _targetPanel.SelectedDatabase;
+
+            _statusSource.Text = string.IsNullOrWhiteSpace(src.Instance)
+                ? "Source: Not selected"
+                : $"Source: {src.Instance}" + (string.IsNullOrWhiteSpace(srcDb) ? "" : $"  \u00B7  {srcDb}");
+            _statusTarget.Text = string.IsNullOrWhiteSpace(tgt.Instance)
+                ? "Target: Not selected"
+                : $"Target: {tgt.Instance}" + (string.IsNullOrWhiteSpace(tgtDb) ? "" : $"  \u00B7  {tgtDb}");
+            var objectCount = _lastResult?.AllDifferences?.Count
+                ?? (_sourceObjects.Count + _targetObjects.Count);
+            _statusObjects.Text = $"Objects: {objectCount}";
+        }
+        catch { /* ignore */ }
+    }
+
+    /// <summary>Maps a raw engine object type to the mockup's explorer categories.</summary>
+    private static string TypeCategory(string objectType) => objectType.ToUpperInvariant() switch
+    {
+        "TABLE" or "U" => "Tables",
+        "VIEW" or "V" => "Views",
+        "PROCEDURE" or "STORED PROCEDURE" or "P" => "Stored Procedures",
+        "FUNCTION" or "FN" or "TF" or "IF" => "User Defined Functions",
+        "INDEX" => "Indexes",
+        "TRIGGER" or "TR" => "Triggers",
+        "SCHEMA" => "Schemas",
+        _ => "Others"
+    };
+
+    private void UpdateOverviewDashboard(CompareResult? result)
+    {
+        if (result == null)
+        {
+            _overviewDash.Visible = false;
+            _overviewEmpty.Visible = true;
+            return;
+        }
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"Compared {result.Summaries.Count} database pair(s)  \u00B7  {result.AllDifferences.Count} difference(s) found.");
+        if (_deployResult != null)
+            sb.AppendLine($"Deploy scripts:  {_deployResult.AutoFileCount} auto (safe)  \u00B7  {_deployResult.ManualFileCount} manual (review required).");
+        if (!string.IsNullOrWhiteSpace(result.RunFolder))
+            sb.AppendLine($"Run folder:  {result.RunFolder}");
+        sb.AppendLine();
+        sb.AppendLine("Open Object Details for per-object impact, Script Preview for the deployable SQL,");
+        sb.AppendLine("and Manual Actions for statements that must be reviewed by hand.");
+        _txtOverview.Text = sb.ToString();
+        _overviewEmpty.Visible = false;
+        _overviewDash.Visible = true;
     }
 
     private void RebuildTree(string filter)
@@ -839,50 +1900,313 @@ public sealed class MainForm : Form
         try
         {
             _tree.Nodes.Clear();
-            var source = _lastResult?.AllDifferences ?? (IReadOnlyList<DifferenceItem>)Array.Empty<DifferenceItem>();
-            var diffs = DiffQuery.Filter(source, filter);
 
-            var root = new TreeNode("Differences") { ImageKey = "root", SelectedImageKey = "root" };
-            foreach (var byDb in DiffQuery.GroupByDatabaseThenType(diffs))
+            // After a compare, show differences. Before that, browse selected DBs.
+            if (_lastResult != null)
             {
-                var dbNode = new TreeNode(byDb.Key) { ImageKey = "root", SelectedImageKey = "root" };
-                foreach (var byType in byDb.GroupBy(d => d.ObjectType).OrderBy(g => g.Key))
+                var source = _lastResult.AllDifferences ?? (IReadOnlyList<DifferenceItem>)Array.Empty<DifferenceItem>();
+                // Object Types filter from the action bar applies first.
+                var typed = source.Where(d => _enabledTypes.Contains(TypeCategory(d.ObjectType))).ToList();
+                var diffs = DiffQuery.Filter(typed, filter);
+                _lblTreePlaceholder.Visible = diffs.Count == 0;
+                _tree.Visible = true;
+                if (diffs.Count == 0)
                 {
-                    var typeNode = new TreeNode($"{byType.Key} ({byType.Count()})")
-                    {
-                        ImageKey = "type",
-                        SelectedImageKey = "type"
-                    };
-                    foreach (var d in byType.OrderBy(x => x.ObjectName))
-                    {
-                        var key = d.Kind switch
-                        {
-                            DiffKind.Add => "add",
-                            DiffKind.Update => "upd",
-                            DiffKind.Extra => "extra",
-                            _ => "other"
-                        };
-                        typeNode.Nodes.Add(new TreeNode($"{d.ObjectName}  [{d.ActionLabel}]")
-                        {
-                            Tag = d,
-                            ImageKey = key,
-                            SelectedImageKey = key
-                        });
-                    }
-                    dbNode.Nodes.Add(typeNode);
+                    _lblTreePlaceholder.Text = "No differences match the current filter.";
+                    _lblTreePlaceholder.Visible = true;
+                    return;
                 }
-                root.Nodes.Add(dbNode);
+
+                var root = new TreeNode($"Differences ({diffs.Count})") { ImageKey = "root", SelectedImageKey = "root" };
+                foreach (var byDb in DiffQuery.GroupByDatabaseThenType(diffs))
+                {
+                    var dbNode = new TreeNode(byDb.Key) { ImageKey = "root", SelectedImageKey = "root" };
+                    foreach (var byType in byDb.GroupBy(d => d.ObjectType).OrderBy(g => g.Key))
+                    {
+                        var (label, icon) = DiffQuery.DescribeObjectType(byType.Key);
+                        var typeNode = new TreeNode($"{label} ({byType.Count()})")
+                        {
+                            ImageKey = icon,
+                            SelectedImageKey = icon
+                        };
+                        foreach (var d in byType.OrderBy(x => x.ObjectName))
+                        {
+                            var key = d.Kind switch
+                            {
+                                DiffKind.Add => "add",
+                                DiffKind.Update => "upd",
+                                DiffKind.Extra => "extra",
+                                _ => "other"
+                            };
+                            typeNode.Nodes.Add(new TreeNode($"{d.ObjectName}  ·  {d.ActionLabel}")
+                            {
+                                Tag = d,
+                                ImageKey = key,
+                                SelectedImageKey = key
+                            });
+                        }
+                        dbNode.Nodes.Add(typeNode);
+                    }
+                    root.Nodes.Add(dbNode);
+                }
+
+                _tree.Nodes.Add(root);
+                // Show the difference roots collapsed — expand folders on demand.
+                return;
             }
 
-            _tree.Nodes.Add(root);
-            root.Expand();
-            foreach (TreeNode n in root.Nodes) n.Expand();
+            BuildBrowseTree(filter);
         }
         finally
         {
             _tree.EndUpdate();
         }
     }
+
+    private void BuildBrowseTree(string filter)
+    {
+        var q = (filter ?? "").Trim();
+        var src = FilterBrowseObjects(_sourceObjects, q)
+            .Where(o => _enabledTypes.Contains(TypeCategory(o.ObjectType))).ToList();
+        var tgt = FilterBrowseObjects(_targetObjects, q)
+            .Where(o => _enabledTypes.Contains(TypeCategory(o.ObjectType))).ToList();
+        var hasAny = src.Count > 0 || tgt.Count > 0;
+
+        _tree.Visible = true;
+        _lblTreePlaceholder.Visible = false;
+        if (!hasAny)
+        {
+            // Mockup initial state: category folders visible (collapsed) before browse/compare.
+            _tree.Visible = true;
+            _lblTreePlaceholder.Visible = false;
+            foreach (var cat in new[]
+                     {
+                         "Databases", "Schemas", "Tables", "Views", "Stored Procedures",
+                         "User Defined Functions", "Indexes", "Triggers", "Others"
+                     })
+            {
+                _tree.Nodes.Add(new TreeNode(cat) { ImageKey = "folder", SelectedImageKey = "folder" });
+            }
+            return;
+        }
+
+        if (src.Count > 0)
+            _tree.Nodes.Add(BuildSideBrowseNode("Source", true, _sourceBrowseDb, src));
+        if (tgt.Count > 0)
+            _tree.Nodes.Add(BuildSideBrowseNode("Target", false, _targetBrowseDb, tgt));
+
+        // Keep Source/Target trees collapsed after connect (expand on demand).
+    }
+
+    private static IReadOnlyList<SchemaObjectInfo> FilterBrowseObjects(
+        IReadOnlyList<SchemaObjectInfo> objects, string filter)
+    {
+        if (string.IsNullOrWhiteSpace(filter)) return objects;
+        return objects
+            .Where(o =>
+                o.FullName.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                o.ObjectType.Contains(filter, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
+
+    private static TreeNode BuildSideBrowseNode(
+        string side, bool isSource, string database, IReadOnlyList<SchemaObjectInfo> objects)
+    {
+        var title = string.IsNullOrWhiteSpace(database)
+            ? $"{side} ({objects.Count})"
+            : $"{side}: {database} ({objects.Count})";
+        var root = new TreeNode(title) { ImageKey = "root", SelectedImageKey = "root" };
+        var sideCtx = new BrowseSideContext(isSource, database ?? "");
+
+        foreach (var byType in objects.GroupBy(o => o.ObjectType).OrderBy(g => TypeSort(g.Key)))
+        {
+            var (label, icon) = DiffQuery.DescribeObjectType(byType.Key);
+            var typeNode = new TreeNode($"{label} ({byType.Count()})")
+            {
+                ImageKey = icon,
+                SelectedImageKey = icon
+            };
+            foreach (var o in byType.OrderBy(x => x.FullName, StringComparer.OrdinalIgnoreCase))
+            {
+                var isTable = o.ObjectType.Equals("TABLE", StringComparison.OrdinalIgnoreCase);
+                if (isTable)
+                {
+                    var tableTag = new TableBrowseNode(sideCtx, o.SchemaName, o.ObjectName);
+                    var tableNode = new TreeNode(o.FullName)
+                    {
+                        Tag = tableTag,
+                        ImageKey = icon,
+                        SelectedImageKey = icon
+                    };
+                    foreach (TableFolderKind kind in Enum.GetValues<TableFolderKind>())
+                    {
+                        var folderIcon = ObjectExplorerFormat.FolderIcon(kind);
+                        var folderNode = new TreeNode(ObjectExplorerFormat.FolderLabel(kind))
+                        {
+                            Tag = new TableFolderNode(tableTag, kind, Loaded: false),
+                            ImageKey = folderIcon,
+                            SelectedImageKey = folderIcon
+                        };
+                        folderNode.Nodes.Add(new TreeNode("Loading...")
+                        {
+                            ImageKey = "other",
+                            SelectedImageKey = "other"
+                        });
+                        tableNode.Nodes.Add(folderNode);
+                    }
+                    typeNode.Nodes.Add(tableNode);
+                }
+                else
+                {
+                    typeNode.Nodes.Add(new TreeNode(o.FullName)
+                    {
+                        Tag = o,
+                        ImageKey = icon,
+                        SelectedImageKey = icon
+                    });
+                }
+            }
+            root.Nodes.Add(typeNode);
+        }
+        return root;
+    }
+
+    private async Task LoadTableFolderChildrenAsync(TreeNode? node)
+    {
+        if (node?.Tag is not TableFolderNode folder || folder.Loaded) return;
+        if (_isShuttingDown || IsDisposed || _lastResult != null) return;
+
+        var panel = folder.Table.Side.IsSource ? _sourcePanel : _targetPanel;
+        var db = folder.Table.Side.Database;
+        if (string.IsNullOrWhiteSpace(db)) return;
+
+        try
+        {
+            var info = panel.GetConnectionInfo(false);
+            info.TrustServerCertificate = _options.TrustServerCertificate;
+            SetStatus($"Loading {ObjectExplorerFormat.FolderLabel(folder.Kind)} for {folder.Table.FullName}...");
+
+            var children = await ObjectExplorerCatalog.ListTableFolderAsync(
+                info, db, folder.Table.SchemaName, folder.Table.TableName, folder.Kind).ConfigureAwait(true);
+
+            if (_isShuttingDown || IsDisposed || _lastResult != null) return;
+            if (node.Tag is not TableFolderNode current || current.Loaded) return;
+            if (!ReferenceEquals(node.Tag, folder) &&
+                (current.Kind != folder.Kind ||
+                 !string.Equals(current.Table.FullName, folder.Table.FullName, StringComparison.OrdinalIgnoreCase)))
+                return;
+
+            node.Nodes.Clear();
+            var icon = ObjectExplorerFormat.ChildIcon(folder.Kind);
+            if (children.Count == 0)
+            {
+                node.Nodes.Add(new TreeNode("(empty)")
+                {
+                    ImageKey = "other",
+                    SelectedImageKey = "other"
+                });
+            }
+            else
+            {
+                foreach (var child in children)
+                {
+                    node.Nodes.Add(new TreeNode(child.DisplayText)
+                    {
+                        Tag = child,
+                        ImageKey = icon,
+                        SelectedImageKey = icon
+                    });
+                }
+            }
+
+            node.Tag = folder with { Loaded = true };
+            node.Text = $"{ObjectExplorerFormat.FolderLabel(folder.Kind)} ({children.Count})";
+            SetStatus($"Loaded {children.Count} {ObjectExplorerFormat.FolderLabel(folder.Kind).ToLowerInvariant()} for {folder.Table.FullName}.");
+        }
+        catch (OperationCanceledException)
+        {
+            // ignore
+        }
+        catch (Exception ex)
+        {
+            if (_isShuttingDown || IsDisposed) return;
+            node.Nodes.Clear();
+            node.Nodes.Add(new TreeNode($"(error: {ex.Message})")
+            {
+                ImageKey = "extra",
+                SelectedImageKey = "extra"
+            });
+            node.Tag = folder with { Loaded = true };
+            SetStatus($"Could not load {ObjectExplorerFormat.FolderLabel(folder.Kind)}: {ex.Message}");
+        }
+    }
+
+    private async Task ScriptTableAsync(TableBrowseNode table)
+    {
+        if (_isShuttingDown || IsDisposed || _lastResult != null) return;
+
+        _scriptCts?.Cancel();
+        _scriptCts?.Dispose();
+        _scriptCts = new CancellationTokenSource();
+        var ct = _scriptCts.Token;
+
+        try
+        {
+            var panel = table.Side.IsSource ? _sourcePanel : _targetPanel;
+            var db = table.Side.Database;
+            if (string.IsNullOrWhiteSpace(db)) return;
+
+            var info = panel.GetConnectionInfo(false);
+            info.TrustServerCertificate = _options.TrustServerCertificate;
+            SetStatus($"Scripting CREATE TABLE for {table.FullName}...");
+
+            var script = await ObjectExplorerCatalog.ScriptCreateTableAsync(
+                info, db, table.SchemaName, table.TableName, ct).ConfigureAwait(true);
+
+            if (_isShuttingDown || IsDisposed || ct.IsCancellationRequested) return;
+            // Only apply if this table is still selected.
+            if (_tree.SelectedNode?.Tag is not TableBrowseNode selected ||
+                !string.Equals(selected.FullName, table.FullName, StringComparison.OrdinalIgnoreCase) ||
+                selected.Side.IsSource != table.Side.IsSource)
+                return;
+
+            _browseScriptSnapshot = script;
+            _txtDetails.Text =
+                $"Table\r\n  {table.FullName}\r\n\r\n" +
+                $"Database\r\n  {db}\r\n\r\n" +
+                $"Side\r\n  {(table.Side.IsSource ? "Source" : "Target")}\r\n\r\n" +
+                "CREATE TABLE script loaded in the Deployable script tab.\r\n" +
+                "Expand Columns / Keys / Constraints / Indexes / Triggers under this table.";
+            _txtScript.Text = script;
+            _lblDetailPlaceholder.Visible = false;
+            _txtDetails.BringToFront();
+            // Prefer showing the script like SSMS "Script Table as → CREATE To"
+            _tabs.SelectedTab = _tabScript;
+            SetStatus($"Scripted CREATE TABLE for {table.FullName}.");
+        }
+        catch (OperationCanceledException)
+        {
+            // newer selection cancelled this script
+        }
+        catch (Exception ex)
+        {
+            if (_isShuttingDown || IsDisposed) return;
+            _txtDetails.Text =
+                $"Table\r\n  {table.FullName}\r\n\r\n" +
+                $"Could not script CREATE TABLE:\r\n  {ex.Message}";
+            SetStatus($"Script failed: {ex.Message}");
+        }
+    }
+
+    private static int TypeSort(string type) => type.ToUpperInvariant() switch
+    {
+        "TABLE" => 1,
+        "VIEW" => 2,
+        "PROCEDURE" => 3,
+        "FUNCTION" => 4,
+        "TRIGGER" => 5,
+        _ => 9
+    };
 
     private void LoadSettings()
     {
@@ -894,12 +2218,31 @@ public sealed class MainForm : Form
             else _rbOneToOne.Checked = true;
             _sourcePanel.Apply(s.Source);
             _targetPanel.Apply(s.Target);
+            if (s.TargetDatabases.Count > 0)
+                _targetPanel.SetDatabases(s.TargetDatabases, s.TargetDatabases);
             _txtListFile.Text = s.DestinationListFile;
             _options = s.Options ?? new CompareOptions();
             if (string.IsNullOrWhiteSpace(_options.OutputPath))
                 _options.OutputPath = Path.Combine(_engine.SchemaCompareRoot, "output");
+
+            if (s.WindowWidth >= MinimumSize.Width && s.WindowHeight >= MinimumSize.Height)
+            {
+                StartPosition = FormStartPosition.Manual;
+                Bounds = new Rectangle(
+                    s.WindowX == int.MinValue ? Left : s.WindowX,
+                    s.WindowY == int.MinValue ? Top : s.WindowY,
+                    s.WindowWidth,
+                    s.WindowHeight);
+                // Keep on-screen
+                var wa = Screen.FromControl(this).WorkingArea;
+                if (!wa.IntersectsWith(Bounds))
+                    Location = wa.Location;
+            }
+            if (s.WindowMaximized)
+                WindowState = FormWindowState.Maximized;
         }
         catch { /* ignore corrupt settings */ }
+        UpdateHeaderProject();
     }
 
     private void SaveSettings()
@@ -908,6 +2251,7 @@ public sealed class MainForm : Form
         {
             var source = _sourcePanel.GetConnectionInfo();
             var target = _targetPanel.GetConnectionInfo(false);
+            var bounds = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
             SettingsStore.Save(new AppSessionSettings
             {
                 Mode = _rbOneToMany.Checked ? CompareMode.OneToMany : CompareMode.OneToOne,
@@ -915,7 +2259,12 @@ public sealed class MainForm : Form
                 Target = target,
                 TargetDatabases = _targetPanel.GetCheckedDatabases().ToList(),
                 DestinationListFile = _txtListFile.Text.Trim(),
-                Options = _options
+                Options = _options,
+                WindowX = bounds.X,
+                WindowY = bounds.Y,
+                WindowWidth = bounds.Width,
+                WindowHeight = bounds.Height,
+                WindowMaximized = WindowState == FormWindowState.Maximized
             });
         }
         catch { /* ignore */ }

@@ -1,3 +1,12 @@
+﻿// =============================================================================
+// Module:   SqlOptima.SchemaCompare.Services.DeployScriptBuilder
+// Purpose:  Builds self-contained deployable SQL from a compare run folder, separating auto/safe changes from manual-review scripts.
+// Author:   Ravi Sharma
+// Created:  2026-05-22
+// Copyright (c) 2026 Ravi Sharma
+// SPDX-License-Identifier: MIT
+// =============================================================================
+
 using System.Text;
 using System.Text.RegularExpressions;
 

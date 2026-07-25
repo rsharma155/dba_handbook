@@ -1,3 +1,12 @@
+﻿# =============================================================================
+# Module:   scripts/Start-SchemaCompareGui.ps1
+# Purpose:  Launcher - builds (if needed) and starts the SQL Optima Schema Compare GUI.
+# Author:   Ravi Sharma
+# Created:  2026-05-22
+# Copyright (c) 2026 Ravi Sharma
+# SPDX-License-Identifier: MIT
+# =============================================================================
+
 #Requires -Version 5.1
 <#
 .SYNOPSIS
@@ -34,7 +43,9 @@ Add-Type -AssemblyName System.Drawing
 
 . (Join-Path $PSScriptRoot 'SchemaCompareGui.Helpers.ps1')
 
-$script:GuiRoot       = $PSScriptRoot
+# Install root = folder containing tools/, schema_compare/, and the solution
+# (this script lives under scripts\).
+$script:GuiRoot       = Get-SchemaCompareGuiRoot
 $script:CompareRoot   = Get-SchemaCompareRoot -GuiRoot $script:GuiRoot
 $script:CompareScript = Join-Path $script:CompareRoot 'Compare-SqlSchema.ps1'
 $script:TestScript    = Join-Path $script:CompareRoot 'Test-SqlSchemaConnection.ps1'

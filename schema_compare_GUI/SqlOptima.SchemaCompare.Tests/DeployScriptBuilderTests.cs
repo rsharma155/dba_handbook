@@ -1,3 +1,12 @@
+﻿// =============================================================================
+// Module:   SqlOptima.SchemaCompare.Tests.DeployScriptBuilderTests
+// Purpose:  Unit tests for DeployScriptBuilder auto/manual script assembly.
+// Author:   Ravi Sharma
+// Created:  2026-05-22
+// Copyright (c) 2026 Ravi Sharma
+// SPDX-License-Identifier: MIT
+// =============================================================================
+
 using SqlOptima.SchemaCompare.Services;
 
 namespace SqlOptima.SchemaCompare.Tests;

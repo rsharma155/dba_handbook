@@ -1,3 +1,12 @@
+<!--
+  Module:   SqlOptima.SchemaCompare.Tests (project)
+  Purpose:  xUnit test suite (TDD) for the Schema Compare GUI - models,
+            services, and WinForms shell components.
+  Author:   Ravi Sharma
+  Created:  2026-05-22
+  Copyright (c) 2026 Ravi Sharma
+  SPDX-License-Identifier: MIT
+-->
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>

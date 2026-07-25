@@ -1,3 +1,12 @@
+﻿// =============================================================================
+// Module:   SqlOptima.SchemaCompare.Tests.CompareEngineHelperTests
+// Purpose:  Unit tests for CompareEngine helpers - path discovery, argument building, and output parsing.
+// Author:   Ravi Sharma
+// Created:  2026-05-22
+// Copyright (c) 2026 Ravi Sharma
+// SPDX-License-Identifier: MIT
+// =============================================================================
+
 using SqlOptima.SchemaCompare.Models;
 using SqlOptima.SchemaCompare.Services;
 
@@ -5,6 +14,56 @@ namespace SqlOptima.SchemaCompare.Tests;
 
 public class CompareEngineHelperTests
 {
+    [Fact]
+    public void TagDifferencesByTarget_RetagsForOneToManyReview()
+    {
+        var summary = new CompareSummary
+        {
+            Database = "MasterTemplate",
+            TargetDatabase = "Tenant_A",
+            Differences =
+            {
+                new DifferenceItem
+                {
+                    Database = "MasterTemplate",
+                    ObjectType = "Tables",
+                    ObjectName = "dbo.Orders",
+                    Status = "Missing in Target"
+                },
+                new DifferenceItem
+                {
+                    Database = "MasterTemplate",
+                    ObjectType = "Views",
+                    ObjectName = "dbo.v1",
+                    Status = "Definition Mismatch"
+                }
+            }
+        };
+
+        CompareEngine.TagDifferencesByTarget(summary);
+
+        Assert.All(summary.Differences, d => Assert.Equal("Tenant_A", d.Database));
+        Assert.Equal("MasterTemplate", summary.Database);
+        Assert.Equal("Tenant_A", summary.TargetDatabase);
+    }
+
+    [Fact]
+    public void TagDifferencesByTarget_NoOp_WhenTargetMissing()
+    {
+        var summary = new CompareSummary
+        {
+            Database = "SameDb",
+            TargetDatabase = "",
+            Differences =
+            {
+                new DifferenceItem { Database = "SameDb", ObjectName = "x", Status = "Extra in Target" }
+            }
+        };
+
+        CompareEngine.TagDifferencesByTarget(summary);
+        Assert.Equal("SameDb", summary.Differences[0].Database);
+    }
+
     [Fact]
     public void BuildRequestDictionary_IncludesCoreFields()
     {
@@ -85,6 +144,43 @@ public class CompareEngineHelperTests
         Assert.True(Directory.Exists(gui));
         Assert.True(File.Exists(Path.Combine(compare, "Compare-SqlSchema.ps1")));
         Assert.True(File.Exists(Path.Combine(gui, "tools", "Invoke-CompareForGui.ps1")));
+    }
+
+    [Fact]
+    public void SchemaComparePaths_PrefersBundledEngine_ForZipLayout()
+    {
+        // The GUI ships with the engine nested under it (schema_compare\), so the
+        // resolved compare root must be INSIDE the GUI root — one shareable folder.
+        var ok = SchemaComparePaths.TryResolveGuiRoot(AppContext.BaseDirectory, out var gui, out var compare);
+        Assert.True(ok);
+        Assert.Equal(Path.Combine(gui, "schema_compare"), compare);
+        Assert.True(File.Exists(Path.Combine(compare, "Compare-SqlSchema.ps1")));
+    }
+
+    [Fact]
+    public void SchemaComparePaths_SelfContainedFolder_ResolvesRegardlessOfName()
+    {
+        // A renamed/extracted zip folder (not called schema_compare_GUI) must still resolve.
+        var temp = Path.Combine(Path.GetTempPath(), "SqlOptimaZip_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(temp, "tools"));
+            Directory.CreateDirectory(Path.Combine(temp, "schema_compare"));
+            File.WriteAllText(Path.Combine(temp, "tools", "Invoke-CompareForGui.ps1"), "# bridge");
+            File.WriteAllText(Path.Combine(temp, "schema_compare", "Compare-SqlSchema.ps1"), "# engine");
+
+            var appDir = Path.Combine(temp, "SqlOptima.SchemaCompare", "bin", "Release", "net8.0-windows");
+            Directory.CreateDirectory(appDir);
+
+            var ok = SchemaComparePaths.TryResolveGuiRoot(appDir, out var gui, out var compare);
+            Assert.True(ok);
+            Assert.Equal(temp, gui);
+            Assert.Equal(Path.Combine(temp, "schema_compare"), compare);
+        }
+        finally
+        {
+            try { Directory.Delete(temp, true); } catch { /* ignore */ }
+        }
     }
 
     [Fact]

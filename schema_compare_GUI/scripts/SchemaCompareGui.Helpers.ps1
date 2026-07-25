@@ -1,3 +1,12 @@
+﻿# =============================================================================
+# Module:   scripts/SchemaCompareGui.Helpers.ps1
+# Purpose:  Helper functions shared by the Schema Compare GUI launcher scripts.
+# Author:   Ravi Sharma
+# Created:  2026-05-22
+# Copyright (c) 2026 Ravi Sharma
+# SPDX-License-Identifier: MIT
+# =============================================================================
+
 #Requires -Version 5.1
 <#
 .SYNOPSIS
@@ -5,13 +14,44 @@
 #>
 Set-StrictMode -Version Latest
 
-function Get-SchemaCompareRoot {
-    param([string]$GuiRoot = $PSScriptRoot)
-    $candidate = Join-Path (Split-Path -Parent $GuiRoot) 'schema_compare'
-    if (-not (Test-Path (Join-Path $candidate 'Compare-SqlSchema.ps1'))) {
-        throw "Cannot find schema_compare\Compare-SqlSchema.ps1 next to schema_compare_GUI. Expected: $candidate"
+function Get-SchemaCompareGuiRoot {
+    <#
+      Resolves the install root (folder that contains tools/, schema_compare/, and the .sln).
+      Works whether this helpers file lives in scripts/ or at the install root.
+    #>
+    param([string]$Start = $PSScriptRoot)
+    $dir = Get-Item -LiteralPath $Start
+    for ($i = 0; $i -lt 8 -and $null -ne $dir; $i++) {
+        $bridge = Join-Path $dir.FullName 'tools\Invoke-CompareForGui.ps1'
+        $bundled = Join-Path $dir.FullName 'schema_compare\Compare-SqlSchema.ps1'
+        $sln = Join-Path $dir.FullName 'SqlOptima.SchemaCompare.sln'
+        if ((Test-Path -LiteralPath $bridge) -and ((Test-Path -LiteralPath $bundled) -or (Test-Path -LiteralPath $sln))) {
+            return $dir.FullName
+        }
+        $dir = $dir.Parent
     }
-    return (Resolve-Path $candidate).Path
+    throw "Cannot locate Schema Compare install root from: $Start"
+}
+
+function Get-SchemaCompareRoot {
+    <#
+      Prefers the engine bundled under the GUI root (schema_compare\).
+      Falls back to a sibling folder next to schema_compare_GUI (legacy layout).
+    #>
+    param([string]$GuiRoot)
+    if (-not $GuiRoot) { $GuiRoot = Get-SchemaCompareGuiRoot }
+
+    $bundled = Join-Path $GuiRoot 'schema_compare'
+    if (Test-Path (Join-Path $bundled 'Compare-SqlSchema.ps1')) {
+        return (Resolve-Path $bundled).Path
+    }
+
+    $sibling = Join-Path (Split-Path -Parent $GuiRoot) 'schema_compare'
+    if (Test-Path (Join-Path $sibling 'Compare-SqlSchema.ps1')) {
+        return (Resolve-Path $sibling).Path
+    }
+
+    throw "Cannot find schema_compare\Compare-SqlSchema.ps1 under '$GuiRoot' or next to it."
 }
 
 function Get-GuiSettingsPath {

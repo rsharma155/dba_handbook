@@ -1,0 +1,9 @@
+{
+    "$comment": "One-to-many destination list: one source DB is compared to each database named here on a single target server. Use with Compare-SqlSchema.ps1 -TargetDatabaseListFile or Environments.*.DestinationDatabaseListFile in the pipeline.",
+
+    "DestinationDatabases": [
+        "Tenant_Alpha",
+        "Tenant_Beta",
+        "Tenant_Gamma"
+    ]
+}

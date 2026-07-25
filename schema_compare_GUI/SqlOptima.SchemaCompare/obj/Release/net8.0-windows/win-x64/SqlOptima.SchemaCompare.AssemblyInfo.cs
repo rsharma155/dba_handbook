@@ -15,7 +15,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyDescriptionAttribute(("Desktop schema compare GUI (OpenDBDiff-inspired) powered by schema_compare PowerS" +
     "hell engine."))]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+4daadbe93121448e25f5310ed47cae1c51137965")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+5db3bfc33326bbc684d789ee7fbaa2f137c1ad71")]
 [assembly: System.Reflection.AssemblyProductAttribute("SQL Optima Schema Compare")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SqlOptima.SchemaCompare")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

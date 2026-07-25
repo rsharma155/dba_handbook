@@ -1,3 +1,12 @@
+﻿// =============================================================================
+// Module:   SqlOptima.SchemaCompare.Models.CompareModels
+// Purpose:  Domain models - connection info, compare options and modes, difference items, and compare/deploy results.
+// Author:   Ravi Sharma
+// Created:  2026-05-22
+// Copyright (c) 2026 Ravi Sharma
+// SPDX-License-Identifier: MIT
+// =============================================================================
+
 using System.Text.Json.Serialization;
 
 namespace SqlOptima.SchemaCompare.Models;
@@ -16,7 +25,7 @@ public enum CompareMode
 
 public sealed class ConnectionInfo
 {
-    public string Instance { get; set; } = ".";
+    public string Instance { get; set; } = "";
     public int Port { get; set; }
     public AuthMode Auth { get; set; } = AuthMode.Windows;
     public string UserName { get; set; } = "";
@@ -77,6 +86,13 @@ public sealed class AppSessionSettings
     public List<string> TargetDatabases { get; set; } = new();
     public string DestinationListFile { get; set; } = "";
     public CompareOptions Options { get; set; } = new();
+
+    // Window chrome (feedback_2 — remember size/position)
+    public int WindowX { get; set; } = int.MinValue;
+    public int WindowY { get; set; } = int.MinValue;
+    public int WindowWidth { get; set; }
+    public int WindowHeight { get; set; }
+    public bool WindowMaximized { get; set; }
 }
 
 public sealed class DifferenceItem

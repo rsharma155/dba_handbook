@@ -1,3 +1,12 @@
+﻿// =============================================================================
+// Module:   SqlOptima.SchemaCompare.Services.CompareEngine
+// Purpose:  Orchestrates the schema_compare PowerShell engine - process lifecycle, cancellation, log streaming, and result parsing.
+// Author:   Ravi Sharma
+// Created:  2026-05-22
+// Copyright (c) 2026 Ravi Sharma
+// SPDX-License-Identifier: MIT
+// =============================================================================
+
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
@@ -40,7 +49,9 @@ public sealed class CompareEngine : IDisposable
     {
         if (!SchemaComparePaths.TryResolveGuiRoot(startDirectory, out var guiRoot, out var compareRoot))
             throw new InvalidOperationException(
-                "Cannot locate schema_compare_GUI / schema_compare. Keep the app next to schema_compare.");
+                "Cannot locate the Schema Compare install. Expected a folder that contains " +
+                "tools\\Invoke-CompareForGui.ps1 and schema_compare\\Compare-SqlSchema.ps1 " +
+                "(self-contained zip layout), or a sibling schema_compare folder.");
 
         GuiRoot = guiRoot;
         SchemaCompareRoot = compareRoot;
@@ -321,6 +332,9 @@ public sealed class CompareEngine : IDisposable
                 ReportPath = s.ReportPath,
                 Differences = s.Differences ?? new List<DifferenceItem>()
             };
+            // Engine tags each difference with the source DB name. For one-to-many
+            // (same source → many targets) the GUI tree must group by destination.
+            TagDifferencesByTarget(summary);
             result.Summaries.Add(summary);
             result.AllDifferences.AddRange(summary.Differences);
         }
@@ -331,6 +345,20 @@ public sealed class CompareEngine : IDisposable
             result.Error = "Compare completed with errors. Review the log.";
 
         return result;
+    }
+
+    /// <summary>
+    /// Retags difference rows with the destination database so the explorer
+    /// groups per target in one-to-many runs (engine emits source DB names).
+    /// </summary>
+    internal static void TagDifferencesByTarget(CompareSummary summary)
+    {
+        if (summary.Differences.Count == 0) return;
+        var target = summary.TargetDatabase?.Trim();
+        if (string.IsNullOrWhiteSpace(target)) return;
+
+        foreach (var d in summary.Differences)
+            d.Database = target;
     }
 
     internal static async Task<string> BuildScriptPreviewAsync(string? runFolder, CancellationToken ct)

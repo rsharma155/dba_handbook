@@ -1,3 +1,12 @@
+﻿// =============================================================================
+// Module:   SqlOptima.SchemaCompare.Services.FormValidator
+// Purpose:  Validation rules for connection details, ports, and compare prerequisites before a run starts.
+// Author:   Ravi Sharma
+// Created:  2026-05-22
+// Copyright (c) 2026 Ravi Sharma
+// SPDX-License-Identifier: MIT
+// =============================================================================
+
 using System.Text.RegularExpressions;
 using SqlOptima.SchemaCompare.Models;
 
