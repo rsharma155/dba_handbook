@@ -176,7 +176,7 @@ public class MainFormShellTests
     {
         using var form = NewForm();
         var names = form.Tabs.TabPages.Cast<TabPage>().Select(p => p.Text).ToList();
-        Assert.Equal(new[] { "Overview", "Object Details", "Script Preview", "Manual Actions", "Progress Log" }, names);
+        Assert.Equal(new[] { "Overview", "Object Details", "Script Preview", "Manual Actions", "Deployment", "Progress Log" }, names);
     }
 
     [StaFact]

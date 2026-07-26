@@ -140,6 +140,22 @@ public sealed class CompareSummary
     public string? ScriptFolder { get; set; }
     public string? ReportPath { get; set; }
     public List<DifferenceItem> Differences { get; set; } = new();
+
+    // Auto-deploy (Options -> Apply) outcome for this target database.
+    public bool Applied { get; set; }
+    public string ApplyStatus { get; set; } = "Skipped";
+    public int AppliedCount { get; set; }
+    public int FailedCount { get; set; }
+    public List<DeployFailure> FailedScripts { get; set; } = new();
+    public string VerifyStatus { get; set; } = "NotVerified";
+    public int RemainingDiffs { get; set; } = -1;
+}
+
+/// <summary>A single auto_ script that failed during Apply.</summary>
+public sealed class DeployFailure
+{
+    public string FileName { get; set; } = "";
+    public string Error { get; set; } = "";
 }
 
 public sealed class CompareResult
@@ -153,6 +169,9 @@ public sealed class CompareResult
     public List<DifferenceItem> AllDifferences { get; set; } = new();
     public string Log { get; set; } = "";
     public string CombinedScriptPreview { get; set; } = "";
+
+    /// <summary>True when Apply executed auto_ scripts on at least one target.</summary>
+    public bool AppliedRun => Summaries.Any(s => s.Applied || s.ApplyStatus == "NothingToApply");
 }
 
 public sealed class GuiExportPayload
@@ -173,4 +192,11 @@ public sealed class CompareSummaryDto
     public string? ScriptFolder { get; set; }
     public string? ReportPath { get; set; }
     public List<DifferenceItem> Differences { get; set; } = new();
+    public bool Applied { get; set; }
+    public string? ApplyStatus { get; set; }
+    public int AppliedCount { get; set; }
+    public int FailedCount { get; set; }
+    public List<DeployFailure>? FailedScripts { get; set; }
+    public string? VerifyStatus { get; set; }
+    public int RemainingDiffs { get; set; } = -1;
 }

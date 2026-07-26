@@ -42,8 +42,8 @@
 .PARAMETER TargetDatabase
     Optional target database name(s) when they differ from the source names.
     Pairing modes:
-      * 1:1  — same count/order as -Database (existing behaviour).
-      * 1:N  — exactly one source database in -Database and two or more target names
+      * 1:1   -  same count/order as -Database (existing behaviour).
+      * 1:N   -  exactly one source database in -Database and two or more target names
                (fan-out: same source schema compared to each destination database).
 
 .PARAMETER TargetDatabaseListFile
@@ -51,9 +51,9 @@
     one-to-many sync. Requires exactly one source database in -Database. Cannot be
     combined with -TargetDatabase.
     Formats:
-      txt  — one database name per line (# comments and blank lines ignored)
-      json — { "DestinationDatabases": ["Db1","Db2"] } or a plain string array
-      yml  — DestinationDatabases: [list] or a YAML sequence of names
+      txt   -  one database name per line (# comments and blank lines ignored)
+      json  -  { "DestinationDatabases": ["Db1","Db2"] } or a plain string array
+      yml   -  DestinationDatabases: [list] or a YAML sequence of names
 
 .PARAMETER SourceCredential
     Optional PSCredential for SQL authentication against the Source. Windows auth is used
@@ -202,6 +202,8 @@ $script:PurposeOrder = [ordered]@{
     'sequence'         = 30
     'synonym'          = 40
     'table_create'     = 50
+    # PK column datatype changes must run before other column/index/FK work
+    'pk_datatype_change' = 55
     'column_add'       = 60
     'column_update'    = 70
     'index'            = 80
@@ -229,7 +231,7 @@ function Write-Log {
 function Get-ObjectCount {
     # StrictMode-safe count: foreach with zero iterations yields $null, and
     # $null.Count throws under Set-StrictMode. Treat $null as empty.
-    # Note: @($null).Count is 1 in PowerShell — never use that for null checks.
+    # Note: @($null).Count is 1 in PowerShell  -  never use that for null checks.
     param($InputObject)
     if ($null -eq $InputObject) { return 0 }
     if ($InputObject -is [string]) { return 1 }
@@ -860,6 +862,446 @@ function New-Change {
     }
 }
 
+function Get-PrimaryKeyColumnNames {
+    param($Table)
+    if (-not $Table) { return @() }
+    $pk = @($Table.Indexes | Where-Object { $_.IndexKeyType.ToString() -eq 'DriPrimaryKey' } | Select-Object -First 1)
+    if (-not $pk -or $pk.Count -eq 0) { return @() }
+    return @($pk[0].IndexedColumns | ForEach-Object { $_.Name })
+}
+
+function Get-InboundForeignKeys {
+    <# Return target FKs that reference the given parent table. #>
+    param($Db, [string]$Schema, [string]$TableName)
+    $hits = [System.Collections.Generic.List[object]]::new()
+    foreach ($t in $Db.Tables) {
+        if (Test-IsSystemObject $t) { continue }
+        if ((Get-ObjectSchema $t) -in $ExcludeSchema) { continue }
+        if (-not $t.PSObject.Properties['ForeignKeys']) { continue }
+        foreach ($fk in $t.ForeignKeys) {
+            if ($fk.ReferencedTable -eq $TableName -and $fk.ReferencedTableSchema -eq $Schema) {
+                $hits.Add([pscustomobject]@{ ChildTable = $t; ForeignKey = $fk })
+            }
+        }
+    }
+    return @($hits)
+}
+
+function Get-IndexesTouchingColumns {
+    param($Table, [string[]]$ColumnNames)
+    if (-not $Table -or -not $ColumnNames -or $ColumnNames.Count -eq 0) { return @() }
+    $want = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($c in $ColumnNames) { if ($c) { [void]$want.Add($c) } }
+    $hits = [System.Collections.Generic.List[object]]::new()
+    foreach ($ix in $Table.Indexes) {
+        $kind = $ix.IndexKeyType.ToString()
+        if ($kind -eq 'DriPrimaryKey') { continue }
+        $touch = $false
+        foreach ($ic in $ix.IndexedColumns) {
+            if ($want.Contains($ic.Name)) { $touch = $true; break }
+        }
+        if ($touch) { $hits.Add($ix) }
+    }
+    return @($hits)
+}
+
+function Get-DropIndexOrUniqueSql {
+    param([string]$TableDisp, $Index)
+    $kind = $Index.IndexKeyType.ToString()
+    if ($kind -eq 'DriUniqueKey') {
+        return "IF EXISTS (SELECT 1 FROM sys.key_constraints WHERE name = N'$($Index.Name)' AND parent_object_id = OBJECT_ID(N'$TableDisp'))`r`n    ALTER TABLE $TableDisp DROP CONSTRAINT [$($Index.Name)];"
+    }
+    return "IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'$($Index.Name)' AND object_id = OBJECT_ID(N'$TableDisp'))`r`n    DROP INDEX [$($Index.Name)] ON $TableDisp;"
+}
+
+function Get-AlterColumnNameFromSummary {
+    param([string]$Summary)
+    if ($Summary -match 'Alter column \[([^\]]+)\]') { return $Matches[1] }
+    return $null
+}
+
+function Test-ColumnTypeNullDrift {
+    param($SrcCol, $TgtCol)
+    if (-not $SrcCol -or -not $TgtCol) { return $false }
+    $s = "$(Get-ColumnTypeString $SrcCol) $(if($SrcCol.Nullable){'NULL'}else{'NOT NULL'})"
+    $t = "$(Get-ColumnTypeString $TgtCol) $(if($TgtCol.Nullable){'NULL'}else{'NOT NULL'})"
+    return ($s -ne $t -or $SrcCol.Computed -ne $TgtCol.Computed)
+}
+
+function Merge-PkDatatypeChanges {
+    <#
+        When a primary-key column datatype changes, individual column_update / pk_change
+        scripts fail (FKs and indexes block ALTER COLUMN). Replace them with one
+        orchestrated manual script that always follows:
+
+          1) Drop FKs that reference the parent PK
+          2) Drop non-PK indexes on parent that touch PK columns
+          3) Drop the parent PK
+          4) Alter parent PK column(s) to the source datatype
+          5) On each child: drop indexes on FK columns, alter FK columns
+          6) Recreate parent PK
+          7) Recreate child indexes, then recreate FKs
+    #>
+    param(
+        [System.Collections.Generic.List[object]]$Changes,
+        $SrcDb,
+        $TgtDb
+    )
+
+    $srcByKey = @{}
+    foreach ($t in $SrcDb.Tables) {
+        if (Test-IsSystemObject $t) { continue }
+        if ((Get-ObjectSchema $t) -in $ExcludeSchema) { continue }
+        $srcByKey["$($t.Schema).$($t.Name)"] = $t
+    }
+    $tgtByKey = @{}
+    foreach ($t in $TgtDb.Tables) {
+        if (Test-IsSystemObject $t) { continue }
+        if ((Get-ObjectSchema $t) -in $ExcludeSchema) { continue }
+        $tgtByKey["$($t.Schema).$($t.Name)"] = $t
+    }
+
+    $parentKeys = [System.Collections.Generic.List[string]]::new()
+    foreach ($key in $srcByKey.Keys) {
+        if (-not $tgtByKey.ContainsKey($key)) { continue }
+        $src = $srcByKey[$key]; $tgt = $tgtByKey[$key]
+        $pkCols = @(Get-PrimaryKeyColumnNames $tgt)
+        if ($pkCols.Count -eq 0) { $pkCols = @(Get-PrimaryKeyColumnNames $src) }
+        if ($pkCols.Count -eq 0) { continue }
+        foreach ($cn in $pkCols) {
+            if (Test-ColumnTypeNullDrift -SrcCol $src.Columns[$cn] -TgtCol $tgt.Columns[$cn]) {
+                $parentKeys.Add($key)
+                break
+            }
+        }
+    }
+    if ($parentKeys.Count -eq 0) { return }
+
+    $remove = [System.Collections.Generic.HashSet[int]]::new()
+    $orchestrated = [System.Collections.Generic.List[object]]::new()
+
+    for ($pi = 0; $pi -lt $parentKeys.Count; $pi++) {
+        $parentKey = $parentKeys[$pi]
+        $srcParent = $srcByKey[$parentKey]
+        $tgtParent = $tgtByKey[$parentKey]
+        $disp = "[$($srcParent.Schema)].[$($srcParent.Name)]"
+        $safeKey = ($parentKey -replace '[^\w.-]', '_')
+
+        $pkCols = @(Get-PrimaryKeyColumnNames $tgtParent)
+        if ($pkCols.Count -eq 0) { $pkCols = @(Get-PrimaryKeyColumnNames $srcParent) }
+        $pkColSet = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+        foreach ($c in $pkCols) { [void]$pkColSet.Add($c) }
+
+        $srcPk = @($srcParent.Indexes | Where-Object { $_.IndexKeyType.ToString() -eq 'DriPrimaryKey' } | Select-Object -First 1)
+        $tgtPk = @($tgtParent.Indexes | Where-Object { $_.IndexKeyType.ToString() -eq 'DriPrimaryKey' } | Select-Object -First 1)
+        $srcPkObj = if ($srcPk.Count -gt 0) { $srcPk[0] } else { $null }
+        $tgtPkObj = if ($tgtPk.Count -gt 0) { $tgtPk[0] } else { $null }
+
+        $inbound = @(Get-InboundForeignKeys -Db $TgtDb -Schema $tgtParent.Schema -TableName $tgtParent.Name)
+        $parentIxTouch = @(Get-IndexesTouchingColumns -Table $tgtParent -ColumnNames $pkCols)
+
+        $childPlans = [System.Collections.Generic.List[object]]::new()
+        $fkNamesHandled = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+        $childKeysHandled = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+        $childFkColsByKey = @{}
+
+        foreach ($hit in $inbound) {
+            $child = $hit.ChildTable
+            $fk = $hit.ForeignKey
+            $childKey = "$($child.Schema).$($child.Name)"
+            $childDisp = "[$($child.Schema)].[$($child.Name)]"
+            [void]$fkNamesHandled.Add($fk.Name)
+            [void]$childKeysHandled.Add($childKey)
+
+            $fkCols = @($fk.Columns | ForEach-Object { $_.Name })
+            if (-not $childFkColsByKey.ContainsKey($childKey)) {
+                $childFkColsByKey[$childKey] = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+            }
+            foreach ($fc in $fkCols) { [void]$childFkColsByKey[$childKey].Add($fc) }
+
+            $srcChild = $srcByKey[$childKey]
+            $srcFk = $null
+            if ($srcChild -and $srcChild.PSObject.Properties['ForeignKeys']) {
+                $srcFk = @($srcChild.ForeignKeys | Where-Object { $_.Name -eq $fk.Name } | Select-Object -First 1)
+                if ($srcFk.Count -eq 0) {
+                    $srcFk = @($srcChild.ForeignKeys | Where-Object {
+                        $_.ReferencedTable -eq $srcParent.Name -and $_.ReferencedTableSchema -eq $srcParent.Schema
+                    } | Select-Object -First 1)
+                }
+                $srcFk = if ($srcFk.Count -gt 0) { $srcFk[0] } else { $null }
+            }
+
+            $childPlans.Add([pscustomobject]@{
+                ChildKey   = $childKey
+                ChildDisp  = $childDisp
+                ChildTgt   = $child
+                ChildSrc   = $srcChild
+                FkName     = $fk.Name
+                FkCols     = $fkCols
+                TgtFk      = $fk
+                SrcFk      = $srcFk
+            })
+        }
+
+        # Also pick up source-only FKs that reference this parent (recreate after type change).
+        foreach ($ck in $srcByKey.Keys) {
+            $srcChild = $srcByKey[$ck]
+            if (-not $srcChild.PSObject.Properties['ForeignKeys']) { continue }
+            foreach ($sfk in $srcChild.ForeignKeys) {
+                if ($sfk.ReferencedTable -ne $srcParent.Name -or $sfk.ReferencedTableSchema -ne $srcParent.Schema) { continue }
+                if ($fkNamesHandled.Contains($sfk.Name)) { continue }
+                $tgtChild = $tgtByKey[$ck]
+                if (-not $tgtChild) { continue }
+                $childDisp = "[$($srcChild.Schema)].[$($srcChild.Name)]"
+                $fkCols = @($sfk.Columns | ForEach-Object { $_.Name })
+                [void]$fkNamesHandled.Add($sfk.Name)
+                [void]$childKeysHandled.Add($ck)
+                if (-not $childFkColsByKey.ContainsKey($ck)) {
+                    $childFkColsByKey[$ck] = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+                }
+                foreach ($fc in $fkCols) { [void]$childFkColsByKey[$ck].Add($fc) }
+                $childPlans.Add([pscustomobject]@{
+                    ChildKey   = $ck
+                    ChildDisp  = $childDisp
+                    ChildTgt   = $tgtChild
+                    ChildSrc   = $srcChild
+                    FkName     = $sfk.Name
+                    FkCols     = $fkCols
+                    TgtFk      = $null
+                    SrcFk      = $sfk
+                })
+            }
+        }
+
+        $lines = [System.Collections.Generic.List[string]]::new()
+        $lines.Add('-- ============================================================')
+        $lines.Add("-- PK COLUMN DATATYPE CHANGE for $disp")
+        $lines.Add('-- REQUIRED SEQUENCE (do not reorder):')
+        $lines.Add('--   1) Drop FK constraints that reference the parent PK')
+        $lines.Add('--   2) Drop non-PK indexes on the parent that include PK columns')
+        $lines.Add('--   3) Drop the parent primary key')
+        $lines.Add('--   4) Alter parent PK column(s) to the source datatype')
+        $lines.Add('--   5) On each child: drop indexes on FK columns, then alter FK columns')
+        $lines.Add('--   6) Recreate the parent primary key from source')
+        $lines.Add('--   7) Recreate child indexes, then recreate foreign keys')
+        $lines.Add('-- ============================================================')
+        $lines.Add('')
+
+        # Step 1  -  drop inbound FKs
+        $lines.Add('-- Step 1: Drop foreign keys that reference the parent PK')
+        if ($childPlans.Count -eq 0) {
+            $lines.Add('-- (no referencing foreign keys found on target)')
+        } else {
+            foreach ($plan in $childPlans) {
+                if (-not $plan.TgtFk) { continue }
+                $lines.Add("IF EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'$($plan.FkName)' AND parent_object_id = OBJECT_ID(N'$($plan.ChildDisp)'))")
+                $lines.Add("    ALTER TABLE $($plan.ChildDisp) DROP CONSTRAINT [$($plan.FkName)];")
+            }
+        }
+        $lines.Add('')
+
+        # Step 2  -  parent indexes touching PK cols
+        $lines.Add('-- Step 2: Drop non-PK indexes on parent that include PK column(s)')
+        if ($parentIxTouch.Count -eq 0) {
+            $lines.Add('-- (none)')
+        } else {
+            foreach ($ix in $parentIxTouch) {
+                $lines.Add((Get-DropIndexOrUniqueSql -TableDisp $disp -Index $ix))
+            }
+        }
+        $lines.Add('')
+
+        # Step 3  -  drop PK
+        $lines.Add('-- Step 3: Drop the parent primary key')
+        if ($tgtPkObj) {
+            $lines.Add("ALTER TABLE $disp DROP CONSTRAINT [$($tgtPkObj.Name)];")
+        } else {
+            $lines.Add('-- (no primary key on target)')
+        }
+        $lines.Add('')
+
+        # Step 4  -  alter parent PK columns
+        $lines.Add('-- Step 4: Alter parent PK column(s) to source datatype')
+        foreach ($cn in $pkCols) {
+            $sc = $srcParent.Columns[$cn]; $tc = $tgtParent.Columns[$cn]
+            if (-not $sc -or -not $tc) { continue }
+            if (-not (Test-ColumnTypeNullDrift -SrcCol $sc -TgtCol $tc)) { continue }
+            $sTypeNull = "$(Get-ColumnTypeString $sc) $(if($sc.Nullable){'NULL'}else{'NOT NULL'})"
+            $tTypeNull = "$(Get-ColumnTypeString $tc) $(if($tc.Nullable){'NULL'}else{'NOT NULL'})"
+            $lines.Add("-- [$cn]: $tTypeNull -> $sTypeNull")
+            $lines.Add("ALTER TABLE $disp ALTER COLUMN [$cn] $sTypeNull;")
+        }
+        $lines.Add('')
+
+        # Step 5  -  children: drop indexes on FK cols, alter columns
+        $lines.Add('-- Step 5: Child tables  -  drop indexes on FK columns, then alter columns')
+        $childIxToRecreate = @{}  # childKey -> list of source indexes to recreate
+        foreach ($ck in $childFkColsByKey.Keys) {
+            $fkColArr = @($childFkColsByKey[$ck])
+            $tgtChild = $tgtByKey[$ck]
+            $srcChild = $srcByKey[$ck]
+            if (-not $tgtChild) { continue }
+            $childDisp = "[$($tgtChild.Schema)].[$($tgtChild.Name)]"
+            $lines.Add("-- --- Child $childDisp ---")
+
+            $ixTouch = @(Get-IndexesTouchingColumns -Table $tgtChild -ColumnNames $fkColArr)
+            if ($ixTouch.Count -eq 0) {
+                $lines.Add('-- (no indexes on FK columns to drop)')
+            } else {
+                foreach ($ix in $ixTouch) {
+                    $lines.Add((Get-DropIndexOrUniqueSql -TableDisp $childDisp -Index $ix))
+                }
+            }
+
+            $recreate = [System.Collections.Generic.List[object]]::new()
+            if ($srcChild) {
+                foreach ($six in @(Get-IndexesTouchingColumns -Table $srcChild -ColumnNames $fkColArr)) {
+                    $recreate.Add($six)
+                }
+            }
+            $childIxToRecreate[$ck] = @($recreate)
+
+            foreach ($fc in $fkColArr) {
+                if (-not $srcChild -or -not $tgtChild.Columns[$fc] -or -not $srcChild.Columns[$fc]) { continue }
+                $sc = $srcChild.Columns[$fc]; $tc = $tgtChild.Columns[$fc]
+                if (-not (Test-ColumnTypeNullDrift -SrcCol $sc -TgtCol $tc)) { continue }
+                $sTypeNull = "$(Get-ColumnTypeString $sc) $(if($sc.Nullable){'NULL'}else{'NOT NULL'})"
+                $tTypeNull = "$(Get-ColumnTypeString $tc) $(if($tc.Nullable){'NULL'}else{'NOT NULL'})"
+                $lines.Add("-- FK column [$fc]: $tTypeNull -> $sTypeNull")
+                $lines.Add("ALTER TABLE $childDisp ALTER COLUMN [$fc] $sTypeNull;")
+            }
+            $lines.Add('')
+        }
+        if ($childFkColsByKey.Count -eq 0) {
+            $lines.Add('-- (no child FK columns to update)')
+            $lines.Add('')
+        }
+
+        # Step 6  -  recreate parent PK
+        $lines.Add('-- Step 6: Recreate parent primary key from source')
+        if ($srcPkObj) {
+            $lines.Add((Get-CleanDdl $srcPkObj).TrimEnd() + ';')
+        } else {
+            $lines.Add('-- (no primary key on source)')
+        }
+        $lines.Add('')
+
+        # Recreate parent indexes that touched PK cols (from source)
+        $lines.Add('-- Step 6b: Recreate parent non-PK indexes that included PK column(s)')
+        $srcParentIx = @(Get-IndexesTouchingColumns -Table $srcParent -ColumnNames $pkCols)
+        if ($srcParentIx.Count -eq 0) {
+            $lines.Add('-- (none)')
+        } else {
+            foreach ($ix in $srcParentIx) {
+                $lines.Add((Get-CleanDdl $ix).TrimEnd() + ';')
+            }
+        }
+        $lines.Add('')
+
+        # Step 7  -  recreate child indexes then FKs
+        $lines.Add('-- Step 7: Recreate child indexes, then foreign keys')
+        foreach ($ck in $childIxToRecreate.Keys) {
+            $tgtChild = $tgtByKey[$ck]
+            if (-not $tgtChild) { continue }
+            $childDisp = "[$($tgtChild.Schema)].[$($tgtChild.Name)]"
+            $ixList = @($childIxToRecreate[$ck])
+            if ($ixList.Count -gt 0) {
+                $lines.Add("-- Indexes on $childDisp")
+                foreach ($ix in $ixList) {
+                    $lines.Add((Get-CleanDdl $ix).TrimEnd() + ';')
+                }
+            }
+        }
+        foreach ($plan in $childPlans) {
+            $fkObj = if ($plan.SrcFk) { $plan.SrcFk } else { $plan.TgtFk }
+            if (-not $fkObj) { continue }
+            $lines.Add("-- FK [$($plan.FkName)] on $($plan.ChildDisp)")
+            $lines.Add("IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'$($plan.FkName)' AND parent_object_id = OBJECT_ID(N'$($plan.ChildDisp)'))")
+            $lines.Add((Get-CleanDdl $fkObj).TrimEnd() + ';')
+        }
+        if ($childPlans.Count -eq 0) {
+            $lines.Add('-- (no foreign keys to recreate)')
+        }
+
+        $colList = ($pkCols -join ', ')
+        $childCount = $childKeysHandled.Count
+        $summary = "PK datatype change on $disp (columns: $colList; $childCount dependent table(s))"
+        $risk = "Primary-key column datatype changes require dropping referencing FKs and dependent indexes first. " +
+                "Run this single script in order (steps 1-7). Review data conversion risk before applying."
+
+        $orchestrated.Add((New-Change -Display $disp -KeySafe $safeKey -Category 'pk_datatype_change' -Mode 'Manual' `
+            -Summary $summary -Sql ($lines -join "`r`n") -RiskNote $risk))
+
+        # Mark subsumed change records for removal
+        for ($i = 0; $i -lt $Changes.Count; $i++) {
+            if ($remove.Contains($i)) { continue }
+            $ch = $Changes[$i]
+            $objKey = $ch.ObjectKeySafe
+
+            # Parent column_update for PK columns
+            if ($objKey -eq $safeKey -and $ch.Category -eq 'column_update') {
+                $cn = Get-AlterColumnNameFromSummary $ch.Summary
+                if ($cn -and $pkColSet.Contains($cn)) { [void]$remove.Add($i); continue }
+            }
+            # Parent pk_change (absorbed)
+            if ($objKey -eq $safeKey -and $ch.Category -eq 'pk_change') {
+                [void]$remove.Add($i); continue
+            }
+            # Parent index touching PK columns
+            if ($objKey -eq $safeKey -and $ch.Category -eq 'index') {
+                $absorbed = $false
+                foreach ($ix in $parentIxTouch) {
+                    if ($ch.Summary -match [regex]::Escape("[$($ix.Name)]")) { $absorbed = $true; break }
+                }
+                foreach ($ix in $srcParentIx) {
+                    if ($ch.Summary -match [regex]::Escape("[$($ix.Name)]")) { $absorbed = $true; break }
+                }
+                if ($absorbed) { [void]$remove.Add($i); continue }
+            }
+
+            # Child column_update for FK columns
+            foreach ($ck in $childFkColsByKey.Keys) {
+                $cSafe = ($ck -replace '[^\w.-]', '_')
+                if ($objKey -ne $cSafe) { continue }
+                if ($ch.Category -eq 'column_update') {
+                    $cn = Get-AlterColumnNameFromSummary $ch.Summary
+                    if ($cn -and $childFkColsByKey[$ck].Contains($cn)) { [void]$remove.Add($i); break }
+                }
+                if ($ch.Category -eq 'index') {
+                    $ixList = @($childIxToRecreate[$ck])
+                    foreach ($ix in $ixList) {
+                        if ($ch.Summary -match [regex]::Escape("[$($ix.Name)]")) { [void]$remove.Add($i); break }
+                    }
+                    # Also absorb drops of indexes we dropped from target
+                    $tgtChild = $tgtByKey[$ck]
+                    if ($tgtChild) {
+                        foreach ($ix in @(Get-IndexesTouchingColumns -Table $tgtChild -ColumnNames @($childFkColsByKey[$ck]))) {
+                            if ($ch.Summary -match [regex]::Escape("[$($ix.Name)]")) { [void]$remove.Add($i); break }
+                        }
+                    }
+                }
+                if ($ch.Category -eq 'constraints' -and $ch.Summary -match '\bFK\b') {
+                    foreach ($plan in $childPlans) {
+                        if ($plan.ChildKey -eq $ck -and $ch.Summary -match [regex]::Escape("[$($plan.FkName)]")) {
+                            [void]$remove.Add($i); break
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if ($remove.Count -eq 0 -and $orchestrated.Count -eq 0) { return }
+
+    $kept = [System.Collections.Generic.List[object]]::new()
+    for ($i = 0; $i -lt $Changes.Count; $i++) {
+        if (-not $remove.Contains($i)) { $kept.Add($Changes[$i]) }
+    }
+    foreach ($o in $orchestrated) { $kept.Add($o) }
+    $Changes.Clear()
+    foreach ($k in $kept) { $Changes.Add($k) }
+}
+
 # ---------------------------------------------------------------------------
 #  Table-level structural diff -> categorized change records
 # ---------------------------------------------------------------------------
@@ -1164,6 +1606,16 @@ function Compare-Database {
         }
     }
 
+    # Collapse PK column datatype drifts into one correctly ordered manual script.
+    Merge-PkDatatypeChanges -Changes $changes -SrcDb $srcDb -TgtDb $tgtDb
+    if (-not $GenerateSyncScript) {
+        foreach ($c in $changes) {
+            if ($c.Category -eq 'pk_datatype_change') {
+                $c | Add-Member -NotePropertyName Sql -NotePropertyValue '' -Force
+            }
+        }
+    }
+
     return [pscustomobject]@{
         Database    = $SrcDbName
         Differences = $diffs
@@ -1269,7 +1721,7 @@ function Write-ChangeScripts {
         $category = $first.Category
         $order    = $first.Order
 
-        # SAFETY: DROP TABLE must never ship as an auto_ script — force Manual.
+        # SAFETY: DROP TABLE must never ship as an auto_ script  -  force Manual.
         $hasDropTable = $false
         foreach ($it in $items) {
             if ($it.Sql -match '(?is)\bDROP\s+TABLE\b') { $hasDropTable = $true; break }
@@ -1278,9 +1730,9 @@ function Write-ChangeScripts {
             $mode = 'Manual'
             foreach ($it in $items) {
                 if (-not $it.RiskNote) {
-                    $it.RiskNote = 'Contains DROP TABLE — permanently destroys data. Review carefully before running.'
+                    $it.RiskNote = 'Contains DROP TABLE  -  permanently destroys data. Review carefully before running.'
                 } elseif ($it.RiskNote -notmatch '(?i)DROP\s+TABLE') {
-                    $it.RiskNote = "$($it.RiskNote) | Contains DROP TABLE — requires manual review."
+                    $it.RiskNote = "$($it.RiskNote) | Contains DROP TABLE  -  requires manual review."
                 }
             }
         }
@@ -1303,11 +1755,23 @@ function Write-ChangeScripts {
         $head.Add(" *  Run order: $order  (apply auto_ scripts in ascending run-order)")
         if ($hasDropTable) {
             $head.Add(" *")
-            $head.Add(" *  !! CONTAINS DROP TABLE — forced to MANUAL for operator review !!")
+            $head.Add(" *  !! CONTAINS DROP TABLE  -  forced to MANUAL for operator review !!")
         }
         $head.Add(" *")
         $head.Add(" *  Changes ($($items.Count)):")
         foreach ($it in $items) { $head.Add(" *    - $($it.Summary)") }
+        if ($category -eq 'pk_datatype_change') {
+            $head.Add(" *")
+            $head.Add(" *  REQUIRED RUN SEQUENCE (already ordered inside this script):")
+            $head.Add(" *    1) Drop FK constraints that reference the parent PK")
+            $head.Add(" *    2) Drop non-PK indexes on the parent that include PK columns")
+            $head.Add(" *    3) Drop the parent primary key")
+            $head.Add(" *    4) Alter parent PK column(s) to the source datatype")
+            $head.Add(" *    5) On each child: drop indexes on FK columns, then alter FK columns")
+            $head.Add(" *    6) Recreate the parent primary key from source")
+            $head.Add(" *    7) Recreate child indexes, then recreate foreign keys")
+            $head.Add(" *  Run this file ONCE as a unit  -  do not split or reorder the steps.")
+        }
         if ($mode -eq 'Manual') {
             $head.Add(" *")
             $head.Add(" *  !! MANUAL ACTION REQUIRED - review each item before running !!")
@@ -1377,11 +1841,12 @@ function Get-ScriptPhase {
     param([int]$Order, [string]$Mode, [string]$Purpose)
     if ($Mode -eq 'Manual') {
         switch ($Purpose) {
-            'pk_change'      { return 'Manual: Primary Keys' }
-            'column_remove'  { return 'Manual: Column Drops' }
-            'table_rebuild'  { return 'Manual: Table Rebuild' }
-            'cleanup_drop'   { return 'Manual: Object Cleanup' }
-            default          { return 'Manual: Structural Review' }
+            'pk_datatype_change' { return 'Manual: PK Datatype Change' }
+            'pk_change'          { return 'Manual: Primary Keys' }
+            'column_remove'      { return 'Manual: Column Drops' }
+            'table_rebuild'      { return 'Manual: Table Rebuild' }
+            'cleanup_drop'       { return 'Manual: Object Cleanup' }
+            default              { return 'Manual: Structural Review' }
         }
     }
     if ($Order -le 40)  { return '1 - Infrastructure' }
@@ -1408,6 +1873,7 @@ function Enrich-ManifestEntries {
             $_.Database -eq $entry.Database -and $_.Order -lt $entry.Order -and (
                 $_.Object -eq $entry.Object -or
                 $_.Purpose -eq 'type' -or
+                $_.Purpose -eq 'pk_datatype_change' -or
                 ($_.Purpose -eq 'pk_change' -and $entry.Purpose -in @('index','constraints'))
             )
         } | Select-Object -ExpandProperty FileName -Unique)
@@ -1514,7 +1980,7 @@ function Write-MasterMigrationCatalog {
     $lines.Add('/* ============================================================')
     $lines.Add(' *  MASTER MIGRATION CATALOG  (_master_migration.sql)')
     $lines.Add(" *  Database : $TgtDbName")
-    $lines.Add(" *  Source   : $SrcInstance  (reference only — do not run scripts there)")
+    $lines.Add(" *  Source   : $SrcInstance  (reference only  -  do not run scripts there)")
     $lines.Add(" *  Target   : $TgtInstance  (run all scripts here)")
     $lines.Add(" *  Generated: $([DateTime]::UtcNow.ToString('yyyy-MM-dd HH:mm:ss')) UTC")
     $lines.Add(" *  Auto scripts  : $($auto.Count)")
@@ -1570,6 +2036,13 @@ function Write-MasterMigrationCatalog {
             $lines.Add("-- MANUAL: $($m.FileName)")
             $lines.Add("--   Object  : $($m.Object)")
             $lines.Add("--   Purpose : $($m.Purpose)")
+            if ($m.Purpose -eq 'pk_datatype_change') {
+                $lines.Add('--   SEQUENCE: 1) drop referencing FKs  2) drop parent indexes on PK cols')
+                $lines.Add('--             3) drop parent PK  4) alter parent PK columns')
+                $lines.Add('--             5) child: drop FK-col indexes + alter columns')
+                $lines.Add('--             6) recreate parent PK  7) recreate child indexes + FKs')
+                $lines.Add('--   Run this file as one unit (steps already ordered inside the script).')
+            }
             if ($m.Prerequisites) { $lines.Add("--   Run after: $($m.Prerequisites)") }
             $lines.Add("-- :r $($m.FileName)")
             $lines.Add('')
@@ -1580,8 +2053,9 @@ function Write-MasterMigrationCatalog {
     Set-Content -Path $masterPath -Value ($lines -join [Environment]::NewLine) -Encoding UTF8
 
     # Operator quick-reference (plain text, same folder).
+    $pkDtManuals = @($manual | Where-Object { $_.Purpose -eq 'pk_datatype_change' })
     $readme = @(
-        "SCHEMA SYNC — RUN ON TARGET SERVER ONLY"
+        "SCHEMA SYNC  -  RUN ON TARGET SERVER ONLY"
         "========================================"
         "Target instance : $TgtInstance"
         "Target database : $TgtDbName"
@@ -1601,7 +2075,32 @@ function Write-MasterMigrationCatalog {
         "    -> Use for UAT/Prod when manual_*.sql files exist (PK changes, etc.)."
         "    -> Stop at each checkpoint, run listed manual_ files, then continue."
         ""
-        "COPY/PASTE (PowerShell — cd to this folder first):"
+    )
+    if ($pkDtManuals.Count -gt 0) {
+        $readme += @(
+            "PK COLUMN DATATYPE CHANGE  -  REQUIRED SEQUENCE"
+            "---------------------------------------------"
+            "These manuals already contain steps 1-7 in order. Run each file as a unit"
+            "BEFORE dependent auto_ scripts (see checkpoints in _master_migration.sql):"
+            ""
+        )
+        foreach ($m in $pkDtManuals) {
+            $readme += "  $($m.FileName)  $($m.Object)"
+        }
+        $readme += @(
+            ""
+            "  1) Drop FK constraints that reference the parent PK"
+            "  2) Drop non-PK indexes on the parent that include PK columns"
+            "  3) Drop the parent primary key"
+            "  4) Alter parent PK column(s) to the source datatype"
+            "  5) On each child: drop indexes on FK columns, then alter FK columns"
+            "  6) Recreate the parent primary key from source"
+            "  7) Recreate child indexes, then recreate foreign keys"
+            ""
+        )
+    }
+    $readme += @(
+        "COPY/PASTE (PowerShell  -  cd to this folder first):"
         ""
         "  cd `"$OutDir`""
         ""
@@ -1610,21 +2109,21 @@ function Write-MasterMigrationCatalog {
         "  sqlcmd -S $TgtInstance -d $TgtDbName -E -C -i `".\_master_auto_only.sql`""
         ""
         "See _manifest.csv for run order. Never run on source."
-    ) -join [Environment]::NewLine
-    Set-Content -Path (Join-Path $OutDir '_README_RUN_ON_TARGET.txt') -Value $readme -Encoding UTF8
+    )
+    Set-Content -Path (Join-Path $OutDir '_README_RUN_ON_TARGET.txt') -Value ($readme -join [Environment]::NewLine) -Encoding UTF8
 
     # Compact auto-only runner (no manual checkpoints) for -Apply / CI.
     $autoOnly = [System.Collections.Generic.List[string]]::new()
     $autoOnly.Add('/* ============================================================')
     $autoOnly.Add(' *  AUTO-ONLY RUNNER  (_master_auto_only.sql)')
     $autoOnly.Add(" *  Database : $TgtDbName")
-    $autoOnly.Add(" *  Source   : $SrcInstance  (reference only — do not run scripts there)")
+    $autoOnly.Add(" *  Source   : $SrcInstance  (reference only  -  do not run scripts there)")
     $autoOnly.Add(" *  Target   : $TgtInstance  (run all scripts here)")
     $autoOnly.Add(" *  Generated: $([DateTime]::UtcNow.ToString('yyyy-MM-dd HH:mm:ss')) UTC")
     $autoOnly.Add(" *  Auto scripts included: $($auto.Count)")
     if ($manual.Count -gt 0) {
         $autoOnly.Add(" *  WARNING: $($manual.Count) manual_ script(s) exist and are NOT in this file.")
-        $autoOnly.Add(' *           Run them separately before/after — see _master_migration.sql.')
+        $autoOnly.Add(' *           Run them separately before/after  -  see _master_migration.sql.')
     }
     foreach ($hl in (Get-SqlRunHeaderLines -ScriptFileName '_master_auto_only.sql' -TgtDbName $TgtDbName -TgtInstance $TgtInstance -RunFolder $OutDir -Kind 'AutoOnly')) {
         $autoOnly.Add($hl)
@@ -1649,7 +2148,8 @@ function Export-HtmlReport {
         $SrcServer,
         $TgtServer,
         $DatabasePairs,
-        [string]$Path
+        [string]$Path,
+        $DeploySummaries = $null
     )
 
     $enc = { param($s) [System.Net.WebUtility]::HtmlEncode([string]$s) }
@@ -1727,6 +2227,49 @@ function Export-HtmlReport {
     })
     $hasChangeDetails = (Get-ObjectCount $changeDetailRows) -gt 0
 
+    $pkDatatypeChanges = @(foreach ($r in $AllResults) {
+        if (-not ($r.PSObject.Properties['Changes'] -and $r.Changes)) { continue }
+        foreach ($c in @($r.Changes)) {
+            if ($c.Category -eq 'pk_datatype_change') {
+                [pscustomobject]@{ Database = $r.Database; Object = $c.ObjectDisplay; Summary = $c.Summary }
+            }
+        }
+    })
+    $hasPkDatatype = (Get-ObjectCount $pkDatatypeChanges) -gt 0
+
+    # Deployment & verification rows (only rendered when Apply ran on at least one DB).
+    $applied = @()
+    if ($DeploySummaries) {
+        $applied = @($DeploySummaries | Where-Object {
+            $_.PSObject.Properties['Applied'] -and ($_.Applied -or $_.ApplyStatus -eq 'NothingToApply')
+        })
+    }
+    $hasDeploy = (Get-ObjectCount $applied) -gt 0
+    $deployRows = @(foreach ($s in $applied) {
+        $statusCls = switch ($s.ApplyStatus) {
+            'Applied'        { 'auto' }
+            'NothingToApply' { 'auto' }
+            'PartialFailure' { 'manual' }
+            'Failed'         { 'extra' }
+            default          { '' }
+        }
+        $verifyTxt = switch ($s.VerifyStatus) {
+            'Synced'      { 'Synced - no differences remain' }
+            'Diffs'       { "$($s.RemainingDiffs) difference(s) remain (manual scripts / failed applies)" }
+            'VerifyError' { 'Verification failed (see log)' }
+            default       { 'Not verified' }
+        }
+        $failTxt = if ($s.FailedCount -gt 0) {
+            (@($s.FailedScripts | ForEach-Object { (& $enc "$($_.FileName): $($_.Error)") }) -join '<br>')
+        } else { '-' }
+        "<tr class='$statusCls'><td>$(& $enc $s.TargetDatabase)</td>" +
+        "<td class='num'>$($s.AppliedCount) / $($s.AutoScripts)</td>" +
+        "<td>$(& $enc $s.ApplyStatus)</td>" +
+        "<td class='num'>$($s.FailedCount)</td>" +
+        "<td>$failTxt</td>" +
+        "<td>$(& $enc $verifyTxt)</td></tr>"
+    })
+
     $srcVer = if ($SrcServer) { $SrcServer.VersionString } else { 'n/a' }
     $tgtVer = if ($TgtServer) { $TgtServer.VersionString } else { 'n/a' }
     $srcName = if ($SrcServer) { $SrcServer.Name } else { $SrcInstance }
@@ -1784,6 +2327,10 @@ td.num{text-align:right;font-variant-numeric:tabular-nums}
 ul.compact{margin:8px 0;padding-left:20px;font-size:13px;max-height:280px;overflow-y:auto}
 ul.compact li.none{color:var(--muted);list-style:none;margin-left:-20px}
 .ok{color:var(--ok);font-weight:600;padding:16px;background:var(--card);border-radius:8px;border:1px solid var(--border)}
+.callout{background:#fff3e0;border:1px solid #ffb74d;border-radius:8px;padding:14px 16px;margin:16px 0;font-size:13px}
+.callout h3{margin:0 0 8px;font-size:14px;color:#e65100}
+.callout ol{margin:8px 0 0;padding-left:22px}
+.callout code{background:#ffe0b2;padding:1px 4px;border-radius:3px}
 .footer{margin-top:32px;font-size:11px;color:var(--muted)}
 </style>
 </head>
@@ -1853,9 +2400,47 @@ $($typeBreakdownRows -join "`n")
 </div>
 "@
 
+    if ($hasDeploy) {
+        $html += @"
+<h2>Deployment &amp; verification (auto_ scripts applied)</h2>
+<p class="meta">Auto scripts were applied to each target below, continuing past failures.
+Failed databases are highlighted; manual_ scripts are never applied automatically.</p>
+<table>
+<thead><tr><th>Target database</th><th class="num">Applied / Auto</th><th>Status</th><th class="num">Failed</th><th>Failure details</th><th>Verification</th></tr></thead>
+<tbody>
+$($deployRows -join "`n")
+</tbody>
+</table>
+"@
+    }
+
     if ($total -eq 0) {
-        $html += '<p class="ok">No differences found — schemas match across the compared object types.</p>'
+        $html += '<p class="ok">No differences found  -  schemas match across the compared object types.</p>'
     } else {
+        if ($hasPkDatatype) {
+            $pkItems = ($pkDatatypeChanges | ForEach-Object {
+                "<li><b>$(& $enc $_.Database)</b> $(& $enc $_.Object)  -  $(& $enc $_.Summary)</li>"
+            }) -join "`n"
+            $html += @"
+<div class="callout">
+  <h3>PK column datatype change  -  required run sequence</h3>
+  <p>One or more primary-key column datatype changes were detected. Each matching
+  <code>manual_*__pk_datatype_change.sql</code> already contains the steps below in order.
+  Run that script as a single unit on the <b>target</b> before dependent auto scripts.</p>
+  <ol>
+    <li>Drop FK constraints that reference the parent PK</li>
+    <li>Drop non-PK indexes on the parent that include PK columns</li>
+    <li>Drop the parent primary key</li>
+    <li>Alter parent PK column(s) to the source datatype</li>
+    <li>On each child: drop indexes on FK columns, then alter FK columns</li>
+    <li>Recreate the parent primary key from source</li>
+    <li>Recreate child indexes, then recreate foreign keys</li>
+  </ol>
+  <p style="margin-top:10px;margin-bottom:4px"><b>Affected objects</b></p>
+  <ul class="compact">$pkItems</ul>
+</div>
+"@
+        }
         if ($hasChangeDetails) {
             $html += @"
 <h2>Detailed change breakdown (columns, indexes, constraints)</h2>
@@ -1943,9 +2528,13 @@ $summaries    = [System.Collections.Generic.List[pscustomobject]]::new()
 $manifest     = [System.Collections.Generic.List[pscustomobject]]::new()
 $databasePairs = [System.Collections.Generic.List[pscustomobject]]::new()
 
+$pairIndex  = 0
+$pairTotal  = (Get-ObjectCount $comparePairs)
+
 foreach ($pair in $comparePairs) {
     $srcDbName = $pair.Source
     $tgtDbName = $pair.Target
+    $pairIndex++
     $databasePairs.Add([pscustomobject]@{ Source = $srcDbName; Target = $tgtDbName })
 
     $dbOutDir = $runDir
@@ -1954,6 +2543,8 @@ foreach ($pair in $comparePairs) {
         if (-not (Test-Path $dbOutDir)) { New-Item -ItemType Directory -Path $dbOutDir -Force | Out-Null }
     }
 
+    Write-Log "##GUI:DB|$tgtDbName|$pairIndex|$pairTotal" 'Gray' -Force
+    Write-Log "##GUI:PHASE|$tgtDbName|compare" 'Gray' -Force
     Write-Log "`n=== Comparing [$srcDbName] -> [$tgtDbName] ===" 'Cyan'
     $result = Compare-Database -SrcServer $srcServer -TgtServer $tgtServer -SrcDbName $srcDbName -TgtDbName $tgtDbName
     $allResults.Add($result)
@@ -1973,14 +2564,71 @@ foreach ($pair in $comparePairs) {
     }
 
     # Apply the auto_ scripts, in ascending run-order, on the target.
+    # Continue-on-error: a failing script (or DB) never aborts the remaining ones;
+    # every failure is captured and surfaced in the deployment report.
+    $applyStatus    = 'Skipped'
+    $appliedCount   = 0
+    $failedScripts  = [System.Collections.Generic.List[pscustomobject]]::new()
+    $verifyStatus   = 'NotVerified'
+    $remainingDiffs = -1
+    $didApply       = $false
+
     if ($Apply -and $GenerateSyncScript) {
         $autoFiles = @($dbManifest | Where-Object { $_.Mode -eq 'Auto' } | Sort-Object Order, FileName)
-        if ((Get-ObjectCount $autoFiles) -gt 0 -and $PSCmdlet.ShouldProcess("$TargetSqlInstance/$tgtDbName", "Apply $(Get-ObjectCount $autoFiles) auto_ script(s)")) {
+        $autoTotal = Get-ObjectCount $autoFiles
+        if ($autoTotal -eq 0) {
+            $applyStatus = 'NothingToApply'
+        } elseif ($PSCmdlet.ShouldProcess("$TargetSqlInstance/$tgtDbName", "Apply $autoTotal auto_ script(s)")) {
+            $didApply = $true
+            $ai = 0
             foreach ($f in $autoFiles) {
-                Write-Log "  Applying [$($f.FileName)] ..." 'Magenta'
-                Invoke-DbaQuery -SqlInstance $tgtServer -Database $tgtDbName -File $f.FilePath -EnableException | Out-Null
+                $ai++
+                Write-Log "##GUI:PHASE|$tgtDbName|apply|$ai|$autoTotal" 'Gray' -Force
+                Write-Log "  Applying [$($f.FileName)] ($ai/$autoTotal) ..." 'Magenta'
+                try {
+                    Invoke-DbaQuery -SqlInstance $tgtServer -Database $tgtDbName -File $f.FilePath -EnableException | Out-Null
+                    $appliedCount++
+                } catch {
+                    $errMsg = ($_.Exception.Message -replace '[\r\n]+', ' ').Trim()
+                    $failedScripts.Add([pscustomobject]@{ FileName = $f.FileName; Error = $errMsg })
+                    Write-Log "  FAILED [$($f.FileName)]: $errMsg" 'Red' -Force
+                }
             }
-            Write-Log "  Applied $(Get-ObjectCount $autoFiles) auto_ script(s). Manual scripts (if any) still require review." 'Green'
+            $applyStatus = if ($failedScripts.Count -eq 0) { 'Applied' }
+                           elseif ($appliedCount -gt 0)    { 'PartialFailure' }
+                           else                            { 'Failed' }
+            Write-Log "##GUI:APPLYRESULT|$tgtDbName|$applyStatus|$appliedCount|$($failedScripts.Count)" 'Gray' -Force
+            Write-Log "  Apply result for [$tgtDbName]: $applyStatus ($appliedCount applied, $($failedScripts.Count) failed). Manual scripts (if any) still require review." $(if ($failedScripts.Count -gt 0) { 'Yellow' } else { 'Green' })
+        }
+
+        # Post-apply verification: refresh SMO cache and re-compare the same pair.
+        if ($didApply -or $applyStatus -eq 'NothingToApply') {
+            Write-Log "##GUI:PHASE|$tgtDbName|verify" 'Gray' -Force
+            Write-Log "  Verifying [$tgtDbName] (re-compare after apply) ..." 'Cyan'
+            try {
+                # SMO caches child collections; refresh the DB and every compared
+                # collection (with children) so the re-compare sees applied changes.
+                $tgtDbObj = $tgtServer.Databases[$tgtDbName]
+                $tgtDbObj.Refresh()
+                foreach ($collName in @('Schemas','UserDefinedDataTypes','UserDefinedTableTypes','Sequences','Synonyms','Tables','Views','UserDefinedFunctions','StoredProcedures','Triggers')) {
+                    $prop = $tgtDbObj.PSObject.Properties[$collName]
+                    if ($prop -and $null -ne $prop.Value) {
+                        try { $prop.Value.Refresh($true) } catch { try { $prop.Value.Refresh() } catch { } }
+                    }
+                }
+                $verify = Compare-Database -SrcServer $srcServer -TgtServer $tgtServer -SrcDbName $srcDbName -TgtDbName $tgtDbName
+                $remainingDiffs = Get-ObjectCount $verify.Differences
+                $verifyStatus = if ($remainingDiffs -eq 0) { 'Synced' } else { 'Diffs' }
+                if ($verifyStatus -eq 'Synced') {
+                    Write-Log "  Verification: [$tgtDbName] is in sync with source." 'Green'
+                } else {
+                    Write-Log "  Verification: [$tgtDbName] still has $remainingDiffs difference(s) (manual scripts or failed applies)." 'Yellow'
+                }
+            } catch {
+                $verifyStatus = 'VerifyError'
+                Write-Log "  Verification failed for [$tgtDbName]: $($_.Exception.Message)" 'Red' -Force
+            }
+            Write-Log "##GUI:VERIFY|$tgtDbName|$verifyStatus|$remainingDiffs" 'Gray' -Force
         }
     }
 
@@ -1994,7 +2642,33 @@ foreach ($pair in $comparePairs) {
         ScriptFolder    = if ($dbOutDir) { $dbOutDir } else { $runDir }
         Manifest        = @($dbManifest)
         Differences     = @($result.Differences)
+        Applied         = $didApply
+        ApplyStatus     = $applyStatus
+        AppliedCount    = $appliedCount
+        FailedCount     = $failedScripts.Count
+        FailedScripts   = @($failedScripts)
+        VerifyStatus    = $verifyStatus
+        RemainingDiffs  = $remainingDiffs
     })
+}
+
+# Deployment report artifact (only when Apply ran for at least one DB).
+if ($Apply -and $GenerateSyncScript -and $runDir) {
+    $deployRows = foreach ($s in $summaries) {
+        [pscustomobject]@{
+            TargetDatabase = $s.TargetDatabase
+            AutoScripts    = $s.AutoScripts
+            AppliedCount   = $s.AppliedCount
+            FailedCount    = $s.FailedCount
+            ApplyStatus    = $s.ApplyStatus
+            VerifyStatus   = $s.VerifyStatus
+            RemainingDiffs = $s.RemainingDiffs
+            FailedScripts  = (@($s.FailedScripts | ForEach-Object { "$($_.FileName): $($_.Error)" }) -join ' | ')
+        }
+    }
+    $deployReportPath = Join-Path $runDir '_deploy_report.csv'
+    $deployRows | Export-Csv -Path $deployReportPath -NoTypeInformation -Encoding UTF8
+    Write-Log "Deployment report: $deployReportPath" 'Green'
 }
 
 # Write enriched manifest + master migration catalog (per destination database).
@@ -2034,7 +2708,7 @@ if ($GenerateSyncScript -and $manifest.Count -gt 0) {
     # Top-level index for one-to-many / multi-DB runs.
     if ($usePerDbDirs) {
         $indexLines = [System.Collections.Generic.List[string]]::new()
-        $indexLines.Add('SCHEMA SYNC — MULTI-DATABASE RUN INDEX')
+        $indexLines.Add('SCHEMA SYNC  -  MULTI-DATABASE RUN INDEX')
         $indexLines.Add('======================================')
         $indexLines.Add("Source instance : $SourceSqlInstance")
         if ($isOneToMany) {
@@ -2068,7 +2742,8 @@ if ($ReportFormat -contains 'Html') {
     $reportDir  = if ($runDir) { $runDir } else { $OutputPath }
     $reportPath = Join-Path $reportDir "SchemaCompare_$stamp.html"
     Export-HtmlReport -AllResults $allResults -SrcInstance $SourceSqlInstance -TgtInstance $TargetSqlInstance `
-        -SrcServer $srcServer -TgtServer $tgtServer -DatabasePairs $databasePairs -Path $reportPath | Out-Null
+        -SrcServer $srcServer -TgtServer $tgtServer -DatabasePairs $databasePairs -Path $reportPath `
+        -DeploySummaries @($summaries) | Out-Null
     Write-Log "`nHTML report: $reportPath" 'Green'
 }
 

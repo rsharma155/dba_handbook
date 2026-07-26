@@ -12,4 +12,10 @@
   <ItemGroup Condition=" '$(ExcludeRestorePackageImports)' != 'true' ">
     <SourceRoot Include="C:\Users\Asus\AppData\Local\Temp\cursor-sandbox-cache\07207e00afbf73535d3679dbd9029f8a\nuget\" />
   </ItemGroup>
+  <ImportGroup Condition=" '$(ExcludeRestorePackageImports)' != 'true' ">
+    <Import Project="$(NuGetPackageRoot)\microsoft.net.illink.tasks\8.0.28\build\Microsoft.NET.ILLink.Tasks.props" Condition="Exists('$(NuGetPackageRoot)\microsoft.net.illink.tasks\8.0.28\build\Microsoft.NET.ILLink.Tasks.props')" />
+  </ImportGroup>
+  <PropertyGroup Condition=" '$(ExcludeRestorePackageImports)' != 'true' ">
+    <PkgMicrosoft_NET_ILLink_Tasks Condition=" '$(PkgMicrosoft_NET_ILLink_Tasks)' == '' ">C:\Users\Asus\AppData\Local\Temp\cursor-sandbox-cache\07207e00afbf73535d3679dbd9029f8a\nuget\microsoft.net.illink.tasks\8.0.28</PkgMicrosoft_NET_ILLink_Tasks>
+  </PropertyGroup>
 </Project>

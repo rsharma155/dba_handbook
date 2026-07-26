@@ -141,6 +141,17 @@ foreach ($s in $summaries) {
         }
     }
 
+    $failed = @()
+    if ($s.PSObject.Properties['FailedScripts'] -and $null -ne $s.FailedScripts) {
+        foreach ($fs in @($s.FailedScripts)) {
+            if ($null -eq $fs) { continue }
+            $failed += [ordered]@{
+                FileName = [string]$fs.FileName
+                Error    = [string]$fs.Error
+            }
+        }
+    }
+
     $entry = [ordered]@{
         Database        = [string]$s.Database
         TargetDatabase  = [string]$s.TargetDatabase
@@ -150,6 +161,13 @@ foreach ($s in $summaries) {
         ScriptFolder    = if ($s.PSObject.Properties['ScriptFolder'] -and $s.ScriptFolder) { [string]$s.ScriptFolder } else { $null }
         ReportPath      = if ($s.PSObject.Properties['ReportPath'] -and $s.ReportPath) { [string]$s.ReportPath } else { $null }
         Differences     = $diffs
+        Applied         = if ($s.PSObject.Properties['Applied']) { [bool]$s.Applied } else { $false }
+        ApplyStatus     = if ($s.PSObject.Properties['ApplyStatus'] -and $s.ApplyStatus) { [string]$s.ApplyStatus } else { 'Skipped' }
+        AppliedCount    = if ($s.PSObject.Properties['AppliedCount']) { [int]$s.AppliedCount } else { 0 }
+        FailedCount     = if ($s.PSObject.Properties['FailedCount']) { [int]$s.FailedCount } else { 0 }
+        FailedScripts   = $failed
+        VerifyStatus    = if ($s.PSObject.Properties['VerifyStatus'] -and $s.VerifyStatus) { [string]$s.VerifyStatus } else { 'NotVerified' }
+        RemainingDiffs  = if ($s.PSObject.Properties['RemainingDiffs']) { [int]$s.RemainingDiffs } else { -1 }
     }
     # Prefer engine-reported count when present (keeps parity if diffs were trimmed).
     if ($s.PSObject.Properties['DifferenceCount'] -and $null -ne $s.DifferenceCount) {
@@ -184,6 +202,13 @@ if ((Get-ObjectCount $payload.Summaries) -eq 0) {
         ScriptFolder    = if ($req.OutputPath) { [string]$req.OutputPath } else { $null }
         ReportPath      = $null
         Differences     = @()
+        Applied         = $false
+        ApplyStatus     = 'Skipped'
+        AppliedCount    = 0
+        FailedCount     = 0
+        FailedScripts   = @()
+        VerifyStatus    = 'NotVerified'
+        RemainingDiffs  = -1
     }
 }
 

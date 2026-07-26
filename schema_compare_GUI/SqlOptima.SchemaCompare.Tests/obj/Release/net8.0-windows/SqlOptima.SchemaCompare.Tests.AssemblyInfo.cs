@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SqlOptima.SchemaCompare.Tests")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+5db3bfc33326bbc684d789ee7fbaa2f137c1ad71")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+3971bb2b2ff4d6a20826aa29372a105229b77002")]
 [assembly: System.Reflection.AssemblyProductAttribute("SqlOptima.SchemaCompare.Tests")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SqlOptima.SchemaCompare.Tests")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

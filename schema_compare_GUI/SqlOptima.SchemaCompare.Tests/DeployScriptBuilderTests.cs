@@ -157,4 +157,42 @@ public class DeployScriptBuilderTests
             try { Directory.Delete(dir, true); } catch { /* ignore */ }
         }
     }
+
+    [Fact]
+    public void BuildManualScript_DocumentsPkDatatypeSequence_AndOrdersByManifest()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "DeployPkDt_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "manual_Db1__dbo.Child__column_remove.sql"),
+                "/* later */\r\nALTER TABLE dbo.Child DROP COLUMN Z;");
+            File.WriteAllText(Path.Combine(dir, "manual_Db1__dbo.Parent__pk_datatype_change.sql"),
+                "/* PK COLUMN DATATYPE CHANGE */\r\n-- Step 1: Drop foreign keys\r\nALTER TABLE dbo.Child DROP CONSTRAINT FK_Child_Parent;");
+            File.WriteAllText(Path.Combine(dir, "_manifest.csv"),
+                "Phase,Mode,Order,Database,Object,Purpose,ChangeCount,FileName,Blockers,Prerequisites,RequiresReview\r\n" +
+                "Manual: PK Datatype Change,Manual,55,Db1,[dbo].[Parent],pk_datatype_change,1,manual_Db1__dbo.Parent__pk_datatype_change.sql,,,True\r\n" +
+                "Manual: Column Drops,Manual,210,Db1,[dbo].[Child],column_remove,1,manual_Db1__dbo.Child__column_remove.sql,,,True\r\n");
+            File.WriteAllText(Path.Combine(dir, "_master_auto_only.sql"),
+                "/* Database : Db1 */\r\n");
+
+            var result = DeployScriptBuilder.Build(dir);
+            Assert.Equal(2, result.ManualFileCount);
+            Assert.Equal("manual_Db1__dbo.Parent__pk_datatype_change.sql", result.Databases[0].ManualFiles[0].FileName);
+            Assert.Equal(55, result.Databases[0].ManualFiles[0].Order);
+            Assert.Equal("pk_datatype_change", result.Databases[0].ManualFiles[0].Purpose);
+
+            var manual = result.BuildManualScript();
+            Assert.Contains("PK COLUMN DATATYPE CHANGE — REQUIRED SEQUENCE", manual);
+            Assert.Contains("Drop FK constraints that reference the parent PK", manual);
+            Assert.Contains("Recreate child indexes, then recreate foreign keys", manual);
+            var pkPos = manual.IndexOf("pk_datatype_change.sql", StringComparison.OrdinalIgnoreCase);
+            var dropPos = manual.IndexOf("column_remove.sql", StringComparison.OrdinalIgnoreCase);
+            Assert.True(pkPos >= 0 && dropPos > pkPos);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, true); } catch { /* ignore */ }
+        }
+    }
 }

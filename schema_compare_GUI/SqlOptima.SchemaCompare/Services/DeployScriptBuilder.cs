@@ -20,6 +20,10 @@ public sealed class DeployManualFile
     public string FileName { get; set; } = "";
     public string FullPath { get; set; } = "";
     public string Content { get; set; } = "";
+    /// <summary>Run-order from _manifest.csv when available; otherwise 999.</summary>
+    public int Order { get; set; } = 999;
+    public string Purpose { get; set; } = "";
+    public string ObjectName { get; set; } = "";
 }
 
 /// <summary>
@@ -120,13 +124,60 @@ public sealed class DeployScriptResult
             return sb.ToString();
         }
 
+        var hasPkDatatype = Databases
+            .SelectMany(d => d.ManualFiles)
+            .Any(m => string.Equals(m.Purpose, "pk_datatype_change", StringComparison.OrdinalIgnoreCase)
+                      || m.FileName.Contains("pk_datatype_change", StringComparison.OrdinalIgnoreCase)
+                      || m.Content.Contains("PK COLUMN DATATYPE CHANGE", StringComparison.OrdinalIgnoreCase));
+
+        if (hasPkDatatype)
+        {
+            sb.AppendLine("/* ============================================================");
+            sb.AppendLine(" *  PK COLUMN DATATYPE CHANGE — REQUIRED SEQUENCE");
+            sb.AppendLine(" *");
+            sb.AppendLine(" *  When a primary-key column changes datatype, dependent foreign");
+            sb.AppendLine(" *  keys and indexes must be handled first. Each");
+            sb.AppendLine(" *  manual_*__pk_datatype_change.sql file already contains this");
+            sb.AppendLine(" *  sequence — run that file as one unit (do not reorder steps):");
+            sb.AppendLine(" *");
+            sb.AppendLine(" *    1) Drop FK constraints that reference the parent PK");
+            sb.AppendLine(" *    2) Drop non-PK indexes on the parent that include PK columns");
+            sb.AppendLine(" *    3) Drop the parent primary key");
+            sb.AppendLine(" *    4) Alter parent PK column(s) to the source datatype");
+            sb.AppendLine(" *    5) On each child: drop indexes on FK columns, then alter FK columns");
+            sb.AppendLine(" *    6) Recreate the parent primary key from source");
+            sb.AppendLine(" *    7) Recreate child indexes, then recreate foreign keys");
+            sb.AppendLine(" *");
+            sb.AppendLine(" *  Run pk_datatype_change scripts before other manuals / auto");
+            sb.AppendLine(" *  scripts that depend on those columns (see _manifest.csv).");
+            sb.AppendLine(" * ============================================================ */");
+            sb.AppendLine();
+        }
+
         foreach (var db in Databases.Where(d => d.ManualFiles.Count > 0))
         {
             sb.AppendLine($"/* ===== DATABASE: {db.Database} — {db.ManualFiles.Count} manual script(s) ===== */");
             sb.AppendLine();
-            foreach (var m in db.ManualFiles)
+            foreach (var m in db.ManualFiles.OrderBy(x => x.Order).ThenBy(x => x.FileName, StringComparer.OrdinalIgnoreCase))
             {
-                sb.AppendLine($"-- >>> MANUAL: {m.FileName}");
+                if (!string.IsNullOrWhiteSpace(m.Purpose) || m.Order < 999)
+                {
+                    sb.AppendLine($"-- >>> MANUAL: {m.FileName}  (order={m.Order}" +
+                                  (string.IsNullOrWhiteSpace(m.Purpose) ? "" : $", purpose={m.Purpose}") +
+                                  (string.IsNullOrWhiteSpace(m.ObjectName) ? "" : $", object={m.ObjectName}") +
+                                  ")");
+                }
+                else
+                {
+                    sb.AppendLine($"-- >>> MANUAL: {m.FileName}");
+                }
+
+                if (string.Equals(m.Purpose, "pk_datatype_change", StringComparison.OrdinalIgnoreCase)
+                    || m.FileName.Contains("pk_datatype_change", StringComparison.OrdinalIgnoreCase))
+                {
+                    sb.AppendLine("--     Run as one unit: drop FKs → drop PK → alter parent → alter children → recreate PK/FKs/indexes");
+                }
+
                 sb.AppendLine(m.Content.TrimEnd());
                 sb.AppendLine();
                 sb.AppendLine("-- <<< end manual script");
@@ -243,6 +294,8 @@ public static class DeployScriptBuilder
         }
         db.AutoDeployText = sb.ToString();
 
+        var manifestMeta = ReadManifestMeta(folder);
+
         foreach (var manualPath in Directory.GetFiles(folder, "manual_*.sql")
                      .OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
         {
@@ -257,7 +310,103 @@ public static class DeployScriptBuilder
             });
         }
 
+        foreach (var m in db.ManualFiles)
+        {
+            if (!manifestMeta.TryGetValue(m.FileName, out var meta)) continue;
+            m.Order = meta.Order;
+            m.Purpose = meta.Purpose;
+            m.ObjectName = meta.ObjectName;
+        }
+
+        db.ManualFiles.Sort((a, b) =>
+        {
+            var cmp = a.Order.CompareTo(b.Order);
+            return cmp != 0 ? cmp : string.Compare(a.FileName, b.FileName, StringComparison.OrdinalIgnoreCase);
+        });
+
         return db;
+    }
+
+    /// <summary>
+    /// Reads Order / Purpose / Object from <c>_manifest.csv</c> keyed by FileName.
+    /// </summary>
+    internal static Dictionary<string, (int Order, string Purpose, string ObjectName)> ReadManifestMeta(string folder)
+    {
+        var map = new Dictionary<string, (int Order, string Purpose, string ObjectName)>(StringComparer.OrdinalIgnoreCase);
+        var path = Path.Combine(folder, "_manifest.csv");
+        if (!File.Exists(path)) return map;
+
+        try
+        {
+            var lines = File.ReadAllLines(path);
+            if (lines.Length < 2) return map;
+            var header = ParseCsvLine(lines[0]);
+            int Idx(string name)
+            {
+                for (var i = 0; i < header.Count; i++)
+                    if (string.Equals(header[i], name, StringComparison.OrdinalIgnoreCase))
+                        return i;
+                return -1;
+            }
+
+            var iFile = Idx("FileName");
+            var iOrder = Idx("Order");
+            var iPurpose = Idx("Purpose");
+            var iObject = Idx("Object");
+            if (iFile < 0) return map;
+
+            for (var li = 1; li < lines.Length; li++)
+            {
+                if (string.IsNullOrWhiteSpace(lines[li])) continue;
+                var cols = ParseCsvLine(lines[li]);
+                if (iFile >= cols.Count) continue;
+                var fileName = cols[iFile].Trim().Trim('"');
+                if (string.IsNullOrWhiteSpace(fileName)) continue;
+                var order = 999;
+                if (iOrder >= 0 && iOrder < cols.Count && int.TryParse(cols[iOrder].Trim().Trim('"'), out var o))
+                    order = o;
+                var purpose = iPurpose >= 0 && iPurpose < cols.Count ? cols[iPurpose].Trim().Trim('"') : "";
+                var obj = iObject >= 0 && iObject < cols.Count ? cols[iObject].Trim().Trim('"') : "";
+                map[fileName] = (order, purpose, obj);
+            }
+        }
+        catch
+        {
+            // Manifest is advisory; ignore parse failures.
+        }
+
+        return map;
+    }
+
+    private static List<string> ParseCsvLine(string line)
+    {
+        var result = new List<string>();
+        if (line == null) return result;
+        var sb = new StringBuilder();
+        var inQuotes = false;
+        for (var i = 0; i < line.Length; i++)
+        {
+            var ch = line[i];
+            if (ch == '"')
+            {
+                if (inQuotes && i + 1 < line.Length && line[i + 1] == '"')
+                {
+                    sb.Append('"');
+                    i++;
+                }
+                else inQuotes = !inQuotes;
+                continue;
+            }
+            if (ch == ',' && !inQuotes)
+            {
+                result.Add(sb.ToString());
+                sb.Clear();
+                continue;
+            }
+            sb.Append(ch);
+        }
+        result.Add(sb.ToString());
+        return result;
     }
 
     /// <summary>True when the SQL body contains a DROP TABLE statement.</summary>

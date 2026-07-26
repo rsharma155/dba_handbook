@@ -330,7 +330,14 @@ public sealed class CompareEngine : IDisposable
                 ManualScripts = s.ManualScripts,
                 ScriptFolder = s.ScriptFolder,
                 ReportPath = s.ReportPath,
-                Differences = s.Differences ?? new List<DifferenceItem>()
+                Differences = s.Differences ?? new List<DifferenceItem>(),
+                Applied = s.Applied,
+                ApplyStatus = string.IsNullOrWhiteSpace(s.ApplyStatus) ? "Skipped" : s.ApplyStatus!,
+                AppliedCount = s.AppliedCount,
+                FailedCount = s.FailedCount,
+                FailedScripts = s.FailedScripts ?? new List<DeployFailure>(),
+                VerifyStatus = string.IsNullOrWhiteSpace(s.VerifyStatus) ? "NotVerified" : s.VerifyStatus!,
+                RemainingDiffs = s.RemainingDiffs
             };
             // Engine tags each difference with the source DB name. For one-to-many
             // (same source → many targets) the GUI tree must group by destination.

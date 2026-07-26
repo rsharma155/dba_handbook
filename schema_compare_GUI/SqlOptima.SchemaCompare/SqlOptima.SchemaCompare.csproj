@@ -20,6 +20,10 @@
     <Product>SQL Optima Schema Compare</Product>
     <Description>Desktop schema compare GUI (OpenDBDiff-inspired) powered by schema_compare PowerShell engine.</Description>
     <Version>1.0.0</Version>
+    <!-- Microsoft.Data.SqlClient needs its native SNI DLL beside the host.
+         Single-file + framework-dependent extracts managed assemblies to a temp
+         folder and cannot see publish\runtimes\... unless natives are bundled. -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
 
   <ItemGroup>
@@ -29,5 +33,26 @@
   <ItemGroup>
     <InternalsVisibleTo Include="SqlOptima.SchemaCompare.Tests" />
   </ItemGroup>
+
+  <!--
+    Framework-dependent single-file extracts managed code to a temp folder.
+    SqlClient still probes for Microsoft.Data.SqlClient.SNI.dll next to the
+    published .exe / under runtimes\<rid>\native. Copy it after publish so
+    connection tests never fail with 0x8007007E.
+  -->
+  <Target Name="CopySqlClientSniBesidePublishedExe" AfterTargets="Publish">
+    <PropertyGroup>
+      <_SniRid Condition="'$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</_SniRid>
+      <_SniRid Condition="'$(_SniRid)' == ''">win-x64</_SniRid>
+      <_NugetRoot>$([MSBuild]::EnsureTrailingSlash($(NuGetPackageRoot)))</_NugetRoot>
+    </PropertyGroup>
+    <ItemGroup>
+      <_SniCandidates Include="$(_NugetRoot)microsoft.data.sqlclient.sni.runtime\**\runtimes\$(_SniRid)\native\Microsoft.Data.SqlClient.SNI.dll" />
+    </ItemGroup>
+    <MakeDir Directories="$(PublishDir)runtimes\$(_SniRid)\native" Condition="'@(_SniCandidates)' != ''" />
+    <Copy SourceFiles="@(_SniCandidates)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="false" Condition="'@(_SniCandidates)' != ''" />
+    <Copy SourceFiles="@(_SniCandidates)" DestinationFolder="$(PublishDir)runtimes\$(_SniRid)\native" SkipUnchangedFiles="false" Condition="'@(_SniCandidates)' != ''" />
+    <Warning Text="Microsoft.Data.SqlClient.SNI.dll was not found under '$(_NugetRoot)microsoft.data.sqlclient.sni.runtime' for RID '$(_SniRid)'; SQL connections may fail when running the published exe." Condition="'@(_SniCandidates)' == ''" />
+  </Target>
 
 </Project>

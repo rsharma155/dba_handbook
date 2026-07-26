@@ -71,13 +71,102 @@ public sealed class MainForm : Form
     private readonly TextBox _txtScript = new() { Multiline = true, ScrollBars = ScrollBars.Both, Font = new Font("Consolas", 9.5f), ReadOnly = true, WordWrap = false, BorderStyle = BorderStyle.None, BackColor = Color.FromArgb(0x1E, 0x1E, 0x1E), ForeColor = Color.FromArgb(0xD4, 0xD4, 0xD4) };
     private readonly TextBox _txtManual = new() { Multiline = true, ScrollBars = ScrollBars.Both, Font = new Font("Consolas", 9.5f), ReadOnly = true, WordWrap = false, BorderStyle = BorderStyle.None, ForeColor = Color.FromArgb(140, 40, 20) };
     private readonly TextBox _txtDetails = new() { Multiline = true, ScrollBars = ScrollBars.Vertical, ReadOnly = true, Font = new Font("Segoe UI", 10f), BorderStyle = BorderStyle.None };
+    private readonly TextBox _txtSourceDef = new()
+    {
+        Multiline = true,
+        ScrollBars = ScrollBars.Both,
+        ReadOnly = true,
+        WordWrap = false,
+        Font = new Font("Consolas", 9.5f),
+        BorderStyle = BorderStyle.None,
+        BackColor = Color.FromArgb(0x1E, 0x1E, 0x1E),
+        ForeColor = Color.FromArgb(0xD4, 0xD4, 0xD4),
+        Dock = DockStyle.Fill
+    };
+    private readonly TextBox _txtTargetDef = new()
+    {
+        Multiline = true,
+        ScrollBars = ScrollBars.Both,
+        ReadOnly = true,
+        WordWrap = false,
+        Font = new Font("Consolas", 9.5f),
+        BorderStyle = BorderStyle.None,
+        BackColor = Color.FromArgb(0x1E, 0x1E, 0x1E),
+        ForeColor = Color.FromArgb(0xD4, 0xD4, 0xD4),
+        Dock = DockStyle.Fill
+    };
+    private readonly Label _lblSourceCaption = new()
+    {
+        Dock = DockStyle.Fill,
+        TextAlign = ContentAlignment.MiddleLeft,
+        Font = UiTheme.SemiBold(9f),
+        ForeColor = UiTheme.TextPrimary,
+        BackColor = Color.Transparent,
+        Text = "SOURCE"
+    };
+    private readonly Label _lblTargetCaption = new()
+    {
+        Dock = DockStyle.Fill,
+        TextAlign = ContentAlignment.MiddleLeft,
+        Font = UiTheme.SemiBold(9f),
+        ForeColor = UiTheme.TextPrimary,
+        BackColor = Color.Transparent,
+        Text = "TARGET"
+    };
+    private readonly Label _lblDetailHeader = new()
+    {
+        Dock = DockStyle.Fill,
+        TextAlign = ContentAlignment.MiddleLeft,
+        Font = UiTheme.SemiBold(9.5f),
+        ForeColor = UiTheme.TextPrimary,
+        BackColor = Color.Transparent,
+        Text = ""
+    };
+    private readonly Panel _detailSingleHost = new() { Dock = DockStyle.Fill, BackColor = Color.White };
+    private readonly Panel _detailDualHost = new() { Dock = DockStyle.Fill, BackColor = Color.White, Visible = false };
+    private SplitContainer? _detailSplit;
     private readonly TextBox _txtLog = new() { Multiline = true, ScrollBars = ScrollBars.Both, ReadOnly = true, Font = new Font("Consolas", 8.5f), BorderStyle = BorderStyle.None };
     private readonly TextBox _txtOverview = new() { Multiline = true, ScrollBars = ScrollBars.Vertical, ReadOnly = true, Font = new Font("Segoe UI", 10f), BorderStyle = BorderStyle.None, BackColor = Color.White };
     private TabPage? _tabOverview;
     private TabPage? _tabDetails;
     private TabPage? _tabScript;
     private TabPage? _tabManual;
+    private TabPage? _tabDeploy;
     private TabPage? _tabLog;
+    private readonly DataGridView _gridDeploy = new()
+    {
+        Dock = DockStyle.Fill,
+        ReadOnly = true,
+        AllowUserToAddRows = false,
+        AllowUserToDeleteRows = false,
+        AllowUserToResizeRows = false,
+        RowHeadersVisible = false,
+        SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+        MultiSelect = false,
+        AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+        BackgroundColor = Color.White,
+        BorderStyle = BorderStyle.None
+    };
+    private readonly TextBox _txtDeployDetail = new()
+    {
+        Multiline = true,
+        ScrollBars = ScrollBars.Vertical,
+        ReadOnly = true,
+        Font = new Font("Consolas", 9f),
+        BorderStyle = BorderStyle.None,
+        BackColor = Color.FromArgb(248, 250, 252)
+    };
+    private readonly Label _lblDeployBanner = new()
+    {
+        Dock = DockStyle.Fill,
+        TextAlign = ContentAlignment.MiddleLeft,
+        Font = UiTheme.SemiBold(9f),
+        BackColor = Color.Transparent,
+        Text = "Run a compare with Apply enabled to see deployment status."
+    };
+    // Per-DB deploy progress state driven by ##GUI: engine lines.
+    private int _deployDbIndex;
+    private int _deployDbTotal;
     private readonly Panel _overviewEmpty = new() { Dock = DockStyle.Fill, BackColor = Color.White };
     private readonly Panel _overviewDash = new() { Dock = DockStyle.Fill, BackColor = Color.White, Visible = false, Padding = new Padding(12) };
     private DeployScriptResult? _deployResult;
@@ -629,11 +718,7 @@ public sealed class MainForm : Form
         BuildOverviewTab(_tabOverview);
 
         _tabDetails = new TabPage("Object Details") { BackColor = Color.White };
-        var detailHost = new Panel { Dock = DockStyle.Fill, BackColor = Color.White };
-        detailHost.Controls.Add(_lblDetailPlaceholder);
-        detailHost.Controls.Add(_txtDetails);
-        _txtDetails.Dock = DockStyle.Fill;
-        _tabDetails.Controls.Add(detailHost);
+        BuildObjectDetailsTab(_tabDetails);
 
         _tabScript = new TabPage("Script Preview") { BackColor = Color.White };
         var scriptHost = new Panel { Dock = DockStyle.Fill, BackColor = Color.White };
@@ -671,6 +756,9 @@ public sealed class MainForm : Form
         manualHost.Controls.Add(manualBar);
         _tabManual.Controls.Add(manualHost);
 
+        _tabDeploy = new TabPage("Deployment") { BackColor = Color.White };
+        BuildDeployTab(_tabDeploy);
+
         _tabLog = new TabPage("Progress Log") { BackColor = Color.White };
         _tabLog.Controls.Add(_txtLog);
         _txtLog.Dock = DockStyle.Fill;
@@ -681,6 +769,7 @@ public sealed class MainForm : Form
         _tabs.TabPages.Add(_tabDetails);
         _tabs.TabPages.Add(_tabScript);
         _tabs.TabPages.Add(_tabManual);
+        _tabs.TabPages.Add(_tabDeploy);
         _tabs.TabPages.Add(_tabLog);
         rightCard.Controls.Add(_tabs);
         rightCard.Controls.Add(badgeStrip);
@@ -756,6 +845,234 @@ public sealed class MainForm : Form
 
         tab.Controls.Add(_overviewDash);
         tab.Controls.Add(_overviewEmpty);
+    }
+
+    private void BuildObjectDetailsTab(TabPage tab)
+    {
+        var root = new Panel { Dock = DockStyle.Fill, BackColor = Color.White };
+
+        _detailSingleHost.Controls.Add(_lblDetailPlaceholder);
+        _detailSingleHost.Controls.Add(_txtDetails);
+        _txtDetails.Dock = DockStyle.Fill;
+
+        var header = new Panel
+        {
+            Dock = DockStyle.Top,
+            Height = 36,
+            BackColor = Color.FromArgb(248, 250, 252),
+            Padding = new Padding(12, 0, 12, 0)
+        };
+        header.Controls.Add(_lblDetailHeader);
+
+        _detailSplit = new SplitContainer
+        {
+            Dock = DockStyle.Fill,
+            Orientation = Orientation.Vertical,
+            SplitterWidth = 6,
+            BackColor = Color.FromArgb(0xE5, 0xE7, 0xEB)
+        };
+
+        Panel BuildSide(Label caption, TextBox body, Color barColor)
+        {
+            var host = new Panel { Dock = DockStyle.Fill, BackColor = Color.White };
+            var bar = new Panel { Dock = DockStyle.Top, Height = 32, BackColor = barColor, Padding = new Padding(10, 0, 10, 0) };
+            bar.Controls.Add(caption);
+            host.Controls.Add(body);
+            host.Controls.Add(bar);
+            return host;
+        }
+
+        _detailSplit.Panel1.Controls.Add(BuildSide(_lblSourceCaption, _txtSourceDef, Color.FromArgb(0xEC, 0xF5, 0xFF)));
+        _detailSplit.Panel2.Controls.Add(BuildSide(_lblTargetCaption, _txtTargetDef, Color.FromArgb(0xFE, 0xF3, 0xC7)));
+
+        _detailDualHost.Controls.Add(_detailSplit);
+        _detailDualHost.Controls.Add(header);
+
+        root.Controls.Add(_detailDualHost);
+        root.Controls.Add(_detailSingleHost);
+        tab.Controls.Add(root);
+
+        tab.Enter += (_, _) =>
+        {
+            try
+            {
+                if (_detailSplit != null && _detailSplit.Width > 200)
+                    _detailSplit.SplitterDistance = Math.Max(120, _detailSplit.Width / 2);
+            }
+            catch { /* layout not ready */ }
+        };
+
+        ShowDetailSingleMode();
+    }
+
+    private void ShowDetailSingleMode()
+    {
+        _detailDualHost.Visible = false;
+        _detailSingleHost.Visible = true;
+        _detailSingleHost.BringToFront();
+    }
+
+    private void ShowDetailDualMode()
+    {
+        _detailSingleHost.Visible = false;
+        _detailDualHost.Visible = true;
+        _detailDualHost.BringToFront();
+        try
+        {
+            if (_detailSplit != null && _detailSplit.Width > 200 && _detailSplit.SplitterDistance < 80)
+                _detailSplit.SplitterDistance = Math.Max(120, _detailSplit.Width / 2);
+        }
+        catch { /* ignore */ }
+    }
+
+    private void ShowSingleDetailText(string text, bool showPlaceholder = false)
+    {
+        ShowDetailSingleMode();
+        _txtDetails.Text = text;
+        _lblDetailPlaceholder.Visible = showPlaceholder;
+        if (!showPlaceholder)
+            _txtDetails.BringToFront();
+        else
+            _lblDetailPlaceholder.BringToFront();
+    }
+
+    private void BuildDeployTab(TabPage tab)
+    {
+        var host = new Panel { Dock = DockStyle.Fill, BackColor = Color.White };
+
+        var banner = new Panel { Dock = DockStyle.Top, Height = 40, BackColor = Color.FromArgb(248, 250, 252), Padding = new Padding(12, 0, 12, 0) };
+        _lblDeployBanner.ForeColor = UiTheme.TextMuted;
+        banner.Controls.Add(_lblDeployBanner);
+
+        var split = new SplitContainer
+        {
+            Dock = DockStyle.Fill,
+            Orientation = Orientation.Horizontal,
+            FixedPanel = FixedPanel.Panel2,
+            SplitterWidth = 6
+        };
+
+        _gridDeploy.Columns.Clear();
+        _gridDeploy.Columns.Add(new DataGridViewTextBoxColumn { Name = "colDb", HeaderText = "Target database", FillWeight = 24 });
+        _gridDeploy.Columns.Add(new DataGridViewTextBoxColumn { Name = "colApplied", HeaderText = "Applied / Auto", FillWeight = 14 });
+        _gridDeploy.Columns.Add(new DataGridViewTextBoxColumn { Name = "colStatus", HeaderText = "Status", FillWeight = 16 });
+        _gridDeploy.Columns.Add(new DataGridViewTextBoxColumn { Name = "colFailed", HeaderText = "Failed", FillWeight = 10 });
+        _gridDeploy.Columns.Add(new DataGridViewTextBoxColumn { Name = "colVerify", HeaderText = "Verification", FillWeight = 36 });
+        _gridDeploy.EnableHeadersVisualStyles = false;
+        _gridDeploy.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(0x24, 0x29, 0x2F);
+        _gridDeploy.ColumnHeadersDefaultCellStyle.ForeColor = Color.White;
+        _gridDeploy.ColumnHeadersDefaultCellStyle.Font = UiTheme.SemiBold(9f);
+        _gridDeploy.DefaultCellStyle.Font = UiTheme.UiFont(9f);
+        _gridDeploy.SelectionChanged += (_, _) => ShowDeployRowDetail();
+
+        split.Panel1.Controls.Add(_gridDeploy);
+        _txtDeployDetail.Dock = DockStyle.Fill;
+        _txtDeployDetail.Text = "Select a database row to see failed scripts and verification details.";
+        split.Panel2.Controls.Add(_txtDeployDetail);
+
+        host.Controls.Add(split);
+        host.Controls.Add(banner);
+        tab.Controls.Add(host);
+
+        tab.Enter += (_, _) =>
+        {
+            try { if (split.Height > 120) split.SplitterDistance = Math.Max(80, split.Height - 110); }
+            catch { /* layout not ready */ }
+        };
+    }
+
+    private void ShowDeployRowDetail()
+    {
+        if (_gridDeploy.SelectedRows.Count == 0 || _lastResult == null) return;
+        var db = _gridDeploy.SelectedRows[0].Cells["colDb"].Value?.ToString() ?? "";
+        var s = _lastResult.Summaries.FirstOrDefault(x =>
+            string.Equals(x.TargetDatabase, db, StringComparison.OrdinalIgnoreCase));
+        if (s == null) { _txtDeployDetail.Text = ""; return; }
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"Target database : {s.TargetDatabase}");
+        sb.AppendLine($"Apply status    : {s.ApplyStatus}  ({s.AppliedCount} applied, {s.FailedCount} failed of {s.AutoScripts} auto script(s))");
+        sb.AppendLine($"Verification    : {DescribeVerify(s)}");
+        if (s.ManualScripts > 0)
+            sb.AppendLine($"Manual scripts  : {s.ManualScripts} (never auto-applied - see Manual Actions tab)");
+        if (s.FailedCount > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("Failed scripts:");
+            foreach (var f in s.FailedScripts)
+                sb.AppendLine($"  {f.FileName}\r\n    {f.Error}");
+        }
+        _txtDeployDetail.Text = sb.ToString();
+    }
+
+    private static string DescribeVerify(CompareSummary s) => s.VerifyStatus switch
+    {
+        "Synced" => "Synced - re-compare found no remaining differences",
+        "Diffs" => $"{s.RemainingDiffs} difference(s) remain (pending manual scripts or failed applies)",
+        "VerifyError" => "Verification re-compare failed - see Progress Log",
+        _ => "Not verified"
+    };
+
+    /// <summary>Populates the Deployment tab after a run where Apply executed.</summary>
+    private void UpdateDeploymentTab(CompareResult? result)
+    {
+        if (_tabDeploy == null) return;
+        _gridDeploy.Rows.Clear();
+
+        if (result == null || !result.AppliedRun)
+        {
+            _tabDeploy.Text = "Deployment";
+            _lblDeployBanner.Text = "Run a compare with Apply enabled to see deployment status.";
+            _lblDeployBanner.ForeColor = UiTheme.TextMuted;
+            _txtDeployDetail.Text = "Select a database row to see failed scripts and verification details.";
+            return;
+        }
+
+        var failedDbs = 0;
+        var unsyncedDbs = 0;
+        foreach (var s in result.Summaries)
+        {
+            var row = _gridDeploy.Rows[_gridDeploy.Rows.Add(
+                s.TargetDatabase,
+                $"{s.AppliedCount} / {s.AutoScripts}",
+                s.ApplyStatus,
+                s.FailedCount,
+                DescribeVerify(s))];
+
+            if (s.FailedCount > 0 || s.ApplyStatus == "Failed")
+            {
+                row.DefaultCellStyle.BackColor = Color.FromArgb(255, 235, 238);
+                row.DefaultCellStyle.ForeColor = UiTheme.Danger;
+                failedDbs++;
+            }
+            else if (s.VerifyStatus == "Diffs" || s.VerifyStatus == "VerifyError")
+            {
+                row.DefaultCellStyle.BackColor = Color.FromArgb(255, 247, 237);
+                unsyncedDbs++;
+            }
+            else if (s.VerifyStatus == "Synced")
+            {
+                row.DefaultCellStyle.ForeColor = UiTheme.Success;
+            }
+        }
+
+        var attention = failedDbs + unsyncedDbs;
+        _tabDeploy.Text = attention > 0 ? $"\u26A0 Deployment ({attention})" : "Deployment";
+        if (failedDbs > 0)
+        {
+            _lblDeployBanner.Text = $"{failedDbs} database(s) had script failures - review details below and re-run after fixing.";
+            _lblDeployBanner.ForeColor = UiTheme.Danger;
+        }
+        else if (unsyncedDbs > 0)
+        {
+            _lblDeployBanner.Text = $"Auto scripts applied. {unsyncedDbs} database(s) still have differences (pending manual scripts).";
+            _lblDeployBanner.ForeColor = UiTheme.Warning;
+        }
+        else
+        {
+            _lblDeployBanner.Text = "All auto scripts applied and every database verified in sync with the source.";
+            _lblDeployBanner.ForeColor = UiTheme.Success;
+        }
     }
 
     private void BuildStatusBar()
@@ -970,37 +1287,31 @@ public sealed class MainForm : Form
         {
             if (e.Node?.Tag is TableChildItem child)
             {
-                _txtDetails.Text = string.IsNullOrWhiteSpace(child.DetailText)
+                ShowSingleDetailText(string.IsNullOrWhiteSpace(child.DetailText)
                     ? child.DisplayText
-                    : child.DetailText;
-                _lblDetailPlaceholder.Visible = false;
-                _txtDetails.BringToFront();
+                    : child.DetailText);
                 _tabs.SelectedTab = _tabDetails;
                 return;
             }
 
             if (e.Node?.Tag is TableFolderNode folder)
             {
-                _txtDetails.Text =
+                ShowSingleDetailText(
                     $"Folder\r\n  {ObjectExplorerFormat.FolderLabel(folder.Kind)}\r\n\r\n" +
                     $"Table\r\n  {folder.Table.FullName}\r\n\r\n" +
                     $"Database\r\n  {folder.Table.Side.Database}\r\n\r\n" +
-                    "Tip\r\n  Expand to load children from system catalogs.";
-                _lblDetailPlaceholder.Visible = false;
-                _txtDetails.BringToFront();
+                    "Tip\r\n  Expand to load children from system catalogs.");
                 _tabs.SelectedTab = _tabDetails;
                 return;
             }
 
             if (e.Node?.Tag is TableBrowseNode tableNode)
             {
-                _txtDetails.Text =
+                ShowSingleDetailText(
                     $"Table\r\n  {tableNode.FullName}\r\n\r\n" +
                     $"Database\r\n  {tableNode.Side.Database}\r\n\r\n" +
                     $"Side\r\n  {(tableNode.Side.IsSource ? "Source" : "Target")}\r\n\r\n" +
-                    "Scripting CREATE TABLE from system catalogs...";
-                _lblDetailPlaceholder.Visible = false;
-                _txtDetails.BringToFront();
+                    "Scripting CREATE TABLE from system catalogs...");
                 _tabs.SelectedTab = _tabDetails;
                 _ = ScriptTableAsync(tableNode);
                 return;
@@ -1008,37 +1319,20 @@ public sealed class MainForm : Form
 
             if (e.Node?.Tag is SchemaObjectInfo obj)
             {
-                _txtDetails.Text =
+                ShowSingleDetailText(
                     $"Object\r\n  {obj.FullName}\r\n\r\n" +
                     $"Type\r\n  {obj.ObjectType}\r\n\r\n" +
                     $"Schema\r\n  {obj.SchemaName}\r\n\r\n" +
                     $"Name\r\n  {obj.ObjectName}\r\n\r\n" +
-                    "Tip\r\n  Run Compare schemas to see differences vs the other side.";
-                _lblDetailPlaceholder.Visible = false;
-                _txtDetails.BringToFront();
+                    "Tip\r\n  Run Compare schemas to see differences vs the other side.");
                 _tabs.SelectedTab = _tabDetails;
                 return;
             }
 
             if (e.Node?.Tag is not DifferenceItem d) return;
-            var impact = d.Kind switch
-            {
-                DiffKind.Add => "Low — object will be created",
-                DiffKind.Update => "Medium — definition will change",
-                DiffKind.Extra => "High — target-only object (review before drop)",
-                _ => "Unknown"
-            };
-            _txtDetails.Text =
-                $"Object\r\n  {d.ObjectName}\r\n\r\n" +
-                $"Type\r\n  {d.ObjectType}\r\n\r\n" +
-                $"Database\r\n  {d.Database}\r\n\r\n" +
-                $"Difference\r\n  {d.ActionLabel}  ({d.Status})\r\n\r\n" +
-                $"Impact\r\n  {impact}\r\n\r\n" +
-                $"Details\r\n  {d.Details}";
             _tabs.SelectedTab = _tabDetails;
             _steps.Active = WorkflowStep.Review;
-            _lblDetailPlaceholder.Visible = false;
-            _txtDetails.BringToFront();
+            _ = ShowDifferenceCompareAsync(d);
         });
 
         FormClosing += OnFormClosing;
@@ -1221,6 +1515,11 @@ public sealed class MainForm : Form
                     _txtScript.Clear();
                     _txtManual.Clear();
                     _txtDetails.Clear();
+                    _txtSourceDef.Clear();
+                    _txtTargetDef.Clear();
+                    _lblDetailHeader.Text = "";
+                    ShowDetailSingleMode();
+                    _txtDetails.Clear();
                     _tree.Nodes.Clear();
                     _btnSaveDeploy.Enabled = false;
                 }
@@ -1351,6 +1650,14 @@ public sealed class MainForm : Form
         if (IsDisposed || !IsHandleCreated) return;
         void Write()
         {
+            // Structured deploy progress from the engine (##GUI:...) drives the
+            // progress bar / stage label and is kept out of the raw log text.
+            if (DeployProgressParser.TryParse(line, out var p))
+            {
+                HandleDeployProgress(p);
+                return;
+            }
+
             _logBuffer.AppendLine(line);
             if (_txtLog.TextLength > CompareEngine.MaxLogChars)
                 _txtLog.Text = _logBuffer.Snapshot();
@@ -1359,6 +1666,9 @@ public sealed class MainForm : Form
 
             if (_compareStarted is DateTime started)
                 _lblElapsed.Text = $"Elapsed  {(DateTime.Now - started):mm\\:ss}";
+
+            // Structured progress owns the stage label once a run is underway.
+            if (_deployDbTotal > 0) return;
 
             // Surface stage hints from PowerShell log lines
             var lower = line.ToLowerInvariant();
@@ -1380,6 +1690,71 @@ public sealed class MainForm : Form
         {
             Write();
         }
+    }
+
+    /// <summary>Applies a structured engine progress event to the progress UI.</summary>
+    private void HandleDeployProgress(DeployProgressUpdate p)
+    {
+        switch (p.Kind)
+        {
+            case "DB":
+                _deployDbIndex = p.Index;
+                _deployDbTotal = p.Total;
+                SetDeterminateProgress(DeployProgressParser.ComputePercent(p.Index, p.Total, "compare", 0, 0));
+                _lblProgressStage.Text = _deployDbTotal > 1
+                    ? $"Database {p.Index}/{p.Total}: {p.Database}"
+                    : $"Processing {p.Database}...";
+                _lblProgressStage.ForeColor = UiTheme.Primary;
+                break;
+
+            case "PHASE":
+                SetDeterminateProgress(DeployProgressParser.ComputePercent(
+                    _deployDbIndex, _deployDbTotal, p.Stage, p.Index, p.Total));
+                _lblProgressStage.Text = p.Stage switch
+                {
+                    "apply" => $"Applying {p.Database} ({p.Index}/{p.Total})...",
+                    "verify" => $"Verifying {p.Database}...",
+                    _ => _deployDbTotal > 1
+                        ? $"Comparing {p.Database} ({_deployDbIndex}/{_deployDbTotal})..."
+                        : $"Comparing {p.Database}..."
+                };
+                _lblProgressStage.ForeColor = UiTheme.Primary;
+                break;
+
+            case "APPLYRESULT":
+                if (p.Failed > 0)
+                {
+                    _lblProgressStage.Text = $"{p.Database}: {p.Applied} applied, {p.Failed} FAILED";
+                    _lblProgressStage.ForeColor = UiTheme.Danger;
+                }
+                else
+                {
+                    _lblProgressStage.Text = $"{p.Database}: {p.Applied} script(s) applied";
+                    _lblProgressStage.ForeColor = UiTheme.Success;
+                }
+                break;
+
+            case "VERIFY":
+                _lblProgressStage.Text = p.Status switch
+                {
+                    "Synced" => $"{p.Database}: verified in sync",
+                    "Diffs" => $"{p.Database}: {p.Remaining} difference(s) remain",
+                    _ => $"{p.Database}: verification failed"
+                };
+                _lblProgressStage.ForeColor = p.Status == "Synced" ? UiTheme.Success : UiTheme.Warning;
+                break;
+        }
+    }
+
+    /// <summary>Switches the progress bar out of marquee and sets a percent value.</summary>
+    private void SetDeterminateProgress(int percent)
+    {
+        if (_progress.Style != ProgressBarStyle.Continuous)
+        {
+            _progress.Style = ProgressBarStyle.Continuous;
+            _progress.MarqueeAnimationSpeed = 0;
+        }
+        _progress.Value = Math.Max(0, Math.Min(100, percent));
     }
 
     private void UpdateManualTabCaption()
@@ -1713,8 +2088,14 @@ public sealed class MainForm : Form
 
             if (_options.Apply)
             {
+                var deployTargets = targets.Count > 0 ? targets : new List<string> { target.Database };
+                var targetList = string.Join("\r\n", deployTargets.Select(t => $"    \u2022 {t}"));
                 var confirm = MessageBox.Show(this,
-                    "APPLY is enabled.\r\n\r\nThis will execute auto_ scripts on the TARGET.\r\n" +
+                    "APPLY is enabled.\r\n\r\n" +
+                    $"Auto_ scripts will be executed on {deployTargets.Count} target database(s) on [{target.Instance}]:\r\n\r\n" +
+                    targetList + "\r\n\r\n" +
+                    "A failing database will NOT stop the others; each result is shown in the\r\n" +
+                    "Deployment tab, and every database is re-compared afterwards to verify sync.\r\n" +
                     "manual_ scripts (including any DROP TABLE) are never auto-applied.\r\n\r\nContinue?",
                     "Confirm Apply", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
                 if (confirm != DialogResult.Yes) return;
@@ -1729,6 +2110,9 @@ public sealed class MainForm : Form
             _lblProgressStage.Text = "Comparing schemas...";
             _lblProgressStage.ForeColor = UiTheme.Primary;
             _lblElapsed.Text = "Elapsed  00:00";
+            _deployDbIndex = 0;
+            _deployDbTotal = 0;
+            UpdateDeploymentTab(null);
             SetBusy(true);
             _logBuffer.Clear();
             _txtLog.Clear();
@@ -1764,6 +2148,7 @@ public sealed class MainForm : Form
             RebuildTree(_txtFilter.Text.Trim());
             UpdateSummaryCounts(result.AllDifferences);
             UpdateOverviewDashboard(result.Success ? result : null);
+            UpdateDeploymentTab(result.Success ? result : null);
 
             if (!result.Success)
             {
@@ -1773,6 +2158,50 @@ public sealed class MainForm : Form
                 MessageBox.Show(this, result.Error ?? "Compare failed. See Progress log.",
                     "Compare failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 SetStatus("Compare failed.");
+            }
+            else if (result.AppliedRun)
+            {
+                // Apply ran: report per-DB deployment + verification outcome.
+                var deployed = result.Summaries.Count(s => s.Applied || s.ApplyStatus == "NothingToApply");
+                var failedDbs = result.Summaries.Count(s => s.FailedCount > 0 || s.ApplyStatus == "Failed");
+                var synced = result.Summaries.Count(s => s.VerifyStatus == "Synced");
+                var totalApplied = result.Summaries.Sum(s => s.AppliedCount);
+                var totalFailed = result.Summaries.Sum(s => s.FailedCount);
+
+                _steps.Active = WorkflowStep.Deploy;
+                if (failedDbs > 0)
+                {
+                    _lblProgressStage.Text = $"Deployed with errors - {failedDbs} database(s) failed";
+                    _lblProgressStage.ForeColor = UiTheme.Danger;
+                }
+                else if (synced == deployed)
+                {
+                    _lblProgressStage.Text = "Deployed - all databases verified in sync";
+                    _lblProgressStage.ForeColor = UiTheme.Success;
+                }
+                else
+                {
+                    _lblProgressStage.Text = "Deployed - some databases still have differences (manual scripts)";
+                    _lblProgressStage.ForeColor = UiTheme.Warning;
+                }
+                _tabs.SelectedTab = _tabDeploy;
+
+                var manualNote = _deployResult.HasManual
+                    ? $"\r\n\u26A0  {_deployResult.ManualFileCount} MANUAL script(s) still require review\r\n" +
+                      "(see the 'Manual Actions' tab - never auto-applied)."
+                    : "";
+                MessageBox.Show(this,
+                    $"Deployment finished.\r\n\r\n" +
+                    $"Databases deployed: {deployed} of {result.Summaries.Count}\r\n" +
+                    $"Scripts applied: {totalApplied}   Failed: {totalFailed}\r\n" +
+                    $"Verified in sync: {synced} of {deployed}\r\n" +
+                    manualNote +
+                    "\r\nSee the Deployment tab for per-database status, errors and verification.",
+                    failedDbs > 0 ? "Deployed with errors" : "Deployment done",
+                    MessageBoxButtons.OK,
+                    failedDbs > 0 ? MessageBoxIcon.Error
+                        : (_deployResult.HasManual ? MessageBoxIcon.Warning : MessageBoxIcon.Information));
+                SetStatus($"Deploy done - {totalApplied} applied, {totalFailed} failed, {synced}/{deployed} in sync.");
             }
             else
             {
@@ -2141,6 +2570,109 @@ public sealed class MainForm : Form
         }
     }
 
+    private async Task ShowDifferenceCompareAsync(DifferenceItem d)
+    {
+        if (_isShuttingDown || IsDisposed) return;
+
+        var impact = d.Kind switch
+        {
+            DiffKind.Add => "Low - object will be created on target",
+            DiffKind.Update => "Medium - definition will change on target",
+            DiffKind.Extra => "High - target-only object (review before drop)",
+            _ => "Unknown"
+        };
+
+        var srcInfo = _sourcePanel.GetConnectionInfo(false);
+        srcInfo.TrustServerCertificate = _options.TrustServerCertificate;
+        var tgtInfo = _targetPanel.GetConnectionInfo(false);
+        tgtInfo.TrustServerCertificate = _options.TrustServerCertificate;
+
+        var srcDb = !string.IsNullOrWhiteSpace(srcInfo.Database)
+            ? srcInfo.Database
+            : (_lastResult?.Summaries.FirstOrDefault()?.Database ?? "");
+        var tgtDb = ResolveTargetDatabaseForDiff(d);
+
+        _lblDetailHeader.Text =
+            $"{d.ObjectName}    ·    {d.ObjectType}    ·    {d.ActionLabel} ({d.Status})    ·    {impact}";
+        _lblSourceCaption.Text = $"SOURCE  ·  {srcInfo.Instance} / {srcDb}";
+        _lblTargetCaption.Text = $"TARGET  ·  {tgtInfo.Instance} / {tgtDb}";
+
+        ShowDetailDualMode();
+        _txtSourceDef.Text = d.Kind == DiffKind.Extra
+            ? "-- Not present on source.\r\n-- This object exists only on the target."
+            : "-- Loading source definition...";
+        _txtTargetDef.Text = d.Kind == DiffKind.Add
+            ? "-- Not present on target.\r\n-- This object will be created from the source definition."
+            : "-- Loading target definition...";
+
+        if (!ObjectExplorerFormat.TryParseObjectName(d.ObjectName, out var schema, out var name))
+        {
+            _txtSourceDef.Text = $"-- Could not parse object name: {d.ObjectName}";
+            _txtTargetDef.Text = _txtSourceDef.Text;
+            return;
+        }
+
+        _scriptCts?.Cancel();
+        _scriptCts?.Dispose();
+        _scriptCts = new CancellationTokenSource();
+        var ct = _scriptCts.Token;
+        var selectedKey = $"{d.Database}|{d.ObjectType}|{d.ObjectName}|{d.Status}";
+
+        try
+        {
+            SetStatus($"Loading definitions for {d.ObjectName}...");
+
+            Task<string> srcTask = d.Kind == DiffKind.Extra
+                ? Task.FromResult(_txtSourceDef.Text)
+                : ObjectExplorerCatalog.ScriptObjectDefinitionAsync(
+                    srcInfo, srcDb, d.ObjectType, schema, name, ct);
+
+            Task<string> tgtTask = d.Kind == DiffKind.Add
+                ? Task.FromResult(_txtTargetDef.Text)
+                : ObjectExplorerCatalog.ScriptObjectDefinitionAsync(
+                    tgtInfo, tgtDb, d.ObjectType, schema, name, ct);
+
+            await Task.WhenAll(srcTask, tgtTask).ConfigureAwait(true);
+            if (_isShuttingDown || IsDisposed || ct.IsCancellationRequested) return;
+            if (!IsDiffStillSelected(selectedKey)) return;
+
+            var srcText = await srcTask.ConfigureAwait(true);
+            var tgtText = await tgtTask.ConfigureAwait(true);
+
+            _txtSourceDef.Text = srcText;
+            _txtTargetDef.Text = tgtText;
+            SetStatus($"Loaded source/target definitions for {d.ObjectName}.");
+        }
+        catch (OperationCanceledException)
+        {
+            // newer selection cancelled this load
+        }
+        catch (Exception ex)
+        {
+            if (_isShuttingDown || IsDisposed) return;
+            _txtSourceDef.Text = $"-- Failed to load source definition:\r\n-- {ex.Message}";
+            _txtTargetDef.Text = $"-- Failed to load target definition:\r\n-- {ex.Message}";
+            SetStatus($"Could not load definitions: {ex.Message}");
+        }
+    }
+
+    private string ResolveTargetDatabaseForDiff(DifferenceItem d)
+    {
+        if (!string.IsNullOrWhiteSpace(d.Database))
+            return d.Database;
+        var fromPanel = _targetPanel.GetConnectionInfo(false).Database;
+        if (!string.IsNullOrWhiteSpace(fromPanel))
+            return fromPanel;
+        return _lastResult?.Summaries.FirstOrDefault()?.TargetDatabase ?? "";
+    }
+
+    private bool IsDiffStillSelected(string selectedKey)
+    {
+        if (_tree.SelectedNode?.Tag is not DifferenceItem cur) return false;
+        var key = $"{cur.Database}|{cur.ObjectType}|{cur.ObjectName}|{cur.Status}";
+        return string.Equals(key, selectedKey, StringComparison.OrdinalIgnoreCase);
+    }
+
     private async Task ScriptTableAsync(TableBrowseNode table)
     {
         if (_isShuttingDown || IsDisposed || _lastResult != null) return;
@@ -2171,15 +2703,13 @@ public sealed class MainForm : Form
                 return;
 
             _browseScriptSnapshot = script;
-            _txtDetails.Text =
+            ShowSingleDetailText(
                 $"Table\r\n  {table.FullName}\r\n\r\n" +
                 $"Database\r\n  {db}\r\n\r\n" +
                 $"Side\r\n  {(table.Side.IsSource ? "Source" : "Target")}\r\n\r\n" +
                 "CREATE TABLE script loaded in the Deployable script tab.\r\n" +
-                "Expand Columns / Keys / Constraints / Indexes / Triggers under this table.";
+                "Expand Columns / Keys / Constraints / Indexes / Triggers under this table.");
             _txtScript.Text = script;
-            _lblDetailPlaceholder.Visible = false;
-            _txtDetails.BringToFront();
             // Prefer showing the script like SSMS "Script Table as → CREATE To"
             _tabs.SelectedTab = _tabScript;
             SetStatus($"Scripted CREATE TABLE for {table.FullName}.");
@@ -2191,9 +2721,9 @@ public sealed class MainForm : Form
         catch (Exception ex)
         {
             if (_isShuttingDown || IsDisposed) return;
-            _txtDetails.Text =
+            ShowSingleDetailText(
                 $"Table\r\n  {table.FullName}\r\n\r\n" +
-                $"Could not script CREATE TABLE:\r\n  {ex.Message}";
+                $"Could not script CREATE TABLE:\r\n  {ex.Message}");
             SetStatus($"Script failed: {ex.Message}");
         }
     }

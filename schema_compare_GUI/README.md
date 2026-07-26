@@ -201,8 +201,8 @@ dotnet test SqlOptima.SchemaCompare.sln -c Release
 # Bridge dry-run harness (no SQL Server needed)
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\Test-CompareBridge.ps1
 
-# Optional single-file publish
-dotnet publish SqlOptima.SchemaCompare -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true
+# Optional single-file publish (includes SqlClient native SNI beside the exe)
+dotnet publish SqlOptima.SchemaCompare -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
 ```
 
 Test coverage includes connection strings, diff filtering, one-to-many target

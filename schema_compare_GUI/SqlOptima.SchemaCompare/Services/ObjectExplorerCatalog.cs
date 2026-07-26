@@ -157,6 +157,63 @@ public static class ObjectExplorerFormat
         $"{QuoteIdent(schema)}.{QuoteIdent(name)}";
 
     /// <summary>
+    /// Parses engine display names such as <c>[dbo].[Companies]</c>,
+    /// <c>dbo.Companies</c>, or <c>[Companies]</c> into schema + name.
+    /// </summary>
+    public static bool TryParseObjectName(string? display, out string schema, out string name)
+    {
+        schema = "dbo";
+        name = "";
+        if (string.IsNullOrWhiteSpace(display)) return false;
+
+        var s = display.Trim();
+        // [schema].[name]
+        var m = System.Text.RegularExpressions.Regex.Match(s,
+            @"^\[(?<sch>[^\]]+)\]\.\[(?<nm>[^\]]+)\]$");
+        if (m.Success)
+        {
+            schema = m.Groups["sch"].Value;
+            name = m.Groups["nm"].Value;
+            return !string.IsNullOrWhiteSpace(name);
+        }
+
+        // schema.name (unquoted)
+        var dot = s.IndexOf('.');
+        if (dot > 0 && dot < s.Length - 1 && !s.Contains('['))
+        {
+            schema = s[..dot].Trim();
+            name = s[(dot + 1)..].Trim();
+            return !string.IsNullOrWhiteSpace(schema) && !string.IsNullOrWhiteSpace(name);
+        }
+
+        // [name] or bare name
+        if (s.StartsWith('[') && s.EndsWith(']') && s.Length > 2)
+            name = s[1..^1];
+        else
+            name = s;
+        return !string.IsNullOrWhiteSpace(name);
+    }
+
+    /// <summary>Maps SMO collection / browse type labels to a scripting kind.</summary>
+    public static string NormalizeObjectType(string? objectType)
+    {
+        var t = (objectType ?? "").Trim().ToUpperInvariant();
+        return t switch
+        {
+            "TABLES" or "TABLE" or "U" => "TABLE",
+            "VIEWS" or "VIEW" or "V" => "VIEW",
+            "STOREDPROCEDURES" or "STORED PROCEDURES" or "STORED_PROCEDURE" or "PROCEDURE" or "PROC" or "P" => "PROCEDURE",
+            "USERDEFINEDFUNCTIONS" or "FUNCTIONS" or "FUNCTION" or "FN" or "IF" or "TF" => "FUNCTION",
+            "TRIGGERS" or "TRIGGER" or "TR" or "DATABASETRIGGERS" => "TRIGGER",
+            "SCHEMAS" or "SCHEMA" => "SCHEMA",
+            "SEQUENCES" or "SEQUENCE" => "SEQUENCE",
+            "SYNONYMS" or "SYNONYM" => "SYNONYM",
+            "USERDEFINEDDATATYPES" or "USERDEFINEDTABLETYPES" or "TYPE" or "TYPES" => "TYPE",
+            _ => t
+        };
+    }
+
+    /// <summary>
     /// Builds a CREATE TABLE script from catalog rows (unit-testable without SQL Server).
     /// </summary>
     public static string BuildCreateTableScript(
@@ -387,6 +444,133 @@ public static class ObjectExplorerCatalog
 
         return ObjectExplorerFormat.BuildCreateTableScript(
             schema, table, columns, keys, checks, defaults, fks, indexes);
+    }
+
+    /// <summary>
+    /// Scripts the live definition of an object from a connection for the
+    /// Source | Target Object Details compare view.
+    /// </summary>
+    public static async Task<string> ScriptObjectDefinitionAsync(
+        ConnectionInfo info,
+        string database,
+        string objectType,
+        string schema,
+        string name,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(database))
+            return "-- No database selected.";
+        if (string.IsNullOrWhiteSpace(name))
+            return "-- Object name is empty.";
+
+        var kind = ObjectExplorerFormat.NormalizeObjectType(objectType);
+        try
+        {
+            if (kind == "TABLE")
+                return await ScriptCreateTableAsync(info, database, schema, name, ct).ConfigureAwait(false);
+
+            if (kind is "VIEW" or "PROCEDURE" or "FUNCTION" or "TRIGGER")
+                return await ScriptModuleDefinitionAsync(info, database, schema, name, kind, ct).ConfigureAwait(false);
+
+            return await ScriptMetadataObjectAsync(info, database, schema, name, kind, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return $"-- Could not script [{schema}].[{name}] ({kind}) from [{database}]:\r\n-- {ex.Message}";
+        }
+    }
+
+    private static async Task<string> ScriptModuleDefinitionAsync(
+        ConnectionInfo info, string database, string schema, string name, string kind, CancellationToken ct)
+    {
+        await using var conn = new SqlConnection(info.BuildConnectionString(database));
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandTimeout = 60;
+        cmd.Parameters.AddWithValue("@schema", schema);
+        cmd.Parameters.AddWithValue("@name", name);
+        cmd.CommandText = @"
+SELECT m.definition, o.type_desc
+FROM sys.objects AS o
+INNER JOIN sys.schemas AS s ON s.schema_id = o.schema_id
+LEFT JOIN sys.sql_modules AS m ON m.object_id = o.object_id
+WHERE o.is_ms_shipped = 0
+  AND s.name = @schema
+  AND o.name = @name;";
+        await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+            return $"-- {kind} {ObjectExplorerFormat.BracketName(schema, name)} was not found in [{database}].";
+
+        var definition = reader.IsDBNull(0) ? null : reader.GetString(0);
+        var typeDesc = reader.IsDBNull(1) ? kind : reader.GetString(1);
+        if (string.IsNullOrWhiteSpace(definition))
+            return $"-- {typeDesc} {ObjectExplorerFormat.BracketName(schema, name)} has no scriptable definition in [{database}].";
+
+        return $"-- {typeDesc} from [{database}]\r\n" + definition.TrimEnd() + "\r\n";
+    }
+
+    private static async Task<string> ScriptMetadataObjectAsync(
+        ConnectionInfo info, string database, string schema, string name, string kind, CancellationToken ct)
+    {
+        await using var conn = new SqlConnection(info.BuildConnectionString(database));
+        await conn.OpenAsync(ct).ConfigureAwait(false);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandTimeout = 30;
+        cmd.Parameters.AddWithValue("@schema", schema);
+        cmd.Parameters.AddWithValue("@name", name);
+
+        switch (kind)
+        {
+            case "SCHEMA":
+                cmd.CommandText = "SELECT name FROM sys.schemas WHERE name = @name;";
+                cmd.Parameters.Clear();
+                cmd.Parameters.AddWithValue("@name", name);
+                var sch = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+                return sch == null
+                    ? $"-- Schema [{name}] was not found in [{database}]."
+                    : $"-- Schema from [{database}]\r\nCREATE SCHEMA [{name}];\r\n";
+
+            case "SEQUENCE":
+                cmd.CommandText = @"
+SELECT s.name, sch.name, TYPE_NAME(s.user_type_id), s.start_value, s.increment, s.minimum_value, s.maximum_value, s.is_cycling
+FROM sys.sequences s
+INNER JOIN sys.schemas sch ON sch.schema_id = s.schema_id
+WHERE sch.name = @schema AND s.name = @name;";
+                await using (var r = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false))
+                {
+                    if (!await r.ReadAsync(ct).ConfigureAwait(false))
+                        return $"-- Sequence {ObjectExplorerFormat.BracketName(schema, name)} was not found in [{database}].";
+                    return
+                        $"-- Sequence from [{database}]\r\n" +
+                        $"CREATE SEQUENCE {ObjectExplorerFormat.BracketName(r.GetString(1), r.GetString(0))} AS {r.GetString(2)}\r\n" +
+                        $"    START WITH {r.GetValue(3)}\r\n" +
+                        $"    INCREMENT BY {r.GetValue(4)}\r\n" +
+                        $"    MINVALUE {r.GetValue(5)}\r\n" +
+                        $"    MAXVALUE {r.GetValue(6)}\r\n" +
+                        $"    {(r.GetBoolean(7) ? "CYCLE" : "NO CYCLE")};\r\n";
+                }
+
+            case "SYNONYM":
+                cmd.CommandText = @"
+SELECT syn.name, sch.name, syn.base_object_name
+FROM sys.synonyms syn
+INNER JOIN sys.schemas sch ON sch.schema_id = syn.schema_id
+WHERE sch.name = @schema AND syn.name = @name;";
+                await using (var r = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false))
+                {
+                    if (!await r.ReadAsync(ct).ConfigureAwait(false))
+                        return $"-- Synonym {ObjectExplorerFormat.BracketName(schema, name)} was not found in [{database}].";
+                    return
+                        $"-- Synonym from [{database}]\r\n" +
+                        $"CREATE SYNONYM {ObjectExplorerFormat.BracketName(r.GetString(1), r.GetString(0))} FOR {r.GetString(2)};\r\n";
+                }
+
+            default:
+                return
+                    $"-- Object type '{kind}' is not fully scripted in Object Details.\r\n" +
+                    $"-- Name: {ObjectExplorerFormat.BracketName(schema, name)}\r\n" +
+                    $"-- Database: [{database}]\r\n";
+        }
     }
 
     private static async Task<IReadOnlyList<TableChildItem>> ListColumnsAsync(
