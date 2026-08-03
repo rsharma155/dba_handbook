@@ -4,13 +4,14 @@
 window.ServerSizing = (() => {
   function fromForm(formData) {
     return window.ServerConfigRules.sizeServer({
+      marketProfile: formData.marketProfile,
       appType: formData.appType,
-      users: formData.users,
-      concurrentUsers: formData.concurrentUsers,
-      tables: formData.tables,
-      dailyInsertRows: formData.dailyInsertRows,
+      transactionsPerDay: formData.transactionsPerDay,
+      activeUsersRange: formData.activeUsersRange,
+      tablesRange: formData.tablesRange,
+      currentDbSizeRange: formData.currentDbSizeRange,
+      estimatedDbSizeRange: formData.estimatedDbSizeRange,
       dailyInsertGb: formData.dailyInsertGb,
-      weeklyInsertGb: formData.weeklyInsertGb,
       monthlyInsertGb: formData.monthlyInsertGb,
       criticality: formData.criticality,
       rpoMinutes: formData.rpoMinutes,

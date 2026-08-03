@@ -341,24 +341,28 @@ a {
   border: 1px solid rgba(61, 156, 253, 0.35);
 }
 
+.badge.tier-starter,
 .badge.tier-small {
   background: rgba(143, 163, 184, 0.15);
   color: #c2d0de;
   border-color: rgba(143, 163, 184, 0.35);
 }
 
+.badge.tier-standard,
 .badge.tier-mid {
   background: rgba(61, 156, 253, 0.16);
   color: #9cc9ff;
   border-color: rgba(61, 156, 253, 0.35);
 }
 
+.badge.tier-upper,
 .badge.tier-large {
   background: rgba(230, 162, 60, 0.16);
   color: #f0c27a;
   border-color: rgba(230, 162, 60, 0.4);
 }
 
+.badge.tier-growth,
 .badge.tier-xlarge {
   background: rgba(232, 93, 93, 0.16);
   color: #f0a0a0;

@@ -77,6 +77,22 @@ public sealed class ModernButton : Button
         Invalidate();
     }
 
+    /// <summary>
+    /// Re-colors the button through the supplied palette maps (theme switch).
+    /// Fill/hover/press/border go through <paramref name="mapBack"/>, the
+    /// caption through <paramref name="mapFore"/>.
+    /// </summary>
+    public void RemapColors(Func<Color, Color> mapBack, Func<Color, Color> mapFore)
+    {
+        BackColor = mapBack(BackColor);
+        ForeColor = mapFore(ForeColor);
+        if (!_hoverBack.IsEmpty) _hoverBack = mapBack(_hoverBack);
+        if (!_pressBack.IsEmpty) _pressBack = mapBack(_pressBack);
+        if (!_border.IsEmpty) _border = mapBack(_border);
+        FlatAppearance.BorderColor = BackColor;
+        Invalidate();
+    }
+
     protected override void OnParentChanged(EventArgs e)
     {
         base.OnParentChanged(e);

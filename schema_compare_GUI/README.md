@@ -19,13 +19,22 @@ extract it anywhere, and run it. No sibling folders required.
   sequences, synonyms, and DDL triggers — and diffs them.
 - Shows differences color-coded as **Added / Removed / Changed / Identical / Ignored**
   in an Object Explorer tree with search and object-type filters.
+- Side-by-side **Object Details** for mismatched objects: live Source and Target
+  definitions with a draggable vertical separator.
 - Generates an ordered, **self-contained deployable `.sql` script** (no `:r` includes)
   to bring the Target in line with the Source — plus a separate **Manual Actions**
-  list for risky changes that must be reviewed and run by hand.
+  list for risky changes that must be reviewed and run by hand (including sequenced
+  **PK column datatype** changes: drop FKs → drop PK → alter parent → child indexes /
+  columns → recreate).
 - Supports **One-to-Many**: one source database fanned out to multiple target
   databases (checked list or a `.json` / `.yml` / `.txt` list file).
-- Produces an **HTML report** and a full run folder per comparison under
-  `schema_compare\output\SchemaSync_*`.
+- Optional **Apply** (auto-deploy) across all selected targets with per-database
+  progress, continue-on-error, a **Deployment** tab, and post-apply verification.
+- Produces an **HTML report** (with deployment/verification summary when Apply ran)
+  and a full run folder per comparison under `schema_compare\output\SchemaSync_*`.
+- **Light and dark theme** — toggle at the bottom of the nav rail; remembered between
+  runs. **Help `?`** opens **Quick Help** (detailed scrollable guide) and **About**
+  (product purpose, author, version, MIT license).
 
 Nothing is ever applied automatically unless you explicitly enable **Apply**.
 
@@ -67,7 +76,8 @@ Nothing is ever applied automatically unless you explicitly enable **Apply**.
 schema_compare_GUI/                        ← share this whole folder as a zip
 ├── SqlOptima.SchemaCompare.sln            ← solution
 ├── SqlOptima.SchemaCompare/               ← desktop app (WinForms, .NET 8)
-├── SqlOptima.SchemaCompare.Tests/         ← xUnit test suite (98 tests)
+├── SqlOptima.SchemaCompare.Tests/         ← xUnit test suite (142 tests)
+├── publish/                               ← optional single-file exe output
 ├── schema_compare/                        ← bundled PowerShell compare engine
 │   ├── Compare-SqlSchema.ps1              ← core engine
 │   ├── Test-SqlSchemaConnection.ps1       ← connectivity diagnostics
@@ -119,9 +129,10 @@ Install-Module dbatools -Scope CurrentUser -Force
 scripts\Launch-DesktopApp.cmd
 ```
 
-It builds the app on first run and starts it. Or run the exe directly after a build:
+It builds the app on first run and starts it. Or run a published / built exe:
 
 ```text
+publish\SqlOptima.SchemaCompare.exe
 SqlOptima.SchemaCompare\bin\Release\net8.0-windows\SqlOptima.SchemaCompare.exe
 ```
 
@@ -135,15 +146,17 @@ The window follows a guided **Connect → Compare → Review → Deploy** workfl
 
 | Area | What it does |
 |------|--------------|
-| Header bar | Brand, workflow step indicator, Presets, Save Script, Settings, Help, and the **Compare Schemas** call-to-action |
-| Left nav rail | **Compare** workspace · **History** (SchemaSync runs) · **Scripts** (preview / output root) · **Reports** (latest HTML) · **Settings** |
+| Header bar | Brand, workflow step indicator, Presets, Save Script, Settings, Help (`?`), and the **Compare Schemas** call-to-action |
+| Left nav rail | **Compare** · **History** · **Scripts** · **Reports** · **Settings**, plus **Theme** (light/dark) at the bottom |
 | Connection card | Collapsible "1. Connect to Source and Target" card — server, port, auth, database pickers, Test Connection with inline status, password show/hide, and a **swap** button; auto-collapses when a comparison starts |
 | Action bar | Comparison profile, ignore rules, object-type filters, **Compare Now** |
 | Object Explorer | Category tree with search (`table:customer`, `added`, `schema:dbo`…) and refresh |
-| Results | **Overview** dashboard, **Object Details**, **Script Preview** (dark editor), **Manual Actions**, **Progress Log**, with Added / Removed / Changed / Identical / Ignored count badges |
+| Results | **Overview**, **Object Details** (Source \| Target split view), **Script Preview**, **Manual Actions**, **Deployment** (Apply status / verify), **Progress Log**, with Added / Removed / Changed / Identical / Ignored badges |
+| Help menu | **Quick Help** — detailed scrollable how-to; **About** — purpose, author, version, MIT license |
 | Status bar | Source / Target / object count / elapsed time |
 
 No text is truncated anywhere — buttons and badges auto-size to their captions.
+Validation error icons reserve a gutter so they do not cover adjacent labels (e.g. Port).
 
 ---
 
@@ -155,22 +168,40 @@ No text is truncated anywhere — buttons and badges auto-size to their captions
    list file (samples in `schema_compare\config\`)
 4. Optionally adjust **Options** (sync script generation, drops, apply, protocol, output)
 5. Click **Compare Now** — the connection card collapses and progress streams live
-6. Review the difference tree and Overview badges
+6. Review the difference tree and Overview badges; open mismatched objects in
+   **Object Details** for a Source \| Target definition compare
 7. Open **Script Preview** — a self-contained `.sql` ready to run on the TARGET
 8. If **Manual Actions** shows entries, review those scripts and run them by hand
+   (follow the documented sequence for PK datatype changes)
 9. **Save Script** to export `Deploy_AutoChanges_*.sql` (plus `*_MANUAL.sql` when needed)
 10. Open the **HTML report** / output folder for the full run
+11. (Optional) With **Apply** enabled, confirm the target list — watch the **Deployment**
+    tab for per-DB progress, errors, and post-apply verification
 
-Leave **Apply** off until scripts have been reviewed.
+Leave **Apply** off until scripts have been reviewed. Use Help `?` → **Quick Help** for
+the full in-app guide.
 
 ### Deployable vs manual scripts
 
 | Output | Safe to auto-run? | How to use |
 |--------|-------------------|------------|
-| Deployable script (`auto_` changes, inlined) | Yes, after review | SSMS / sqlcmd on the TARGET |
-| Manual actions (`manual_` changes) | **No** | Review, back up, execute by hand |
+| Deployable script (`auto_` changes, inlined) | Yes, after review | SSMS / sqlcmd on the TARGET, or **Apply** in the GUI |
+| Manual actions (`manual_` changes) | **No** | Review, back up, execute by hand in the listed order |
 
 Manual scripts are never auto-applied; the GUI warns whenever they are produced.
+A successful Apply does **not** mean Manual Actions were executed — check both the
+**Deployment** and **Manual Actions** tabs before declaring a database synchronized.
+
+### Auto-deploy (Apply)
+
+When Apply is enabled in Advanced Options:
+
+- The engine applies eligible `auto_` scripts to every selected Target database.
+- Failures are recorded per script / per database; remaining databases still run
+  (continue-on-error).
+- After each database, a fresh compare verifies whether the Target is still in sync.
+- The **Deployment** tab and HTML report show applied / failed counts and remaining diffs.
+- Artifacts include `_deploy_report.csv` in the `SchemaSync_*` run folder.
 
 ---
 
@@ -195,7 +226,7 @@ prerequisites above, and double-clicks `scripts\Launch-DesktopApp.cmd`.
 dotnet build SqlOptima.SchemaCompare.sln -c Release
 dotnet run --project SqlOptima.SchemaCompare -c Release
 
-# Tests (98 xUnit tests) — or scripts\Run-Tests.cmd
+# Tests (142 xUnit tests) — or scripts\Run-Tests.cmd
 dotnet test SqlOptima.SchemaCompare.sln -c Release
 
 # Bridge dry-run harness (no SQL Server needed)
@@ -205,11 +236,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\Test-CompareBridge.ps1
 dotnet publish SqlOptima.SchemaCompare -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
 ```
 
+Run the published app from `publish\SqlOptima.SchemaCompare.exe` (close any running
+instance first so the publish can overwrite the file).
+
 Test coverage includes connection strings, diff filtering, one-to-many target
 resolution, bundled-engine path discovery (including renamed zip folders), capped
 log buffers, child-process kill, temp cleanup, settings persistence (no passwords),
-shell components (nav rail, badges, collapsible card), metadata headers on every
-source file, and MainForm construct/shutdown lifecycle.
+shell components (nav rail, badges, collapsible card), theme switching, About /
+Quick Help content, object-diff name parsing, deploy/verify progress parsing,
+metadata headers on every source file, and MainForm construct/shutdown lifecycle.
 
 ---
 
@@ -239,7 +274,10 @@ child processes — no leftover `powershell.exe` instances.
 | Compare fails / dbatools missing | `Install-Module dbatools -Scope CurrentUser` |
 | Browse databases fails | Check firewall/auth; type DB names manually if needed |
 | No scripts in tab | Enable **Generate sync scripts** in Options |
+| Publish fails with access denied | Close `SqlOptima.SchemaCompare.exe` and publish again |
+| `Microsoft.Data.SqlClient.SNI.dll` missing | Use the publish command above (copies SNI beside the exe); do not delete companion DLLs from `publish\` |
 | Connectivity diagnosis | `schema_compare\Test-SqlSchemaConnection.ps1 -SqlInstance <server>` |
+| Need a how-to inside the app | Help `?` → **Quick Help** (scrollable) or **About** |
 
 ---
 

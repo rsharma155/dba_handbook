@@ -35,9 +35,13 @@ public sealed class NavRail : UserControl
 
     private string _activeKey = "compare";
     private string? _hoverKey;
+    private bool _themeHover;
     private readonly ToolTip _tips = new();
 
     public event EventHandler<string>? ItemClicked;
+
+    /// <summary>Raised when the bottom Theme chrome is clicked (light/dark toggle).</summary>
+    public event EventHandler? ThemeClicked;
 
     public NavRail()
     {
@@ -49,18 +53,21 @@ public sealed class NavRail : UserControl
         MouseMove += (_, e) =>
         {
             var key = HitTest(e.Location);
-            if (key != _hoverKey)
+            var themeHover = ThemeBounds.Contains(e.Location);
+            if (key != _hoverKey || themeHover != _themeHover)
             {
                 _hoverKey = key;
-                Cursor = key == null ? Cursors.Default : Cursors.Hand;
+                _themeHover = themeHover;
+                Cursor = key == null && !themeHover ? Cursors.Default : Cursors.Hand;
                 Invalidate();
             }
         };
-        MouseLeave += (_, _) => { _hoverKey = null; Invalidate(); };
+        MouseLeave += (_, _) => { _hoverKey = null; _themeHover = false; Invalidate(); };
         MouseClick += (_, e) =>
         {
             var key = HitTest(e.Location);
-            if (key != null) PerformItemClick(key);
+            if (key != null) { PerformItemClick(key); return; }
+            if (ThemeBounds.Contains(e.Location)) PerformThemeClick();
         };
     }
 
@@ -88,6 +95,11 @@ public sealed class NavRail : UserControl
         ActiveKey = key;
         ItemClicked?.Invoke(this, key);
     }
+
+    /// <summary>Raises <see cref="ThemeClicked"/> (also used by tests).</summary>
+    public void PerformThemeClick() => ThemeClicked?.Invoke(this, EventArgs.Empty);
+
+    private Rectangle ThemeBounds => new(0, Height - 76, Width, 36);
 
     private static Rectangle ItemBounds(int index, int width)
         => new(0, TopOffset + index * ItemHeight, width, ItemHeight);
@@ -141,14 +153,25 @@ public sealed class NavRail : UserControl
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
         }
 
-        // Bottom chrome per mockup: Theme hint + Ready micro-status (visual parity).
+        // Bottom chrome per mockup: Theme toggle + Ready micro-status.
         using var bottomFont = UiTheme.UiFont(7.5f);
         using var moonFont = UiTheme.IconFont(12f);
         var themeY = Height - 76;
-        TextRenderer.DrawText(g, "\uE708", moonFont, new Rectangle(0, themeY, Width, 18),
-            UiTheme.TextOnDarkMuted, TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding);
-        TextRenderer.DrawText(g, "Theme", bottomFont, new Rectangle(0, themeY + 18, Width, 14),
-            UiTheme.TextOnDarkMuted, TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding);
+        if (_themeHover)
+        {
+            using var hoverBack = new SolidBrush(Color.FromArgb(0x10, 0x1C, 0x2E));
+            var pill = new Rectangle(6, themeY - 2, Width - 12, 38);
+            using var pillPath = Rounded(pill, 8);
+            g.FillPath(hoverBack, pillPath);
+        }
+        var themeFore = _themeHover ? Color.White : UiTheme.TextOnDarkMuted;
+        // Moon while light (click for dark), sun while dark (click for light).
+        TextRenderer.DrawText(g, UiTheme.IsDark ? "\uE706" : "\uE708", moonFont,
+            new Rectangle(0, themeY, Width, 18),
+            themeFore, TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding);
+        TextRenderer.DrawText(g, UiTheme.IsDark ? "Dark" : "Light", bottomFont,
+            new Rectangle(0, themeY + 18, Width, 14),
+            themeFore, TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding);
         TextRenderer.DrawText(g, "Ready", bottomFont, new Rectangle(0, Height - 22, Width, 14),
             UiTheme.TextOnDarkMuted, TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding);
     }

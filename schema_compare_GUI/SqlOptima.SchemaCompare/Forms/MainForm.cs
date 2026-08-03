@@ -1085,9 +1085,29 @@ public sealed class MainForm : Form
         _status.Items.Add(_statusTime);
     }
 
+    private void ShowQuickHelp()
+    {
+        using var dlg = new QuickHelpForm();
+        dlg.ShowDialog(this);
+    }
+
+    private void ShowAboutDialog()
+    {
+        using var dlg = new AboutForm();
+        dlg.ShowDialog(this);
+    }
+
+    private void ToggleTheme()
+    {
+        ThemeSwitcher.SwitchTo(!UiTheme.IsDark, this);
+        SetStatus(UiTheme.IsDark ? "Dark theme enabled." : "Light theme enabled.");
+        SaveSettings();
+    }
+
     private void ShowOptionsDialog(OptionsFocus focus = OptionsFocus.Settings)
     {
         using var dlg = new OptionsForm(_options, focus);
+        ThemeSwitcher.ApplyCurrentTo(dlg);
         if (dlg.ShowDialog(this) == DialogResult.OK)
             _options = dlg.Options;
     }
@@ -1224,24 +1244,12 @@ public sealed class MainForm : Form
         _btnSwap.Click += (_, _) => SafeUi(SwapConnections);
         _btnPresets.Click += (_, _) => SafeUi(() =>
             _presetsMenu.Show(_btnPresets, new Point(0, _btnPresets.Height)));
-        _btnHelp.Click += (_, _) => SafeUi(() => MessageBox.Show(this,
-            "Workflow\r\n\r\n" +
-            "1. Connect - enter Source and Target, Test Connection, pick databases.\r\n" +
-            "2. Compare - click Compare Now (or Compare Schemas).\r\n" +
-            "3. Review - browse differences in the Object Explorer and result tabs.\r\n" +
-            "4. Deploy - Save Script and run it on the TARGET server.\r\n\r\n" +
-            "Navigation\r\n\r\n" +
-            "History - opens the shared output folder (SchemaSync_* compare runs).\r\n" +
-            "Scripts - shows Script Preview in the app, or the same output folder.\r\n" +
-            "Reports - opens the latest HTML report from that same output root.\r\n" +
-            "Settings - connection defaults (protocol / timeout / TLS).\r\n\r\n" +
-            "Options entry points\r\n\r\n" +
-            "Configure ignore rules - schemas to skip during compare.\r\n" +
-            "Advanced Options / Profile pencil - script generation and apply behaviour.\r\n" +
-            "Settings (gear / rail) - connection defaults; all tabs remain available.\r\n\r\n" +
-            "All generated SQL scripts and reports use one output root:\r\n" +
-            "  schema_compare\\output\\  (or the folder set under Output).",
-            "Help", MessageBoxButtons.OK, MessageBoxIcon.Information));
+        var helpMenu = new ContextMenuStrip();
+        helpMenu.Items.Add("Quick Help", null, (_, _) => SafeUi(ShowQuickHelp));
+        helpMenu.Items.Add("About SQL Optima\u2026", null, (_, _) => SafeUi(ShowAboutDialog));
+        _btnHelp.Click += (_, _) => SafeUi(() =>
+            helpMenu.Show(_btnHelp, new Point(0, _btnHelp.Height)));
+        _navRail.ThemeClicked += (_, _) => SafeUi(ToggleTheme);
         _btnExplorerRefresh.Click += (_, _) => SafeUi(() =>
         {
             _sourceBrowseDb = "";
@@ -2770,6 +2778,9 @@ public sealed class MainForm : Form
             }
             if (s.WindowMaximized)
                 WindowState = FormWindowState.Maximized;
+
+            if (s.DarkTheme)
+                ThemeSwitcher.SwitchTo(true, this);
         }
         catch { /* ignore corrupt settings */ }
         UpdateHeaderProject();
@@ -2790,6 +2801,7 @@ public sealed class MainForm : Form
                 TargetDatabases = _targetPanel.GetCheckedDatabases().ToList(),
                 DestinationListFile = _txtListFile.Text.Trim(),
                 Options = _options,
+                DarkTheme = UiTheme.IsDark,
                 WindowX = bounds.X,
                 WindowY = bounds.Y,
                 WindowWidth = bounds.Width,

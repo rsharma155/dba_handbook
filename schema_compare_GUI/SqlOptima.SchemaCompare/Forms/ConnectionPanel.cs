@@ -29,6 +29,7 @@ public sealed class ConnectionPanel : UserControl
     private readonly RadioButton _rbSql = new() { Text = "SQL Login", AutoSize = true };
     private readonly TextBox _txtUser = new();
     private readonly TextBox _txtPassword = new() { UseSystemPasswordChar = true };
+    private readonly TableLayoutPanel _pwdHost;
     private readonly ComboBox _cmbDatabase = new() { DropDownStyle = ComboBoxStyle.DropDown };
     private readonly Label _lblDatabase;
     private readonly TextBox? _txtDbSearch;
@@ -41,6 +42,8 @@ public sealed class ConnectionPanel : UserControl
     private ModernButton? _btnSelectAll;
     private ModernButton? _btnClear;
     private Label? _lblSelection;
+    // Icon is ~16px; reserve a right gutter so ErrorProvider never overlaps the next label.
+    private const int ErrorIconGutter = 22;
     private readonly ErrorProvider _errors = new() { BlinkStyle = ErrorBlinkStyle.NeverBlink };
     private readonly TableLayoutPanel _grid;
     private readonly Panel _footer = new() { Dock = DockStyle.Fill, BackColor = Color.Transparent };
@@ -88,13 +91,15 @@ public sealed class ConnectionPanel : UserControl
             Dock = DockStyle.Fill,
             ColumnCount = 4,
             RowCount = multiSelectTargets ? 8 : 7,
-            Padding = new Padding(12, 8, 12, 4),
+            Padding = new Padding(12, 8, 20, 4),
             BackColor = UiTheme.CardBackground
         };
         // Label | field | aux label | aux field — tight, aligned columns
+        // Aux label column is wide enough that a field-error icon in the gutter
+        // (reserved via ErrorIconGutter on the field margin) never covers "Port".
         _grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 104));
         _grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        _grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 68));
+        _grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 72));
         _grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 112));
 
         _grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));  // title
@@ -157,14 +162,17 @@ public sealed class ConnectionPanel : UserControl
         _grid.Controls.Add(MakeLabel("Server"), 0, 2);
         UiTheme.StyleTextBox(_txtInstance);
         _txtInstance.Dock = DockStyle.Fill;
-        _txtInstance.Margin = new Padding(0, 2, 6, 2);
+        // Right gutter keeps the ErrorProvider icon off the Port label.
+        _txtInstance.Margin = new Padding(0, 2, ErrorIconGutter, 2);
         _txtInstance.PlaceholderText = "host or .\\INSTANCE";
         _grid.Controls.Add(_txtInstance, 1, 2);
 
-        _grid.Controls.Add(MakeLabel("Port"), 2, 2);
+        var portLabel = MakeLabel("Port");
+        portLabel.Margin = new Padding(4, 0, 4, 0);
+        _grid.Controls.Add(portLabel, 2, 2);
         UiTheme.StyleTextBox(_txtPort);
         _txtPort.Dock = DockStyle.Fill;
-        _txtPort.Margin = new Padding(0, 2, 0, 2);
+        _txtPort.Margin = new Padding(0, 2, ErrorIconGutter, 2);
         _txtPort.PlaceholderText = "1433";
         _grid.Controls.Add(_txtPort, 3, 2);
 
@@ -193,7 +201,7 @@ public sealed class ConnectionPanel : UserControl
         _grid.Controls.Add(MakeLabel("Username"), 0, 4);
         UiTheme.StyleTextBox(_txtUser);
         _txtUser.Dock = DockStyle.Fill;
-        _txtUser.Margin = new Padding(0, 0, 6, 0);
+        _txtUser.Margin = new Padding(0, 0, ErrorIconGutter, 0);
         _txtUser.PlaceholderText = "SQL login";
 
         UiTheme.StyleTextBox(_txtPassword);
@@ -201,17 +209,17 @@ public sealed class ConnectionPanel : UserControl
         _txtPassword.Margin = new Padding(0);
         _txtPassword.PlaceholderText = "Password";
         _txtPassword.AccessibleName = "Password";
-        var pwdHost = new TableLayoutPanel
+        _pwdHost = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
             RowCount = 1,
             BackColor = Color.Transparent,
-            Margin = new Padding(0)
+            Margin = new Padding(0, 0, ErrorIconGutter, 0)
         };
-        pwdHost.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        pwdHost.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 28));
-        pwdHost.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+        _pwdHost.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        _pwdHost.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 28));
+        _pwdHost.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
         _btnEye.Font = UiTheme.IconFont(10f);
         _btnEye.Dock = DockStyle.Fill;
         _btnEye.CornerRadius = 6;
@@ -220,8 +228,8 @@ public sealed class ConnectionPanel : UserControl
         _btnEye.AccessibleName = "Show password";
         _tips.SetToolTip(_btnEye, "Show / hide password");
         _btnEye.Click += (_, _) => _txtPassword.UseSystemPasswordChar = !_txtPassword.UseSystemPasswordChar;
-        pwdHost.Controls.Add(_txtPassword, 0, 0);
-        pwdHost.Controls.Add(_btnEye, 1, 0);
+        _pwdHost.Controls.Add(_txtPassword, 0, 0);
+        _pwdHost.Controls.Add(_btnEye, 1, 0);
 
         var credRow = new TableLayoutPanel
         {
@@ -237,7 +245,7 @@ public sealed class ConnectionPanel : UserControl
         credRow.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
         credRow.Controls.Add(_txtUser, 0, 0);
         credRow.Controls.Add(MakeLabel("Password"), 1, 0);
-        credRow.Controls.Add(pwdHost, 2, 0);
+        credRow.Controls.Add(_pwdHost, 2, 0);
         _grid.Controls.Add(credRow, 1, 4);
         _grid.SetColumnSpan(credRow, 3);
 
@@ -247,7 +255,7 @@ public sealed class ConnectionPanel : UserControl
 
         UiTheme.StyleCombo(_cmbDatabase);
         _cmbDatabase.Dock = DockStyle.Fill;
-        _cmbDatabase.Margin = new Padding(0, 2, 6, 2);
+        _cmbDatabase.Margin = new Padding(0, 2, ErrorIconGutter, 2);
         _cmbDatabase.DropDownStyle = ComboBoxStyle.DropDown;
         _cmbDatabase.SelectedIndexChanged += (_, _) => OnDatabaseSelectionChanged();
         _cmbDatabase.SelectionChangeCommitted += (_, _) => OnDatabaseSelectionChanged();
@@ -313,7 +321,15 @@ public sealed class ConnectionPanel : UserControl
         _txtInstance.TextChanged += (_, _) => ClearError(_txtInstance);
         _txtPort.TextChanged += (_, _) => ClearError(_txtPort);
         _txtUser.TextChanged += (_, _) => ClearError(_txtUser);
-        _txtPassword.TextChanged += (_, _) => ClearError(_txtPassword);
+        _txtPassword.TextChanged += (_, _) => ClearError(_pwdHost);
+
+        _errors.ContainerControl = this;
+        // Keep the icon inside the reserved right gutter (not over the next column).
+        foreach (Control c in new Control[] { _txtInstance, _txtPort, _txtUser, _pwdHost, _cmbDatabase })
+        {
+            _errors.SetIconAlignment(c, ErrorIconAlignment.MiddleRight);
+            _errors.SetIconPadding(c, 2);
+        }
 
         UpdateAuthUi();
     }
@@ -447,7 +463,7 @@ public sealed class ConnectionPanel : UserControl
         if (!sql)
         {
             ClearError(_txtUser);
-            ClearError(_txtPassword);
+            ClearError(_pwdHost);
         }
     }
 
@@ -569,7 +585,7 @@ public sealed class ConnectionPanel : UserControl
         if (info.Auth == AuthMode.Sql && string.IsNullOrWhiteSpace(info.UserName))
             _errors.SetError(_txtUser, "Required");
         if (info.Auth == AuthMode.Sql && string.IsNullOrWhiteSpace(info.Password))
-            _errors.SetError(_txtPassword, "Required");
+            _errors.SetError(_pwdHost, "Required");
 
         message = r.AsMessage();
         return r.Ok;

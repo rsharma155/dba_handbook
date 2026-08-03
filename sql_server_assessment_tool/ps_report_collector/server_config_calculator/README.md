@@ -3,14 +3,33 @@
 Offline web calculator for:
 
 1. **DB configuration tuner** — enter current server hardware (vCPU, RAM, storage, CPU type, storage type) and get recommended **SQL Server** and/or **PostgreSQL** settings (best-practice formulas).
-2. **Server sizing from app flow** — when hardware is unknown, enter users, inserts, tables, volumes, and app type; get recommended **server tier**, CPU, RAM, storage, network, **HADR**, plus matching DB settings.
+2. **Server sizing from workload** — pick **market reach** plus dropdowns for transactions/day, active users, tables, and current vs estimated DB size; get recommended **server tier**, CPU, RAM, storage, network, **HADR**, plus matching DB settings.
+
+## Local market (default)
+
+Sized for mid-sized / local deployments — not hyperscale cloud:
+
+| Resource | Typical local range |
+|----------|---------------------|
+| CPU | 8–16 cores (common max ~16) |
+| RAM | 32–64 GB |
+| Storage | 512 GB–1 TB SSD |
+| Workload | Light–moderate OLTP, often **&lt; ~10k row transactions/day** |
+
+**Market reach** dropdown:
+
+| Profile | Caps |
+|---------|------|
+| **Local market (mid-sized)** | ≤16 cores / 64 GB / 1 TB |
+| Regional / growing | ≤24 cores / 96 GB / 2 TB |
+| Enterprise / high-scale | Up to 64 cores / 512 GB / 10 TB |
 
 ## How to open
 
 Open `index.html` in a browser (double-click or serve the folder). No install or server required.
 
 ```powershell
-cd D:\Mac_bak\SQL_Helps\Arhant\ps_report_collector\server_config_calculator
+cd D:\Mac_bak\AI_Code\sql_optima\dba_essential_scripts\sql_server_assessment_tool\ps_report_collector\server_config_calculator
 start index.html
 ```
 
@@ -46,52 +65,38 @@ Also suggests: optimize for ad hoc, backup compression, IFI, equal-sized TempDB 
 
 Outputs include starter **T-SQL** `sp_configure` and **postgresql.conf** snippets.
 
-## Feature 2 — App flow → server size
+## Feature 2 — Workload → server size
 
-### Inputs
+### Primary inputs (dropdowns)
 
-- Application type (rules below)
-- What the app is about (free text, shown on the result)
-- Total users / concurrent users
-- Tables, rows inserted per day
-- Data volume daily / weekly / monthly (GB)
-- Criticality + target RPO
-- Target engine (SQL Server / Postgres / both)
+- **Market reach** (Local / Regional / Enterprise)
+- **Transactions per day (avg)** — local typical &lt;10k
+- **Active users** (peak concurrent)
+- **Number of tables**
+- **Current DB size** vs **Estimated DB size to start** (planning uses the larger)
+- Application type, target engine, criticality
+- Optional: daily/monthly growth GB, RPO, free-text description
 
 ### Workload score
 
-Components (soft-capped) from concurrent users, daily insert rows, monthly GB, and table count, then multiplied by the app-type resource weights. Score maps to tier:
+Components from active users, daily txn rows, table count, and planning DB size, weighted by app type and market scale. Score maps to tier (local market never exceeds **Upper local**):
 
-| Score | Tier | Baseline shape |
-|------:|------|----------------|
-| &lt; 20 | Small | 4 vCPU / 16 GB / 250 GB |
-| &lt; 45 | Mid | 8 vCPU / 64 GB / 1 TB |
-| &lt; 70 | Large | 16 vCPU / 128 GB / 4 TB |
-| ≥ 70 | X-Large | 32 vCPU / 256 GB / 10 TB |
+| Tier | Baseline shape | When (local) |
+|------|----------------|--------------|
+| Starter | 4 vCPU / 16 GB / 256 GB | Very light |
+| Standard (local mid) | 8 vCPU / 32 GB / 512 GB | Typical mid-sized |
+| Upper local | 16 vCPU / 64 GB / 1 TB | Busier local max |
+| Growth | 24 vCPU / 96 GB / 2 TB | Regional/Enterprise only |
 
-Final vCPU/RAM are snapped to common cloud sizes and boosted for high concurrency. Storage uses:
+Final vCPU/RAM/storage are snapped to common local sizes and **capped by market profile**. Storage uses:
 
-`max(tier base, monthly GB × 12 × 1.6 indexes/temp × 1.4 headroom)`
-
-If concurrent users are omitted: `concurrent ≈ users × 10%`.  
-If monthly GB omitted: `weekly × 4.3` (or `daily × 30` via weekly default).
+`max(tier base, planning DB×1.6×1.5, monthly×12×1.6×1.4)` then snap to SSD sizes.
 
 ### Application-type rules
 
-Defined in `js/rules.js` (`APP_TYPES`):
+Defined in `js/rules.js` (`APP_TYPES`): OLTP, E-commerce, SaaS, Reporting, Mixed, IoT, CMS, Batch — each with CPU/RAM/storage/IOPS weights and HADR bias.
 
-| Type | Bias |
-|------|------|
-| OLTP / Transactional | High IOPS, high HADR, premium SSD |
-| E-commerce | Peak-oriented CPU/network, high HADR |
-| SaaS / Multi-tenant | Higher RAM weight, pooling, high HADR |
-| Reporting / Analytics | CPU/RAM/storage heavy, throughput SSD |
-| Mixed OLTP + Reporting | Balanced uplift; replica guidance |
-| IoT / Telemetry | Storage + ingest IOPS dominant |
-| CMS / Content | Lower DB weight if cache/CDN assumed |
-| Batch / ETL | Throughput disk; lower HADR if restartable |
-
-**HADR** uses app bias + criticality + RPO (≤15 min → high/sync-oriented recommendation).
+**HADR** uses app bias + criticality + RPO. Local market prefers strong backups (+ optional async replica) unless criticality/RPO demands sync HA.
 
 After sizing, the tool runs the same SQL/Postgres recommenders against the suggested hardware.
 
@@ -101,7 +106,7 @@ After sizing, the tool runs the same SQL/Postgres recommenders against the sugge
 server_config_calculator/
   index.html          UI
   css/styles.css
-  js/rules.js         App-type rules, tiers, sizing formulas
+  js/rules.js         Market profiles, app rules, tiers, sizing formulas
   js/sql-config.js    SQL Server recommendations
   js/postgres-config.js
   js/sizing.js        Sizing facade + bridge to DB config

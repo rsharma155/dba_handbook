@@ -4,7 +4,10 @@ Compare the schema of two SQL Server databases and generate a **reviewable T-SQL
 script** that brings the *Target* in line with the *Source*. Built for promoting schema
 changes along a **Dev → UAT → Prod** pipeline.
 
-Two entry points:
+A desktop GUI that wraps this engine ships under `schema_compare_GUI\` (see that folder's
+`README.md`). The engine can also be run directly from PowerShell.
+
+Entry points:
 
 | Script | Purpose |
 |--------|---------|
@@ -405,7 +408,7 @@ Point the target environment at a list file (path relative to `config/` or the s
 | `-ExcludeSchema` | string[] | `sys,INFORMATION_SCHEMA,guest` | Schemas to skip. |
 | `-GenerateSyncScript` | switch | off | Emit per-object/per-purpose `auto_`/`manual_` `.sql` scripts + manifest. |
 | `-IncludeDrops` | switch | off | Also generate drops for objects/indexes/constraints that exist only in target (destructive; table/column drops are always `manual_`). |
-| `-Apply` | switch | off | Execute the `auto_` scripts against the target, in run-order (needs `-GenerateSyncScript`). `manual_` scripts are never auto-applied. |
+| `-Apply` | switch | off | Execute the `auto_` scripts against the target, in run-order (needs `-GenerateSyncScript`). Continues on script failure (per-database status + remaining scripts). Re-compares after apply for verification. `manual_` scripts are never auto-applied. |
 | `-OutputPath` | string | `.\output` | Output directory. |
 | `-ReportFormat` | string[] | `Console,Html` | Any of `Console`, `GridView`, `Html`, `None`. |
 | `-Quiet` | switch | off | Suppress progress chatter. |
@@ -486,8 +489,8 @@ manual_Sales__dbo.Customer__column_update.sql   (e.g. a data-type shrink)
 
 Purposes: `schema`, `type`, `sequence`, `synonym`, `table_create`, `column_add`,
 `column_update`, `index`, `constraints`, `trigger`, `view`, `function`,
-`stored_procedure`, `db_trigger`, plus manual ones `pk_change`, `column_remove`,
-`cleanup_drop`.
+`stored_procedure`, `db_trigger`, plus manual ones `pk_change`, `pk_datatype_change`,
+`column_remove`, `cleanup_drop`.
 
 ### `auto_` scripts (safe, run-at-once)
 
@@ -514,6 +517,11 @@ These include:
 
 - **Primary-key changes** — add/drop/modify PK, PK column changes/renames
   (`pk_change`): needs dependent FKs dropped, possible dedupe and clustered-index rebuild.
+- **PK column datatype changes** (`pk_datatype_change`) — orchestrated as one manual
+  script in this order: drop referencing FKs → drop parent PK (and related parent indexes)
+  → alter parent PK column → drop child FK indexes → alter child FK columns → recreate
+  parent PK / indexes → recreate child indexes → recreate FKs. The HTML report and GUI
+  Manual Actions tab document the same sequence.
 - **Column data-type shrink / type-family change / `NULL`→`NOT NULL`** (`column_update`).
 - **Computed / IDENTITY column changes** (require a table rebuild).
 - **Column removals** and **table drops** (`column_remove`, `cleanup_drop`) — destructive.
@@ -531,6 +539,12 @@ that should already be applied). Two master catalogs are also emitted:
 | `_master_migration.sql` | **Run on TARGET** — full runbook with `/* MANUAL ACTION REQUIRED */` checkpoints. Use for UAT/Prod when `manual_` scripts exist. |
 | `_README_RUN_ON_TARGET.txt` | Plain-text copy/paste instructions (which file, sqlcmd commands). |
 | `_manifest.csv` | Full file list with run order, blockers, and prerequisites. |
+| `_deploy_report.csv` | Written when `-Apply` runs — per-database apply status, applied/failed counts, failed scripts, and post-apply verification / remaining diffs. |
+
+When `-Apply` is used, each target database is processed independently: a failed script is
+recorded and remaining auto scripts (and remaining databases in multi-target runs) continue.
+After apply, the engine re-compares that database and records whether it is synchronized.
+The HTML report includes a **Deployment & verification** section when apply was performed.
 
 Run on the **TARGET** server only (never source). `cd` to the `SchemaSync_<stamp>` folder first so `:r` paths resolve.
 

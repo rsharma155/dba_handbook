@@ -13,7 +13,7 @@
       <h1>Server Config Calculator</h1>
       <p>
         Enter known hardware to get SQL Server / PostgreSQL best-practice settings,
-        or describe the application workload to estimate server size, storage, network, and HADR.
+        or describe the workload (local mid-market by default) to estimate server size, storage, network, and HADR.
       </p>
     </header>
 
@@ -128,19 +128,27 @@
     <!-- Feature 2: app flow → server size -->
     <section id="tab-sizing" class="tab-panel">
       <div class="panel">
-        <h2>Not sure about server size? Describe the application</h2>
+        <h2>Not sure about server size? Describe the workload</h2>
         <p class="lead">
-          Enter users, insert volume, tables, and criticality. Rules for each app type
-          produce a recommended server tier (Small / Mid / Large / X-Large), hardware, network, and HADR —
-          plus matching SQL Server / PostgreSQL settings.
+          Pick <strong>local market</strong> (default) for mid-sized companies — typically
+          <strong>8–16 cores</strong>, <strong>32–64 GB RAM</strong>, <strong>512 GB–1 TB SSD</strong>,
+          and daily transactions under ~10k rows. Dropdowns drive the estimate; optional fields refine growth and HADR.
         </p>
 
         <form id="sizingForm">
           <div class="grid">
             <div class="field">
+              <label class="label-row" for="szMarket">
+                <span>Market reach</span>
+                <button type="button" class="info-tip" aria-label="Help" data-tip="Local market = mid-sized SME hardware (caps at 16 cores / 64 GB / 1 TB). Regional unlocks modest growth. Enterprise is for high-scale / cloud SKUs."></button>
+              </label>
+              <select id="szMarket"></select>
+              <p id="marketHelp" class="hint"></p>
+            </div>
+            <div class="field">
               <label class="label-row" for="appType">
                 <span>Application type</span>
-                <button type="button" class="info-tip" aria-label="Help" data-tip="Pick the closest match for your app. Each type has predefined weights for CPU, RAM, storage, IOPS, network, and HADR (see rules below)."></button>
+                <button type="button" class="info-tip" aria-label="Help" data-tip="Pick the closest match for your app. Each type has predefined weights for CPU, RAM, storage, IOPS, network, and HADR."></button>
               </label>
               <select id="appType"></select>
               <p id="appTypeHelp" class="hint"></p>
@@ -155,6 +163,43 @@
                 <option value="sqlserver">SQL Server</option>
                 <option value="postgres">PostgreSQL</option>
               </select>
+            </div>
+
+            <div class="field">
+              <label class="label-row" for="szTxnDay">
+                <span>Transactions per day (avg)</span>
+                <button type="button" class="info-tip" aria-label="Help" data-tip="Average daily row-level transactions (inserts/updates). Local mid-market workloads are usually under 10,000 rows/day."></button>
+              </label>
+              <select id="szTxnDay"></select>
+            </div>
+            <div class="field">
+              <label class="label-row" for="szActiveUsers">
+                <span>Active users</span>
+                <button type="button" class="info-tip" aria-label="Help" data-tip="How many users are typically active at the same time (peak concurrent), not total registered accounts."></button>
+              </label>
+              <select id="szActiveUsers"></select>
+            </div>
+            <div class="field">
+              <label class="label-row" for="szTablesRange">
+                <span>Number of tables</span>
+                <button type="button" class="info-tip" aria-label="Help" data-tip="Approximate count of user tables. Larger schemas add a small complexity factor."></button>
+              </label>
+              <select id="szTablesRange"></select>
+            </div>
+
+            <div class="field">
+              <label class="label-row" for="szCurrentDb">
+                <span>Current DB size</span>
+                <button type="button" class="info-tip" aria-label="Help" data-tip="Approximate size of the database today (data + indexes). Used with estimated size to plan storage headroom."></button>
+              </label>
+              <select id="szCurrentDb"></select>
+            </div>
+            <div class="field">
+              <label class="label-row" for="szEstimatedDb">
+                <span>Estimated DB size to start</span>
+                <button type="button" class="info-tip" aria-label="Help" data-tip="Expected database size when you go live or after initial load (if greenfield, use your planned start size). Planning uses the larger of current vs estimated."></button>
+              </label>
+              <select id="szEstimatedDb"></select>
             </div>
             <div class="field">
               <label class="label-row" for="szCriticality">
@@ -174,66 +219,29 @@
                 <span>What the app is about</span>
                 <button type="button" class="info-tip" aria-label="Help" data-tip="Short plain-language description (what users do, peak times, special loads). Shown on the result for context; not used in the math."></button>
               </label>
-              <textarea id="appAbout" placeholder="e.g. Multi-tenant SaaS for inventory; peak at month-end; mostly OLTP with a few heavy reports."></textarea>
+              <textarea id="appAbout" placeholder="e.g. Local ERP for wholesale; ~40 office users; mostly daytime OLTP; month-end reports."></textarea>
             </div>
 
-            <div class="field">
-              <label class="label-row" for="szUsers">
-                <span>Total users</span>
-                <button type="button" class="info-tip" aria-label="Help" data-tip="Registered or named users of the application (not all online at once). If you leave concurrent users blank, ~10% of this is assumed as concurrent."></button>
-              </label>
-              <input id="szUsers" type="number" min="0" step="1" />
-            </div>
-            <div class="field">
-              <label class="label-row" for="szConcurrent">
-                <span>Concurrent users (optional)</span>
-                <button type="button" class="info-tip" aria-label="Help" data-tip="How many users are typically active at the same time (peak). Stronger driver of CPU/RAM than total users. Leave blank to use ~10% of total users."></button>
-              </label>
-              <input id="szConcurrent" type="number" min="0" step="1" placeholder="defaults to ~10% of users" />
-            </div>
-            <div class="field">
-              <label class="label-row" for="szTables">
-                <span>Number of tables</span>
-                <button type="button" class="info-tip" aria-label="Help" data-tip="Approximate count of database tables (user tables). Large schemas add a small complexity factor to the workload score."></button>
-              </label>
-              <input id="szTables" type="number" min="0" step="1" />
-            </div>
-
-            <div class="field">
-              <label class="label-row" for="szDailyRows">
-                <span>Rows inserted / day</span>
-                <button type="button" class="info-tip" aria-label="Help" data-tip="Rough daily INSERT/update volume in rows (new or changed). Use peak or typical business day. Helps estimate write intensity."></button>
-              </label>
-              <input id="szDailyRows" type="number" min="0" step="1" />
-            </div>
             <div class="field">
               <label class="label-row" for="szDailyGb">
-                <span>Data volume insert / day (GB)</span>
-                <button type="button" class="info-tip" aria-label="Help" data-tip="How much new data (in gigabytes) is written per day. Prefer this when row size varies a lot. Used for storage growth sizing."></button>
+                <span>Data growth / day (GB, optional)</span>
+                <button type="button" class="info-tip" aria-label="Help" data-tip="Optional. How much new data (GB) is written per day. Leave blank to estimate lightly from transaction volume."></button>
               </label>
-              <input id="szDailyGb" type="number" min="0" step="0.1" />
+              <input id="szDailyGb" type="number" min="0" step="0.1" placeholder="optional" />
             </div>
-            <div class="field">
-              <label class="label-row" for="szWeeklyGb">
-                <span>Data volume / week (GB)</span>
-                <button type="button" class="info-tip" aria-label="Help" data-tip="Optional. Total new data per week. If blank, calculated as daily × 7."></button>
-              </label>
-              <input id="szWeeklyGb" type="number" min="0" step="0.1" placeholder="optional" />
-            </div>
-
             <div class="field">
               <label class="label-row" for="szMonthlyGb">
-                <span>Data volume / month (GB)</span>
-                <button type="button" class="info-tip" aria-label="Help" data-tip="Optional. Total new data per month. If blank, estimated from weekly × ~4.3. Main input for annual storage projection."></button>
+                <span>Data growth / month (GB, optional)</span>
+                <button type="button" class="info-tip" aria-label="Help" data-tip="Optional. Total new data per month. If blank, estimated from daily × ~30."></button>
               </label>
               <input id="szMonthlyGb" type="number" min="0" step="0.1" placeholder="optional" />
             </div>
             <div class="field">
               <label class="label-row" for="szRpo">
                 <span>Target RPO (minutes)</span>
-                <button type="button" class="info-tip" aria-label="Help" data-tip="Recovery Point Objective: how many minutes of data loss is acceptable after a failure. Example: 15 means you can lose up to 15 minutes. ≤15 strongly suggests high/sync HADR."></button>
+                <button type="button" class="info-tip" aria-label="Help" data-tip="Recovery Point Objective: how many minutes of data loss is acceptable after a failure. ≤15 strongly suggests high/sync HADR."></button>
               </label>
-              <input id="szRpo" type="number" min="0" step="1" placeholder="e.g. 15" />
+              <input id="szRpo" type="number" min="0" step="1" placeholder="e.g. 60" />
             </div>
           </div>
 
@@ -248,39 +256,39 @@
 
       <aside class="rules-ref">
         <details open>
-          <summary>Built-in application rules (summary)</summary>
+          <summary>Local market sizing guide</summary>
           <div class="rule-grid" id="rulesSummary">
             <div class="rule-item">
+              <h4>Starter</h4>
+              <p>~4 cores / 16 GB / 256 GB SSD — dev/test or very light production.</p>
+            </div>
+            <div class="rule-item">
+              <h4>Standard (local mid)</h4>
+              <p>~8 cores / 32 GB / 512 GB SSD — typical local mid-sized OLTP (&lt;10k txn/day).</p>
+            </div>
+            <div class="rule-item">
+              <h4>Upper local</h4>
+              <p>~16 cores / 64 GB / 1 TB SSD — busier local production; common max box.</p>
+            </div>
+            <div class="rule-item">
+              <h4>Growth / Enterprise</h4>
+              <p>Only when Market reach is Regional or Enterprise — beyond usual local hardware.</p>
+            </div>
+            <div class="rule-item">
               <h4>OLTP / Transactional</h4>
-              <p>Higher IOPS &amp; HADR bias. Moderate MAXDOP-style CPU; RAM for buffer cache.</p>
+              <p>SSD + buffer cache RAM; moderate MAXDOP; backups first for local market.</p>
             </div>
             <div class="rule-item">
-              <h4>E-commerce</h4>
-              <p>Size for peaks; stronger network weight; premium SSD; high HADR.</p>
+              <h4>Mixed / Reporting</h4>
+              <p>More CPU/RAM; prefer replica for heavy reports so OLTP stays stable.</p>
             </div>
             <div class="rule-item">
-              <h4>SaaS / Multi-tenant</h4>
-              <p>RAM &amp; connection pooling matter; growth-oriented storage; high HADR.</p>
+              <h4>E-commerce / SaaS</h4>
+              <p>Size for peaks; pooling and cache reduce DB pressure.</p>
             </div>
             <div class="rule-item">
-              <h4>Reporting / Analytics</h4>
-              <p>CPU/RAM/storage heavy; throughput SSD; medium HADR (often async).</p>
-            </div>
-            <div class="rule-item">
-              <h4>Mixed OLTP + Reporting</h4>
-              <p>Balanced uplift across resources; prefer read replica for reports.</p>
-            </div>
-            <div class="rule-item">
-              <h4>IoT / Telemetry</h4>
-              <p>Ingest + storage growth dominate; partition/retention planning essential.</p>
-            </div>
-            <div class="rule-item">
-              <h4>CMS / Content</h4>
-              <p>Often smaller DB tier if CDN/cache offload media; medium HADR.</p>
-            </div>
-            <div class="rule-item">
-              <h4>Batch / ETL</h4>
-              <p>CPU + throughput disk for job windows; HADR can be lower if restartable.</p>
+              <h4>Batch / IoT / CMS</h4>
+              <p>Storage or job-window CPU dominate; HADR often lighter if restartable.</p>
             </div>
           </div>
         </details>

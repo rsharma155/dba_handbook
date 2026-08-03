@@ -87,6 +87,9 @@ public sealed class AppSessionSettings
     public string DestinationListFile { get; set; } = "";
     public CompareOptions Options { get; set; } = new();
 
+    /// <summary>True when the user last used the dark theme.</summary>
+    public bool DarkTheme { get; set; }
+
     // Window chrome (feedback_2 — remember size/position)
     public int WindowX { get; set; } = int.MinValue;
     public int WindowY { get; set; } = int.MinValue;

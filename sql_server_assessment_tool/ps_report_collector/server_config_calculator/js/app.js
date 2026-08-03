@@ -10,6 +10,14 @@
       .replace(/"/g, '&quot;');
   }
 
+  function fillSelect(selectEl, options, selectedValue) {
+    if (!selectEl) return;
+    selectEl.innerHTML = options
+      .map((o) => `<option value="${escapeHtml(o.value)}">${escapeHtml(o.label)}</option>`)
+      .join('');
+    if (selectedValue) selectEl.value = selectedValue;
+  }
+
   function initTabs() {
     $$('.tab-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -38,6 +46,22 @@
     syncConfigEngineFields();
   }
 
+  function populateMarketProfiles() {
+    const select = $('#szMarket');
+    const profiles = window.ServerConfigRules.MARKET_PROFILES;
+    select.innerHTML = Object.values(profiles)
+      .map((m) => `<option value="${m.id}">${escapeHtml(m.label)}</option>`)
+      .join('');
+    select.value = 'local';
+    updateMarketHelp();
+    select.addEventListener('change', updateMarketHelp);
+  }
+
+  function updateMarketHelp() {
+    const market = window.ServerConfigRules.MARKET_PROFILES[$('#szMarket').value];
+    $('#marketHelp').textContent = market ? market.description : '';
+  }
+
   function populateAppTypes() {
     const select = $('#appType');
     const rules = window.ServerConfigRules.APP_TYPES;
@@ -52,6 +76,15 @@
   function updateAppTypeHelp() {
     const app = window.ServerConfigRules.APP_TYPES[$('#appType').value];
     $('#appTypeHelp').textContent = app ? app.description : '';
+  }
+
+  function populateSizingDropdowns() {
+    const opts = window.ServerConfigRules.INPUT_OPTIONS;
+    fillSelect($('#szTxnDay'), opts.transactionsPerDay, '5k-10k');
+    fillSelect($('#szActiveUsers'), opts.activeUsers, '25-50');
+    fillSelect($('#szTablesRange'), opts.tables, '50-100');
+    fillSelect($('#szCurrentDb'), opts.dbSizeGb, '20-50');
+    fillSelect($('#szEstimatedDb'), opts.dbSizeGb, '50-100');
   }
 
   function num(id) {
@@ -69,7 +102,6 @@
       storageGb: num('#hwStorage'),
       storageType: $('#hwStorageType').value,
       cpuType: $('#hwCpuType').value,
-      // NUMA is a SQL Server planning input; Postgres path always uses 1 (unused).
       numaNodes: numaFieldVisible ? num('#hwNuma') || 1 : 1,
       workload: $('#hwWorkload').value,
       maxConnections: maxConnVisible ? num('#hwMaxConn') || 0 : 0,
@@ -161,14 +193,15 @@
 
   function readSizingForm() {
     return {
+      marketProfile: $('#szMarket').value,
       appType: $('#appType').value,
       appAbout: $('#appAbout').value.trim(),
-      users: num('#szUsers'),
-      concurrentUsers: num('#szConcurrent'),
-      tables: num('#szTables'),
-      dailyInsertRows: num('#szDailyRows'),
+      transactionsPerDay: $('#szTxnDay').value,
+      activeUsersRange: $('#szActiveUsers').value,
+      tablesRange: $('#szTablesRange').value,
+      currentDbSizeRange: $('#szCurrentDb').value,
+      estimatedDbSizeRange: $('#szEstimatedDb').value,
       dailyInsertGb: num('#szDailyGb'),
-      weeklyInsertGb: num('#szWeeklyGb'),
       monthlyInsertGb: num('#szMonthlyGb'),
       criticality: $('#szCriticality').value,
       rpoMinutes: num('#szRpo'),
@@ -179,6 +212,7 @@
   function renderSizingResult(result, dbConfigs) {
     const r = result.recommendation;
     const about = $('#appAbout').value.trim();
+    const summary = result.inputSummary || {};
 
     let html = `
       <section class="result-card highlight">
@@ -187,21 +221,28 @@
           <span class="badge tier-${result.tier}">${escapeHtml(r.serverType)}</span>
         </div>
         ${about ? `<p class="app-about">${escapeHtml(about)}</p>` : ''}
+        <p class="muted" style="margin:0 0 0.75rem">Market: <strong>${escapeHtml(r.marketProfile || result.market.label)}</strong></p>
         <div class="kpi-row">
           <div class="kpi"><span class="kpi-label">vCPU</span><span class="kpi-value">${r.vcpu}</span></div>
           <div class="kpi"><span class="kpi-label">RAM</span><span class="kpi-value">${r.ramGb} GB</span></div>
           <div class="kpi"><span class="kpi-label">Storage</span><span class="kpi-value">${r.storageGb} GB</span></div>
-          <div class="kpi"><span class="kpi-label">Network</span><span class="kpi-value">${r.networkMbps} Mbps</span></div>
+          <div class="kpi"><span class="kpi-label">Network</span><span class="kpi-value">${escapeHtml(r.networkLabel)}</span></div>
         </div>
         <table class="data-table">
           <tbody>
             <tr><th>Server type</th><td>${escapeHtml(r.serverType)} — ${escapeHtml(result.tierDescription)}</td></tr>
             <tr><th>Storage type</th><td>${escapeHtml(r.storageType)} (${escapeHtml(r.storageIopsHint)})</td></tr>
-            <tr><th>Network class</th><td>${escapeHtml(r.networkLabel)}</td></tr>
+            <tr><th>Network class</th><td>${escapeHtml(r.networkLabel)} (~${r.networkMbps} Mbps class)</td></tr>
             <tr><th>HADR</th><td><strong>${escapeHtml(r.hadrLevel)}</strong><br><span class="muted">${escapeHtml(r.hadrDetail)}</span></td></tr>
             <tr><th>Workload score</th><td>${result.workload.score}/100</td></tr>
-            <tr><th>Projected annual data</th><td>~${r.projectedAnnualDataGb} GB (before indexes/headroom)</td></tr>
+            <tr><th>Current vs estimated DB</th><td>~${r.currentDbGb} GB current → ~${r.estimatedDbGb} GB estimated start</td></tr>
+            <tr><th>Projected data (planning)</th><td>~${r.projectedAnnualDataGb} GB (before indexes/headroom in storage pick)</td></tr>
             <tr><th>App type</th><td>${escapeHtml(result.app.label)}</td></tr>
+            <tr><th>Inputs used</th><td>
+              Txn/day: ${escapeHtml(summary.transactionsPerDay || 'n/a')}; 
+              Active users: ${escapeHtml(summary.activeUsers || 'n/a')}; 
+              Tables: ${escapeHtml(summary.tables || 'n/a')}
+            </td></tr>
           </tbody>
         </table>
         <h4>Rationale</h4>
@@ -226,8 +267,8 @@
   function onCalculateSizing(e) {
     e.preventDefault();
     const form = readSizingForm();
-    if (!form.users && !form.concurrentUsers && !form.dailyInsertRows && !form.dailyInsertGb) {
-      alert('Enter at least users/concurrency or daily insert volume.');
+    if (!form.marketProfile || !form.transactionsPerDay || !form.activeUsersRange) {
+      alert('Please select market, transactions/day, and active users.');
       return;
     }
     const result = window.ServerSizing.fromForm(form);
@@ -253,19 +294,17 @@
   function init() {
     initTabs();
     initEngineFieldToggle();
+    populateMarketProfiles();
     populateAppTypes();
+    populateSizingDropdowns();
     $('#configForm').addEventListener('submit', onCalculateConfig);
     $('#sizingForm').addEventListener('submit', onCalculateSizing);
     $('#exportSizingBtn')?.addEventListener('click', exportSizingJson);
 
+    // Local mid-market defaults for hardware tuner
     $('#hwVcpu').value = 8;
-    $('#hwRam').value = 64;
-    $('#hwStorage').value = 1000;
-    $('#szUsers').value = 500;
-    $('#szConcurrent').value = 50;
-    $('#szTables').value = 120;
-    $('#szDailyRows').value = 500000;
-    $('#szDailyGb').value = 5;
+    $('#hwRam').value = 32;
+    $('#hwStorage').value = 512;
   }
 
   document.addEventListener('DOMContentLoaded', init);
