@@ -1,15 +1,14 @@
 <#
 .SYNOPSIS
-    Initial SQL Server architectural assessment collector for V2 / modernization engagements.
+    Limited-detail SQL Server initial assessment collector (HTML and/or Excel).
 
 .DESCRIPTION
-    Connects with SQL authentication (normally sa), collects current-state, schema,
-    index, code-quality, compatibility, performance baseline, HA/DR/sync, security,
-    and capacity evidence, then writes a self-contained HTML report and/or Excel
-    workbook plus an audit log.
+    Same collector family as Invoke-SqlInitialAssessment.ps1, but the lighter
+    variant: one optional database name, instance queries are not filtered to a
+    comma-separated database list, and the Excel workbook is a simpler dump
+    (Summary + one sheet per populated section, no category prefixes/charts).
 
-    Designed for Phase-1 / initial assessment collection so findings can later feed
-    architecture, sync, migration, and remediation documents.
+    Writes a self-contained HTML report and/or Excel workbook plus an audit log.
 
 .PARAMETER ServerIP
     SQL Server host/IP, optionally including instance or port.
@@ -24,39 +23,24 @@
 .PARAMETER LogBackupSlaMinutes
     Maximum acceptable log-backup age for FULL/BULK_LOGGED databases.
 .PARAMETER Database
-    Optional database scope. One name, or a comma-separated list (alias:
-    DatabaseList). When set, per-database collectors and DatabaseName-scoped
-    instance queries run only for those ONLINE accessible user databases.
-    Empty/omitted = all user databases (instance-wide collectors unchanged).
+    Optional single user database to assess. Default: all accessible user databases.
 .PARAMETER OutputFormat
     Primary output artifact(s). Alias: -o.
     Html  = HTML report only (default).
     Excel = Excel workbook only (requires ImportExcel; still writes the .log).
     Both  = HTML report and Excel workbook.
 .PARAMETER ExportExcel
-    Backward-compatible switch: when set with the default Html OutputFormat,
-    behaves as -OutputFormat Both (HTML + Excel). Requires ImportExcel.
+    When set with the default Html OutputFormat, behaves as -OutputFormat Both.
 .PARAMETER OpenReport
     Opens the primary report after generation (HTML when produced; otherwise the .xlsx).
 
 .EXAMPLE
     $cred = Get-Credential -UserName sa
-    .\Invoke-SqlInitialAssessment.ps1 -ServerIP '192.168.1.100' -Credential $cred -OpenReport
+    .\Invoke-SqlInitialAssessment_minimal.ps1 -ServerIP '192.168.1.100' -Credential $cred -OpenReport
 
 .EXAMPLE
     $cred = Get-Credential -UserName sa
-    .\Invoke-SqlInitialAssessment.ps1 -ServerIP '192.168.1.100' -Credential $cred -o Excel
-    # Excel-first shareable workbook (requires ImportExcel). No HTML file is written.
-
-.EXAMPLE
-    $cred = Get-Credential -UserName sa
-    .\Invoke-SqlInitialAssessment.ps1 -ServerIP '192.168.1.100' -Credential $cred -OutputFormat Both
-    # Same as -ExportExcel with default Html: HTML + Excel.
-
-.EXAMPLE
-    $cred = Get-Credential -UserName sa
-    .\Invoke-SqlInitialAssessment.ps1 -ServerIP '192.168.1.100' -Credential $cred `
-        -Database 'AdventureWorks2025,ETLWorkshopDB' -o Excel
+    .\Invoke-SqlInitialAssessment_minimal.ps1 -ServerIP '192.168.1.100' -Credential $cred -o Excel
 #>
 
 #Requires -Version 5.1
@@ -91,7 +75,6 @@ param(
     [int]$LogBackupSlaMinutes = 30,
 
     [Parameter()]
-    [Alias('DatabaseList')]
     [string]$Database,
 
     [Parameter()]
@@ -121,7 +104,7 @@ $WantExcel = $ResolvedOutputFormat -in @('Excel', 'Both')
 # INITIALIZATION
 # =================================================================================
 
-$ScriptVersion = '1.3.0'
+$ScriptVersion = '1.2.0'
 Import-Module dbatools -ErrorAction Stop
 $DbatoolsVersion = try {
     (Get-Module dbatools | Sort-Object Version -Descending | Select-Object -First 1).Version.ToString()
@@ -178,7 +161,7 @@ $ParameterSummary = (@(
         "DaysToAnalyze=$DaysToAnalyze",
         "FullBackupSlaHours=$FullBackupSlaHours",
         "LogBackupSlaMinutes=$LogBackupSlaMinutes",
-        "Database=$(if ([string]::IsNullOrWhiteSpace($Database)) { 'ALL' } else { $Database })",
+        "Database=$(if ($Database) { $Database } else { 'ALL' })",
         "OutputFormat=$ResolvedOutputFormat",
         "ExportExcel=$([bool]$ExportExcel)",
         "OpenReport=$([bool]$OpenReport)",
@@ -295,14 +278,6 @@ function Get-AssessmentSql {
     }
     foreach ($tokenName in $Tokens.Keys) {
         $tokenValue = $Tokens[$tokenName]
-        if ($tokenName -eq 'DatabaseFilter') {
-            if ($null -eq $tokenValue) { $tokenValue = '' }
-            if ($tokenValue -isnot [string]) {
-                throw "SQL token 'DatabaseFilter' must be a string (safe filter fragment or empty)."
-            }
-            $sql = $sql.Replace('{{' + $tokenName + '}}', $tokenValue)
-            continue
-        }
         if ($tokenValue -isnot [byte] -and $tokenValue -isnot [int16] -and
             $tokenValue -isnot [int32] -and $tokenValue -isnot [int64]) {
             throw "SQL token '$tokenName' must be a validated integer."
@@ -315,70 +290,10 @@ function Get-AssessmentSql {
     return $sql
 }
 
-function ConvertTo-AssessmentDatabaseNameList {
-    [CmdletBinding()]
-    param([AllowNull()][string]$Value)
-
-    if ([string]::IsNullOrWhiteSpace($Value)) { return @() }
-
-    $names = [System.Collections.Generic.List[string]]::new()
-    $seen = @{}
-    foreach ($part in ($Value -split ',')) {
-        $trimmed = $part.Trim()
-        if ([string]::IsNullOrWhiteSpace($trimmed)) {
-            throw "Database list contains an empty name. Use a comma-separated list with no empty tokens (e.g. -Database 'Sales,HR')."
-        }
-        $key = $trimmed.ToUpperInvariant()
-        if (-not $seen.ContainsKey($key)) {
-            $seen[$key] = $true
-            $names.Add($trimmed)
-        }
-    }
-    return @($names)
-}
-
-function New-AssessmentDatabaseFilter {
-    [CmdletBinding()]
-    param(
-        [AllowEmptyCollection()][string[]]$DatabaseNames,
-        [Parameter(Mandatory)][string]$Expression,
-        [switch]$KeepNull
-    )
-
-    if ($null -eq $DatabaseNames -or @($DatabaseNames).Count -eq 0) { return '' }
-
-    $quoted = foreach ($name in $DatabaseNames) {
-        "N'{0}'" -f ($name -replace "'", "''")
-    }
-    $inList = $quoted -join ', '
-    if ($KeepNull) {
-        return (' AND ({0} IS NULL OR {0} IN ({1}))' -f $Expression, $inList)
-    }
-    return (' AND {0} IN ({1})' -f $Expression, $inList)
-}
-
-function Get-AssessmentSqlWithDbFilter {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)][string]$Name,
-        [Parameter(Mandatory)][string]$Expression,
-        [hashtable]$Tokens = @{},
-        [switch]$KeepNull
-    )
-
-    $merged = @{}
-    foreach ($key in $Tokens.Keys) { $merged[$key] = $Tokens[$key] }
-    $merged['DatabaseFilter'] = New-AssessmentDatabaseFilter `
-        -DatabaseNames $AssessmentDatabaseFilterNames `
-        -Expression $Expression `
-        -KeepNull:$KeepNull
-    return (Get-AssessmentSql -Name $Name -Tokens $merged)
-}
-
 foreach ($sqlDependency in $AssessmentSqlFiles.Keys) {
-    $dependencyTokens = @{ DatabaseFilter = '' }
+    $dependencyTokens = @{}
     if ($sqlDependency -in @('CapacityQuery', 'AutogrowthQuery', 'AgentFailuresQuery')) {
-        $dependencyTokens['DaysToAnalyze'] = $DaysToAnalyze
+        $dependencyTokens = @{ DaysToAnalyze = $DaysToAnalyze }
     }
     [void](Get-AssessmentSql -Name $sqlDependency -Tokens $dependencyTokens)
 }
@@ -584,65 +499,25 @@ catch {
 $Inventory = @(Invoke-AssessmentQuery -Name 'Server and Instance Inventory' -Query (Get-AssessmentSql -Name 'InventoryQuery'))
 $Services = @(Invoke-AssessmentQuery -Name 'SQL Services' -Query (Get-AssessmentSql -Name 'ServiceQuery'))
 $Volumes = @(Invoke-AssessmentQuery -Name 'Infrastructure Volumes' -Query (Get-AssessmentSql -Name 'InfrastructureQuery'))
-$AllDatabases = @(Invoke-AssessmentQuery -Name 'Database Landscape' -Query (Get-AssessmentSql -Name 'DatabaseQuery' -Tokens @{ DatabaseFilter = '' }))
+$Databases = @(Invoke-AssessmentQuery -Name 'Database Landscape' -Query (Get-AssessmentSql -Name 'DatabaseQuery'))
 $Configs = @(Invoke-AssessmentQuery -Name 'Instance Configuration' -Query (Get-AssessmentSql -Name 'ConfigQuery'))
 [void](Invoke-AssessmentQuery -Name 'Trace Flags' -Query (Get-AssessmentSql -Name 'TraceFlagQuery'))
 
-$AccessibleUserDatabaseNames = @($AllDatabases | Where-Object {
+$UserDatabaseNames = @($Databases | Where-Object {
         $_.Status -eq 'ONLINE' -and
         $_.DatabaseName -notin @('master', 'model', 'msdb', 'tempdb') -and
         -not (Test-HasValue $_.SourceDatabaseId) -and
         ([int]$_.HasDbAccess -eq 1)
     } | Select-Object -ExpandProperty DatabaseName)
 
-$RequestedDatabaseNames = @(ConvertTo-AssessmentDatabaseNameList -Value $Database)
-$DatabaseScopeExplicit = $RequestedDatabaseNames.Count -gt 0
-if ($DatabaseScopeExplicit) {
-    $missing = [System.Collections.Generic.List[string]]::new()
-    foreach ($requested in $RequestedDatabaseNames) {
-        $match = @($AllDatabases | Where-Object { $_.DatabaseName -eq $requested })
-        if ($match.Count -eq 0) {
-            $missing.Add("'$requested' (not found on instance)")
-            continue
-        }
-        $row = $match[0]
-        if ($row.Status -ne 'ONLINE') {
-            $missing.Add("'$requested' (state=$($row.Status), not ONLINE)")
-        }
-        elseif ($row.DatabaseName -in @('master', 'model', 'msdb', 'tempdb')) {
-            $missing.Add("'$requested' (system database; pass a user database)")
-        }
-        elseif (Test-HasValue $row.SourceDatabaseId) {
-            $missing.Add("'$requested' (database snapshot)")
-        }
-        elseif ([int]$row.HasDbAccess -ne 1) {
-            $missing.Add("'$requested' (not accessible to the login)")
-        }
+if ($Database) {
+    if ($UserDatabaseNames -notcontains $Database) {
+        throw "Database '$Database' was not found among accessible online user databases."
     }
-    if ($missing.Count -gt 0) {
-        throw ("Database scope validation failed: {0}. Fix -Database / -DatabaseList typos or restore access, then retry." -f ($missing -join '; '))
-    }
-    $UserDatabaseNames = @(foreach ($requested in $RequestedDatabaseNames) {
-            ($AllDatabases | Where-Object { $_.DatabaseName -eq $requested } | Select-Object -First 1).DatabaseName
-        })
-    $Databases = @($AllDatabases | Where-Object { $_.DatabaseName -in $UserDatabaseNames })
-    $DatabaseScopeLabel = $UserDatabaseNames -join ', '
+    $UserDatabaseNames = @($Database)
 }
-else {
-    $UserDatabaseNames = @($AccessibleUserDatabaseNames)
-    $Databases = @($AllDatabases)
-    $DatabaseScopeLabel = 'All user databases'
-}
-$Sections['Database Landscape'] = $Databases
-$AssessmentDatabaseFilterNames = if ($DatabaseScopeExplicit) { @($UserDatabaseNames) } else { @() }
 
-Write-AssessmentLog -Severity INFO -Section 'Database Scope' `
-    -Message ("Database scope: {0} ({1} user database(s) for per-DB collectors)." -f $DatabaseScopeLabel, $UserDatabaseNames.Count)
-Write-Host ("Database scope: {0}" -f $DatabaseScopeLabel) -ForegroundColor Cyan
 Write-Host ("Assessing {0} user database(s)." -f $UserDatabaseNames.Count) -ForegroundColor Cyan
-Add-Finding -Severity Info -Category 'Collection Scope' -Item 'Database scope' `
-    -Detail ("Run scoped to: {0}." -f $DatabaseScopeLabel) `
-    -Recommendation 'Omit -Database to assess all accessible ONLINE user databases.'
 
 [void](Invoke-PerDatabaseAssessmentQuery -Name 'Database Scoped Configurations' -Query (Get-AssessmentSql -Name 'DbScopedConfigQuery') -DatabaseNames $UserDatabaseNames)
 [void](Invoke-PerDatabaseAssessmentQuery -Name 'Object Inventory' -Query (Get-AssessmentSql -Name 'ObjectInventoryQuery') -DatabaseNames $UserDatabaseNames)
@@ -673,7 +548,7 @@ Add-Finding -Severity Info -Category 'Collection Scope' -Item 'Database scope' `
 [void](Invoke-PerDatabaseAssessmentQuery -Name 'Trigger Analysis' -Query (Get-AssessmentSql -Name 'TriggerQuery') -DatabaseNames $UserDatabaseNames)
 [void](Invoke-PerDatabaseAssessmentQuery -Name 'Code Smells' -Query (Get-AssessmentSql -Name 'CodeSmellQuery') -DatabaseNames $UserDatabaseNames -QueryTimeout 300)
 
-[void](Invoke-AssessmentQuery -Name 'Compatibility Levels' -Query (Get-AssessmentSqlWithDbFilter -Name 'CompatQuery' -Expression 'd.name'))
+[void](Invoke-AssessmentQuery -Name 'Compatibility Levels' -Query (Get-AssessmentSql -Name 'CompatQuery'))
 $DeprecatedDb = @(Invoke-PerDatabaseAssessmentQuery -Name 'Deprecated Features DB' -Query (Get-AssessmentSql -Name 'DeprecatedQuery') -DatabaseNames $UserDatabaseNames -QueryTimeout 300)
 $DeprecatedInstance = @(Invoke-AssessmentQuery -Name 'Deprecated Features Instance' -Query (Get-AssessmentSql -Name 'DeprecatedInstanceQuery') -Database 'msdb')
 $Sections['Deprecated Features'] = @($DeprecatedDb + $DeprecatedInstance)
@@ -681,17 +556,17 @@ if ($Sections.Contains('Deprecated Features DB')) { [void]$Sections.Remove('Depr
 if ($Sections.Contains('Deprecated Features Instance')) { [void]$Sections.Remove('Deprecated Features Instance') }
 
 [void](Invoke-AssessmentQuery -Name 'Wait Statistics' -Query (Get-AssessmentSql -Name 'WaitQuery'))
-[void](Invoke-AssessmentQuery -Name 'Top Resource Consumers' -Query (Get-AssessmentSqlWithDbFilter -Name 'TopQuery' -Expression 'DB_NAME(CONVERT(int, epa.value))'))
-[void](Invoke-AssessmentQuery -Name 'Implicit Conversion Candidates' -Query (Get-AssessmentSqlWithDbFilter -Name 'ImplicitConversionQuery' -Expression 'DB_NAME(CONVERT(int, epa.value))'))
+[void](Invoke-AssessmentQuery -Name 'Top Resource Consumers' -Query (Get-AssessmentSql -Name 'TopQuery'))
+[void](Invoke-AssessmentQuery -Name 'Implicit Conversion Candidates' -Query (Get-AssessmentSql -Name 'ImplicitConversionQuery'))
 [void](Invoke-PerDatabaseAssessmentQuery -Name 'Query Store Status' -Query (Get-AssessmentSql -Name 'QueryStoreQuery') -DatabaseNames $UserDatabaseNames)
 [void](Invoke-PerDatabaseAssessmentQuery -Name 'Query Store Forced Plans' -Query (Get-AssessmentSql -Name 'QueryStoreForcedQuery') -DatabaseNames $UserDatabaseNames)
 [void](Invoke-AssessmentQuery -Name 'TempDB Health' -Query (Get-AssessmentSql -Name 'TempDbQuery') -Database 'tempdb')
-[void](Invoke-AssessmentQuery -Name 'Blocking and Long Running' -Query (Get-AssessmentSqlWithDbFilter -Name 'BlockingQuery' -Expression 'DB_NAME(er.database_id)'))
+[void](Invoke-AssessmentQuery -Name 'Blocking and Long Running' -Query (Get-AssessmentSql -Name 'BlockingQuery'))
 [void](Invoke-AssessmentQuery -Name 'CPU Memory Pressure' -Query (Get-AssessmentSql -Name 'PressureQuery'))
 
 [void](Invoke-AssessmentQuery -Name 'Availability Group Status' -Query (Get-AssessmentSql -Name 'AgQuery'))
-[void](Invoke-AssessmentQuery -Name 'Replication CDC Change Tracking' -Query (Get-AssessmentSqlWithDbFilter -Name 'SyncFeatureQuery' -Expression 'd.name'))
-$Backups = @(Invoke-AssessmentQuery -Name 'Backup Status' -Query (Get-AssessmentSqlWithDbFilter -Name 'BackupQuery' -Expression 'd.name') -Database 'msdb')
+[void](Invoke-AssessmentQuery -Name 'Replication CDC Change Tracking' -Query (Get-AssessmentSql -Name 'SyncFeatureQuery'))
+$Backups = @(Invoke-AssessmentQuery -Name 'Backup Status' -Query (Get-AssessmentSql -Name 'BackupQuery') -Database 'msdb')
 [void](Invoke-AssessmentQuery -Name 'Linked Servers and Broker' -Query (Get-AssessmentSql -Name 'LinkedBrokerQuery'))
 
 [void](Invoke-AssessmentQuery -Name 'Server Security' -Query (Get-AssessmentSql -Name 'SecurityQuery'))
@@ -700,10 +575,10 @@ $Backups = @(Invoke-AssessmentQuery -Name 'Backup Status' -Query (Get-Assessment
 [void](Invoke-PerDatabaseAssessmentQuery -Name 'Database Principals' -Query (Get-AssessmentSql -Name 'DbPrincipalsQuery') -DatabaseNames $UserDatabaseNames)
 [void](Invoke-PerDatabaseAssessmentQuery -Name 'Orphaned Users' -Query (Get-AssessmentSql -Name 'OrphanedUsersQuery') -DatabaseNames $UserDatabaseNames)
 
-[void](Invoke-AssessmentQuery -Name 'Capacity Growth Trends' -Query (Get-AssessmentSqlWithDbFilter -Name 'CapacityQuery' -Expression 'database_name' -Tokens @{ DaysToAnalyze = $DaysToAnalyze }) -Database 'msdb')
+[void](Invoke-AssessmentQuery -Name 'Capacity Growth Trends' -Query (Get-AssessmentSql -Name 'CapacityQuery' -Tokens @{ DaysToAnalyze = $DaysToAnalyze }) -Database 'msdb')
 [void](Invoke-PerDatabaseAssessmentQuery -Name 'Filegroups and Files' -Query (Get-AssessmentSql -Name 'FilegroupQuery') -DatabaseNames $UserDatabaseNames)
 [void](Invoke-PerDatabaseAssessmentQuery -Name 'VLF Assessment' -Query (Get-AssessmentSql -Name 'VlfQuery') -DatabaseNames $UserDatabaseNames)
-[void](Invoke-AssessmentQuery -Name 'Autogrowth Events' -Query (Get-AssessmentSqlWithDbFilter -Name 'AutogrowthQuery' -Expression 'DatabaseName' -Tokens @{ DaysToAnalyze = $DaysToAnalyze }))
+[void](Invoke-AssessmentQuery -Name 'Autogrowth Events' -Query (Get-AssessmentSql -Name 'AutogrowthQuery' -Tokens @{ DaysToAnalyze = $DaysToAnalyze }))
 [void](Invoke-PerDatabaseAssessmentQuery -Name 'Compression Opportunities' -Query (Get-AssessmentSql -Name 'CompressionOppQuery') -DatabaseNames $UserDatabaseNames)
 
 [void](Invoke-AssessmentQuery -Name 'Agent Jobs' -Query (Get-AssessmentSql -Name 'AgentJobsQuery') -Database 'msdb')
@@ -1013,16 +888,6 @@ Invoke-AssessmentAnalysis -Name 'Schema and code analysis' -ScriptBlock {
             -Detail ("{0} forced plan(s) present." -f $forcedPlans.Count) `
             -Recommendation 'Validate forced plans still help after upgrade; watch force_failure_count.'
     }
-
-    foreach ($wait in (@($Sections['Wait Statistics']) | Where-Object {
-                (Compare-Numeric -Value $_.WaitPercent -Operator ge -Threshold 15) -and
-                (Test-HasValue $_.Recommendation) -and
-                [string]$_.Recommendation -ne 'Investigate based on workload.'
-            })) {
-        Add-Finding -Severity Warning -Category 'Wait Statistics' -Item $wait.WaitType `
-            -Detail "$($wait.WaitPercent)% of non-idle waits. $($wait.Recommendation)" `
-            -Recommendation 'Correlate with current workload and baseline before tuning.'
-    }
 }
 
 #endregion
@@ -1039,9 +904,8 @@ $errorCount = $CollectionErrors.Count
 $healthScore = [Math]::Max(0, 100 - ($criticalCount * 12) - ($warningCount * 4) - ($errorCount * 2))
 # Avoid labeling overall health as "Critical" — that word is reserved for finding severity KPIs.
 $healthStatus = if ($healthScore -ge 85) { 'Good' } elseif ($healthScore -ge 65) { 'Fair' } elseif ($healthScore -ge 40) { 'At Risk' } else { 'Poor' }
-$healthClass = if ($healthScore -ge 85) { 'good' } elseif ($healthScore -ge 65) { 'warn' } else { 'bad' }
-$CategoryGroups = @(@($CriticalIssues) + @($WarningIssues) | Group-Object -Property Category | Sort-Object -Property Count -Descending)
 $PopulatedSectionCount = @($Sections.Keys | Where-Object { @($Sections[$_]).Count -gt 0 }).Count
+$DatabaseScopeLabel = if (-not [string]::IsNullOrWhiteSpace($Database)) { $Database } else { 'All user databases' }
 
 #endregion
 
@@ -1392,8 +1256,8 @@ $SectionPurpose = [ordered]@{
     }
     'Wait Statistics' = @{
         Why = 'Waits explain where time is spent since the last reset.'
-        Purpose = 'Top non-idle waits with resource/signal split, percent of total, and recommendations.'
-        Helps = 'Points assessment toward I/O, CPU, locking, memory, or other systemic themes.'
+        Purpose = 'Top wait types with cumulative signal.'
+        Helps = 'Points assessment toward I/O, CPU, locking, or other systemic themes.'
     }
     'Top Resource Consumers' = @{
         Why = 'A small set of queries usually drives CPU and duration.'
@@ -1624,8 +1488,7 @@ function Get-ScopeSectionLink {
 $dbFilterOptions = New-Object System.Collections.Generic.List[string]
 $dbFilterOptions.Add("<option value=''>All databases</option>")
 foreach ($name in ($UserDatabaseNames | Sort-Object)) {
-    $selectedAttr = if ($DatabaseScopeExplicit -and $UserDatabaseNames.Count -eq 1 -and $name -eq $UserDatabaseNames[0]) { ' selected' } else { '' }
-    $dbFilterOptions.Add("<option value='$(ConvertTo-HtmlEncoded $name)'$selectedAttr>$(ConvertTo-HtmlEncoded $name)</option>")
+    $dbFilterOptions.Add("<option value='$(ConvertTo-HtmlEncoded $name)'>$(ConvertTo-HtmlEncoded $name)</option>")
 }
 
 $navHtml = [System.Text.StringBuilder]::new()
@@ -1644,7 +1507,7 @@ $findingsTable = if ($allFindings.Count -eq 0) {
 <section class='panel active' id='summary'>
   <div class='header'>
     <h1>SQL Server Initial Assessment</h1>
-    <div class='meta'>$(ConvertTo-HtmlEncoded $ServerIP) | $($ReportTimestamp.ToString('yyyy-MM-dd HH:mm')) | v$ScriptVersion | Database scope: $(ConvertTo-HtmlEncoded $DatabaseScopeLabel)</div>
+    <div class='meta'>$(ConvertTo-HtmlEncoded $ServerIP) | $($ReportTimestamp.ToString('yyyy-MM-dd HH:mm')) | v$ScriptVersion</div>
   </div>
   <div class='score-row'>
     <div class='kpis'>
@@ -2306,9 +2169,6 @@ $($panelHtml.ToString())
     databaseFilter.addEventListener('change', function () {
       refreshObjectFilteredTables();
     });
-    if (databaseFilter.value) {
-      databaseFilter.dispatchEvent(new Event('change'));
-    }
   }
   updateFilterIndicator();
   window.addEventListener('beforeprint', function () { controllers.forEach(function (c) { c.printing = true; c.render(); }); });
@@ -2331,15 +2191,12 @@ else {
 #endregion
 
 #region =============================================================================
-# EXCEL EXPORT (ImportExcel module, no Microsoft Excel/COM required)
-# Worksheets are grouped under top-level categories with prefixed sheet names.
+# EXCEL EXPORT (ImportExcel; simpler workbook than the full collector)
 # =================================================================================
 
 $ExcelReportPath = $null
 
 function ConvertTo-ExportObject {
-    # Normalizes rows to plain PSCustomObjects: DataRows are reduced to their query
-    # columns and DBNull values become $null, so Excel cells stay clean.
     param([AllowNull()][object[]]$Data)
 
     foreach ($row in @($Data)) {
@@ -2361,7 +2218,6 @@ function ConvertTo-ExportObject {
 }
 
 function Get-SafeWorksheetName {
-    # Excel worksheet names: max 31 chars, no : \ / ? * [ ] ', unique per workbook.
     param(
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][hashtable]$UsedNames
@@ -2382,408 +2238,10 @@ function Get-SafeWorksheetName {
     return $candidate
 }
 
-function Set-ExcelChartColors {
-    # Best effort: EPPlus 4 (bundled with ImportExcel) does not expose series/point
-    # fill colors, so inject DrawingML solidFill nodes into the chart XML. A failure
-    # only means the chart keeps the default palette.
-    param(
-        [Parameter(Mandatory)][object]$Chart,
-        [string[]]$PointColors,
-        [string]$SeriesColor
-    )
-
-    try {
-        $chartXml = $Chart.ChartXml
-        $nsChart = 'http://schemas.openxmlformats.org/drawingml/2006/chart'
-        $nsDraw = 'http://schemas.openxmlformats.org/drawingml/2006/main'
-        $nsm = New-Object System.Xml.XmlNamespaceManager($chartXml.NameTable)
-        $nsm.AddNamespace('c', $nsChart)
-        $nsm.AddNamespace('a', $nsDraw)
-        $series = $chartXml.SelectSingleNode('//c:ser', $nsm)
-        if ($null -eq $series) { return }
-
-        if ($SeriesColor) {
-            $spPr = $chartXml.CreateElement('c', 'spPr', $nsChart)
-            $fill = $chartXml.CreateElement('a', 'solidFill', $nsDraw)
-            $color = $chartXml.CreateElement('a', 'srgbClr', $nsDraw)
-            $color.SetAttribute('val', $SeriesColor.TrimStart('#'))
-            [void]$fill.AppendChild($color)
-            [void]$spPr.AppendChild($fill)
-            $anchor = $series.SelectSingleNode('c:tx', $nsm)
-            if ($null -eq $anchor) { $anchor = $series.SelectSingleNode('c:order', $nsm) }
-            if ($anchor) { [void]$series.InsertAfter($spPr, $anchor) } else { [void]$series.PrependChild($spPr) }
-        }
-
-        if ($PointColors) {
-            $insertBefore = $series.SelectSingleNode('c:cat', $nsm)
-            if ($null -eq $insertBefore) { $insertBefore = $series.SelectSingleNode('c:val', $nsm) }
-            for ($pointIndex = 0; $pointIndex -lt $PointColors.Count; $pointIndex++) {
-                $dPt = $chartXml.CreateElement('c', 'dPt', $nsChart)
-                $idx = $chartXml.CreateElement('c', 'idx', $nsChart)
-                $idx.SetAttribute('val', [string]$pointIndex)
-                [void]$dPt.AppendChild($idx)
-                $bubble = $chartXml.CreateElement('c', 'bubble3D', $nsChart)
-                $bubble.SetAttribute('val', '0')
-                [void]$dPt.AppendChild($bubble)
-                $spPr = $chartXml.CreateElement('c', 'spPr', $nsChart)
-                $fill = $chartXml.CreateElement('a', 'solidFill', $nsDraw)
-                $color = $chartXml.CreateElement('a', 'srgbClr', $nsDraw)
-                $color.SetAttribute('val', $PointColors[$pointIndex].TrimStart('#'))
-                [void]$fill.AppendChild($color)
-                [void]$dPt.AppendChild($spPr)
-                if ($insertBefore) { [void]$series.InsertBefore($dPt, $insertBefore) } else { [void]$series.AppendChild($dPt) }
-            }
-        }
-    }
-    catch {
-        Write-Verbose ("Chart color styling skipped: {0}" -f $_.Exception.Message)
-    }
-}
-
-function Get-AssessmentExcelCategoryMap {
-    # Ordered category -> section mapping for the Phase-1 initial assessment workbook.
-    # Categories mirror the HTML sidebar groups with short sheet prefixes.
-    @(
-        [PSCustomObject]@{ Category = 'SQL Landscape'; Section = 'Server and Instance Inventory'; Sheet = 'SL-Inventory' }
-        [PSCustomObject]@{ Category = 'SQL Landscape'; Section = 'SQL Services'; Sheet = 'SL-Services' }
-        [PSCustomObject]@{ Category = 'SQL Landscape'; Section = 'Infrastructure Volumes'; Sheet = 'SL-Volumes' }
-        [PSCustomObject]@{ Category = 'SQL Landscape'; Section = 'Database Landscape'; Sheet = 'SL-DB Landscape' }
-
-        [PSCustomObject]@{ Category = 'SQL Instance'; Section = 'Instance Configuration'; Sheet = 'SI-Config' }
-        [PSCustomObject]@{ Category = 'SQL Instance'; Section = 'Trace Flags'; Sheet = 'SI-Trace Flags' }
-        [PSCustomObject]@{ Category = 'SQL Instance'; Section = 'Database Scoped Configurations'; Sheet = 'SI-DB Scoped Config' }
-        [PSCustomObject]@{ Category = 'SQL Instance'; Section = 'Agent Jobs'; Sheet = 'SI-Agent Jobs' }
-        [PSCustomObject]@{ Category = 'SQL Instance'; Section = 'Agent Job Failures'; Sheet = 'SI-Job Failures' }
-        [PSCustomObject]@{ Category = 'SQL Instance'; Section = 'Alerts and Operators'; Sheet = 'SI-Alerts' }
-        [PSCustomObject]@{ Category = 'SQL Instance'; Section = 'Database Mail Status'; Sheet = 'SI-DB Mail' }
-
-        [PSCustomObject]@{ Category = 'DB Design'; Section = 'Object Inventory'; Sheet = 'DB-Object Inventory' }
-        [PSCustomObject]@{ Category = 'DB Design'; Section = 'Table Structure'; Sheet = 'DB-Table Structure' }
-        [PSCustomObject]@{ Category = 'DB Design'; Section = 'Data Types Review'; Sheet = 'DB-Data Types' }
-        [PSCustomObject]@{ Category = 'DB Design'; Section = 'Constraints Analysis'; Sheet = 'DB-Constraints' }
-        [PSCustomObject]@{ Category = 'DB Design'; Section = 'FK Index Coverage'; Sheet = 'DB-FK Indexes' }
-        [PSCustomObject]@{ Category = 'DB Design'; Section = 'Column Nullability and Defaults'; Sheet = 'DB-Nullability' }
-        [PSCustomObject]@{ Category = 'DB Design'; Section = 'Identity and Sequences'; Sheet = 'DB-Identity Seq' }
-        [PSCustomObject]@{ Category = 'DB Design'; Section = 'Special Table Features'; Sheet = 'DB-Special Features' }
-        [PSCustomObject]@{ Category = 'DB Design'; Section = 'Schema Design Risks'; Sheet = 'DB-Schema Risks' }
-        [PSCustomObject]@{ Category = 'DB Design'; Section = 'Cross Database Dependencies'; Sheet = 'DB-Cross-DB Deps' }
-        [PSCustomObject]@{ Category = 'DB Design'; Section = 'Naming Convention Review'; Sheet = 'DB-Naming' }
-        [PSCustomObject]@{ Category = 'DB Design'; Section = 'Code Object Inventory'; Sheet = 'DB-Code Inventory' }
-        [PSCustomObject]@{ Category = 'DB Design'; Section = 'Function Risk Analysis'; Sheet = 'DB-Function Risk' }
-        [PSCustomObject]@{ Category = 'DB Design'; Section = 'Trigger Analysis'; Sheet = 'DB-Triggers' }
-        [PSCustomObject]@{ Category = 'DB Design'; Section = 'Code Smells'; Sheet = 'DB-Code Smells' }
-
-        [PSCustomObject]@{ Category = 'Storage'; Section = 'Filegroups and Files'; Sheet = 'ST-Filegroups' }
-        [PSCustomObject]@{ Category = 'Storage'; Section = 'VLF Assessment'; Sheet = 'ST-VLF' }
-        [PSCustomObject]@{ Category = 'Storage'; Section = 'Autogrowth Events'; Sheet = 'ST-Autogrowth' }
-        [PSCustomObject]@{ Category = 'Storage'; Section = 'Compression Opportunities'; Sheet = 'ST-Compression' }
-        [PSCustomObject]@{ Category = 'Storage'; Section = 'TempDB Health'; Sheet = 'ST-TempDB' }
-
-        [PSCustomObject]@{ Category = 'Tables, Index, Objects'; Section = 'Index Inventory'; Sheet = 'IDX-Inventory' }
-        [PSCustomObject]@{ Category = 'Tables, Index, Objects'; Section = 'Index Usage'; Sheet = 'IDX-Usage' }
-        [PSCustomObject]@{ Category = 'Tables, Index, Objects'; Section = 'Hot Table Access'; Sheet = 'IDX-Hot Tables' }
-        [PSCustomObject]@{ Category = 'Tables, Index, Objects'; Section = 'Tables With Many Indexes'; Sheet = 'IDX-Many Indexes' }
-        [PSCustomObject]@{ Category = 'Tables, Index, Objects'; Section = 'Missing Index Indicators'; Sheet = 'IDX-Missing' }
-        [PSCustomObject]@{ Category = 'Tables, Index, Objects'; Section = 'Duplicate Overlapping Indexes'; Sheet = 'IDX-Duplicates' }
-        [PSCustomObject]@{ Category = 'Tables, Index, Objects'; Section = 'Index Fragmentation'; Sheet = 'IDX-Fragmentation' }
-        [PSCustomObject]@{ Category = 'Tables, Index, Objects'; Section = 'Statistics Database Options'; Sheet = 'IDX-Stats Options' }
-        [PSCustomObject]@{ Category = 'Tables, Index, Objects'; Section = 'Statistics Health'; Sheet = 'IDX-Stats Health' }
-
-        [PSCustomObject]@{ Category = 'Performance'; Section = 'Wait Statistics'; Sheet = 'PERF-Wait Stats' }
-        [PSCustomObject]@{ Category = 'Performance'; Section = 'Top Resource Consumers'; Sheet = 'PERF-Top Consumers' }
-        [PSCustomObject]@{ Category = 'Performance'; Section = 'Implicit Conversion Candidates'; Sheet = 'PERF-Implicit Conv' }
-        [PSCustomObject]@{ Category = 'Performance'; Section = 'Query Store Status'; Sheet = 'PERF-Query Store' }
-        [PSCustomObject]@{ Category = 'Performance'; Section = 'Query Store Forced Plans'; Sheet = 'PERF-QS Forced' }
-        [PSCustomObject]@{ Category = 'Performance'; Section = 'Blocking and Long Running'; Sheet = 'PERF-Blocking' }
-        [PSCustomObject]@{ Category = 'Performance'; Section = 'CPU Memory Pressure'; Sheet = 'PERF-CPU Memory' }
-
-        [PSCustomObject]@{ Category = 'Security'; Section = 'Server Security'; Sheet = 'SEC-Server Security' }
-        [PSCustomObject]@{ Category = 'Security'; Section = 'Server Role Membership'; Sheet = 'SEC-Role Members' }
-        [PSCustomObject]@{ Category = 'Security'; Section = 'Encryption and Surface Area'; Sheet = 'SEC-Encryption' }
-        [PSCustomObject]@{ Category = 'Security'; Section = 'Database Principals'; Sheet = 'SEC-DB Principals' }
-        [PSCustomObject]@{ Category = 'Security'; Section = 'Orphaned Users'; Sheet = 'SEC-Orphaned Users' }
-
-        [PSCustomObject]@{ Category = 'Architecture / HA-DR'; Section = 'Availability Group Status'; Sheet = 'Arch-AG Status' }
-        [PSCustomObject]@{ Category = 'Architecture / HA-DR'; Section = 'Replication CDC Change Tracking'; Sheet = 'Arch-CDC CT Repl' }
-        [PSCustomObject]@{ Category = 'Architecture / HA-DR'; Section = 'Backup Status'; Sheet = 'Arch-Backup Status' }
-        [PSCustomObject]@{ Category = 'Architecture / HA-DR'; Section = 'Linked Servers and Broker'; Sheet = 'Arch-Linked Broker' }
-
-        [PSCustomObject]@{ Category = 'Capacity'; Section = 'Capacity Growth Trends'; Sheet = 'CAP-Growth Trends' }
-
-        [PSCustomObject]@{ Category = 'Migration'; Section = 'Compatibility Levels'; Sheet = 'MIG-Compat Levels' }
-        [PSCustomObject]@{ Category = 'Migration'; Section = 'Deprecated Features'; Sheet = 'MIG-Deprecated' }
-    )
-}
-
-function Export-AssessmentExcel {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)][string]$ExcelPath,
-        [Parameter(Mandatory)][string]$ServerName,
-        [Parameter(Mandatory)][datetime]$GeneratedAt,
-        [Parameter(Mandatory)][int]$LookbackDays,
-        [Parameter(Mandatory)][int]$HealthScore,
-        [Parameter(Mandatory)][string]$HealthLabel,
-        [Parameter(Mandatory)][string]$HealthClass,
-        [Parameter(Mandatory)][int]$PopulatedSections,
-        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Findings,
-        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$CategoryGroups,
-        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$CriticalFindings,
-        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$WarningFindings,
-        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$InfoFindings,
-        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$CollectionErrors,
-        [Parameter(Mandatory)][System.Collections.IDictionary]$Sections,
-        [AllowEmptyCollection()][object[]]$Disks,
-        [AllowEmptyCollection()][object[]]$Waits,
-        [string]$DatabaseScopeLabel = 'All user databases'
-    )
-
-    Add-Type -AssemblyName System.Drawing -ErrorAction SilentlyContinue
-
-    $skyBlue = [System.Drawing.ColorTranslator]::FromHtml('#87CEFA')
-    $paleBlue = [System.Drawing.ColorTranslator]::FromHtml('#E6F4FD')
-    $darkBlue = [System.Drawing.ColorTranslator]::FromHtml('#17243A')
-    $criticalColor = [System.Drawing.ColorTranslator]::FromHtml('#B91C1C')
-    $warningColor = [System.Drawing.ColorTranslator]::FromHtml('#B45309')
-    $goodColor = [System.Drawing.ColorTranslator]::FromHtml('#15803D')
-    $thinBorder = [OfficeOpenXml.Style.ExcelBorderStyle]::Thin
-    $subtitle = "Server: $ServerName | Generated: $($GeneratedAt.ToString('yyyy-MM-dd HH:mm:ss'))"
-
-    $usedSheetNames = @{}
-    [void](Get-SafeWorksheetName -Name 'Summary' -UsedNames $usedSheetNames)
-    [void](Get-SafeWorksheetName -Name 'Contents' -UsedNames $usedSheetNames)
-    [void](Get-SafeWorksheetName -Name 'ChartData' -UsedNames $usedSheetNames)
-
-    $excel = $null
-    $excel = Open-ExcelPackage -Path $ExcelPath -Create
-    try {
-        $summarySheet = Add-Worksheet -ExcelPackage $excel -WorksheetName 'Summary'
-
-        $summarySheet.Cells['A1'].Value = 'SQL Server Initial Assessment'
-        Set-ExcelRange -Worksheet $summarySheet -Range 'A1:E1' -Merge -Bold -FontSize 18 `
-            -FontColor $darkBlue -BackgroundColor $skyBlue -HorizontalAlignment Left
-        $summarySheet.Row(1).Height = 30
-
-        $kpiRows = @(
-            @('Server', [string]$ServerName),
-            @('Generated', $GeneratedAt.ToString('yyyy-MM-dd HH:mm:ss')),
-            @('Lookback (days)', $LookbackDays),
-            @('Database scope', $DatabaseScopeLabel),
-            @('Health Score', "$HealthScore / 100"),
-            @('Health Status', $HealthLabel),
-            @('Critical Findings', @($CriticalFindings).Count),
-            @('Warnings', @($WarningFindings).Count),
-            @('Info Notes', @($InfoFindings).Count),
-            @('Collection Errors', @($CollectionErrors).Count),
-            @('Assessment Sections', $PopulatedSections)
-        )
-        $rowIndex = 3
-        foreach ($kpi in $kpiRows) {
-            $summarySheet.Cells[$rowIndex, 1].Value = $kpi[0]
-            $summarySheet.Cells[$rowIndex, 2].Value = $kpi[1]
-            $rowIndex++
-        }
-        $kpiEndRow = $rowIndex - 1
-        Set-ExcelRange -Worksheet $summarySheet -Range "A3:A$kpiEndRow" -Bold -FontColor $darkBlue -BackgroundColor $paleBlue
-        $kpiRange = $summarySheet.Cells["A3:B$kpiEndRow"]
-        foreach ($side in 'Top', 'Bottom', 'Left', 'Right') { $kpiRange.Style.Border.$side.Style = $thinBorder }
-        $healthColor = switch ($HealthClass) { 'good' { $goodColor } 'warn' { $warningColor } default { $criticalColor } }
-        Set-ExcelRange -Worksheet $summarySheet -Range 'B7:B8' -Bold -FontColor $healthColor
-        if (@($CriticalFindings).Count -gt 0) { Set-ExcelRange -Worksheet $summarySheet -Range 'B9' -Bold -FontColor $criticalColor }
-        if (@($WarningFindings).Count -gt 0) { Set-ExcelRange -Worksheet $summarySheet -Range 'B10' -Bold -FontColor $warningColor }
-        if (@($CollectionErrors).Count -gt 0) { Set-ExcelRange -Worksheet $summarySheet -Range 'B12' -Bold -FontColor $criticalColor }
-        $summarySheet.Column(1).Width = 22
-        $summarySheet.Column(2).Width = 30
-
-        $findingsTitleRow = $kpiEndRow + 2
-        $summarySheet.Cells[$findingsTitleRow, 1].Value = 'All Findings (Critical, then Warning, then Info)'
-        Set-ExcelRange -Worksheet $summarySheet -Range "A${findingsTitleRow}:E${findingsTitleRow}" -Merge -Bold `
-            -FontSize 13 -FontColor $darkBlue -BackgroundColor $skyBlue
-        $findingRows = @(ConvertTo-ExportObject -Data $Findings |
-            Select-Object Severity, Category, Item, Detail, Recommendation)
-        if ($findingRows.Count -gt 0) {
-            $excel = $findingRows | Export-Excel -ExcelPackage $excel -WorksheetName 'Summary' `
-                -StartRow ($findingsTitleRow + 1) -TableName 'Findings' -TableStyle 'Medium2' -PassThru
-            $summarySheet.Column(3).Width = 34
-            $summarySheet.Column(4).Width = 70
-            $summarySheet.Column(4).Style.WrapText = $true
-            $summarySheet.Column(5).Width = 55
-            $summarySheet.Column(5).Style.WrapText = $true
-            $findingsRange = $summarySheet.Cells[($findingsTitleRow + 1), 1, ($findingsTitleRow + 1 + $findingRows.Count), 5]
-            foreach ($side in 'Top', 'Bottom', 'Left', 'Right') { $findingsRange.Style.Border.$side.Style = $thinBorder }
-        }
-        else {
-            $summarySheet.Cells[($findingsTitleRow + 1), 1].Value = 'No findings were recorded.'
-        }
-
-        $contentsSheet = Add-Worksheet -ExcelPackage $excel -WorksheetName 'Contents'
-        $contentsSheet.Cells[1, 1].Value = 'Workbook Contents by Category'
-        Set-ExcelRange -Worksheet $contentsSheet -Range 'A1:D1' -Merge -Bold -FontSize 13 `
-            -FontColor $darkBlue -BackgroundColor $skyBlue
-        $contentsSheet.Cells[2, 1].Value = $subtitle
-        Set-ExcelRange -Worksheet $contentsSheet -Range 'A2:D2' -Merge -FontColor $darkBlue
-        $contentsRows = [System.Collections.Generic.List[object]]::new()
-        $categoryMap = @(Get-AssessmentExcelCategoryMap)
-        foreach ($entry in $categoryMap) {
-            $sectionRows = @(ConvertTo-ExportObject -Data $Sections[$entry.Section])
-            if ($sectionRows.Count -eq 0) { continue }
-            $contentsRows.Add([PSCustomObject]@{
-                    Category  = $entry.Category
-                    Worksheet = $entry.Sheet
-                    Section   = $entry.Section
-                    RowCount  = $sectionRows.Count
-                })
-        }
-        if (@($CollectionErrors).Count -gt 0) {
-            $contentsRows.Add([PSCustomObject]@{
-                    Category  = 'SQL Instance'
-                    Worksheet = 'SI-Collection Errs'
-                    Section   = 'Collection Errors'
-                    RowCount  = @($CollectionErrors).Count
-                })
-        }
-        if ($contentsRows.Count -gt 0) {
-            $excel = @($contentsRows) | Export-Excel -ExcelPackage $excel -WorksheetName 'Contents' `
-                -StartRow 3 -TableName 'tbl_Contents' -TableStyle 'Medium2' -PassThru
-            $contentsSheet.View.FreezePanes(4, 1)
-            $contentsSheet.Column(1).Width = 24
-            $contentsSheet.Column(2).Width = 24
-            $contentsSheet.Column(3).Width = 42
-            $contentsSheet.Column(4).Width = 12
-        }
-        else {
-            $contentsSheet.Cells[3, 1].Value = 'No evidence sections had data.'
-        }
-
-        $chartSheet = Add-Worksheet -ExcelPackage $excel -WorksheetName 'ChartData'
-        $chartSheet.Cells['A1'].Value = 'Severity'
-        $chartSheet.Cells['B1'].Value = 'Count'
-        $chartSheet.Cells['A2'].Value = 'Critical'; $chartSheet.Cells['B2'].Value = @($CriticalFindings).Count
-        $chartSheet.Cells['A3'].Value = 'Warning';  $chartSheet.Cells['B3'].Value = @($WarningFindings).Count
-        $chartSheet.Cells['A4'].Value = 'Info';     $chartSheet.Cells['B4'].Value = @($InfoFindings).Count
-
-        $chartSheet.Cells['D1'].Value = 'Category'
-        $chartSheet.Cells['E1'].Value = 'Count'
-        $categoryForChart = @($CategoryGroups | Select-Object -First 12 | Sort-Object -Property Count)
-        $rowIndex = 2
-        foreach ($group in $categoryForChart) {
-            $chartSheet.Cells[$rowIndex, 4].Value = $group.Name
-            $chartSheet.Cells[$rowIndex, 5].Value = $group.Count
-            $rowIndex++
-        }
-        $categoryEndRow = $rowIndex - 1
-
-        $diskForChart = @($Disks | Where-Object { (Test-HasValue $_.VolumeMountPoint) -and (Test-HasNumericValue $_.FreePct) })
-        $chartSheet.Cells['G1'].Value = 'Volume'
-        $chartSheet.Cells['H1'].Value = 'FreePct'
-        $rowIndex = 2
-        foreach ($disk in $diskForChart) {
-            $chartSheet.Cells[$rowIndex, 7].Value = [string]$disk.VolumeMountPoint
-            $chartSheet.Cells[$rowIndex, 8].Value = [double]$disk.FreePct
-            $rowIndex++
-        }
-        $diskEndRow = $rowIndex - 1
-
-        $waitsForChart = @($Waits | Where-Object { (Test-HasValue $_.WaitType) -and (Test-HasNumericValue $_.WaitPercent) } |
-            Select-Object -First 10 | Sort-Object -Property { [double]$_.WaitPercent })
-        $chartSheet.Cells['J1'].Value = 'WaitType'
-        $chartSheet.Cells['K1'].Value = 'WaitPercent'
-        $rowIndex = 2
-        foreach ($wait in $waitsForChart) {
-            $chartSheet.Cells[$rowIndex, 10].Value = [string]$wait.WaitType
-            $chartSheet.Cells[$rowIndex, 11].Value = [double]$wait.WaitPercent
-            $rowIndex++
-        }
-        $waitsEndRow = $rowIndex - 1
-        Set-ExcelRange -Worksheet $chartSheet -Range 'A1:K1' -Bold -FontColor $darkBlue -BackgroundColor $paleBlue
-        $chartSheet.Hidden = [OfficeOpenXml.eWorkSheetHidden]::Hidden
-
-        if ((@($CriticalFindings).Count + @($WarningFindings).Count + @($InfoFindings).Count) -gt 0) {
-            $severityChart = Add-ExcelChart -Worksheet $summarySheet -Title 'Findings by Severity' `
-                -ChartType Doughnut -XRange 'ChartData!A2:A4' -YRange 'ChartData!B2:B4' `
-                -Row 1 -Column 6 -Width 360 -Height 250 -LegendPosition Right -PassThru
-            Set-ExcelChartColors -Chart $severityChart -PointColors @('B91C1C', 'B45309', '2563EB')
-        }
-        if ($categoryForChart.Count -gt 0) {
-            $categoryChart = Add-ExcelChart -Worksheet $summarySheet -Title 'Critical + Warning Findings by Category' `
-                -ChartType BarClustered -XRange "ChartData!D2:D$categoryEndRow" -YRange "ChartData!E2:E$categoryEndRow" `
-                -Row 1 -Column 12 -Width 420 -Height 250 -NoLegend -PassThru
-            Set-ExcelChartColors -Chart $categoryChart -SeriesColor '17243A'
-        }
-        if ($diskForChart.Count -gt 0) {
-            $diskChart = Add-ExcelChart -Worksheet $summarySheet -Title 'Disk Free % by Volume (warning below 15%)' `
-                -ChartType ColumnClustered -XRange "ChartData!G2:G$diskEndRow" -YRange "ChartData!H2:H$diskEndRow" `
-                -Row 15 -Column 6 -Width 360 -Height 250 -NoLegend -PassThru
-            Set-ExcelChartColors -Chart $diskChart -SeriesColor '2563EB'
-        }
-        if ($waitsForChart.Count -gt 0) {
-            $waitChart = Add-ExcelChart -Worksheet $summarySheet -Title 'Top Wait Types (% of non-idle waits)' `
-                -ChartType BarClustered -XRange "ChartData!J2:J$waitsEndRow" -YRange "ChartData!K2:K$waitsEndRow" `
-                -Row 15 -Column 12 -Width 420 -Height 250 -NoLegend -PassThru
-            Set-ExcelChartColors -Chart $waitChart -SeriesColor '0369A1'
-        }
-
-        foreach ($entry in $categoryMap) {
-            $rows = @(ConvertTo-ExportObject -Data $Sections[$entry.Section])
-            if ($rows.Count -eq 0) { continue }
-            $sheetName = Get-SafeWorksheetName -Name $entry.Sheet -UsedNames $usedSheetNames
-            $tableName = 'tbl_' + (($entry.Category + '_' + $entry.Section) -replace '\W', '_')
-            if ($tableName.Length -gt 250) { $tableName = $tableName.Substring(0, 250) }
-            $excel = $rows | Export-Excel -ExcelPackage $excel -WorksheetName $sheetName `
-                -StartRow 3 -TableName $tableName -TableStyle 'Medium2' -PassThru
-            $sectionSheet = $excel.Workbook.Worksheets[$sheetName]
-            $sectionSheet.Cells[1, 1].Value = ('{0} - {1}' -f $entry.Category, $entry.Section)
-            $lastColumn = $sectionSheet.Dimension.End.Column
-            Set-ExcelRange -Worksheet $sectionSheet -Range ($sectionSheet.Cells[1, 1, 1, [Math]::Max($lastColumn, 4)].Address) `
-                -Merge -Bold -FontSize 13 -FontColor $darkBlue -BackgroundColor $skyBlue
-            $sectionSheet.Cells[2, 1].Value = $subtitle
-            Set-ExcelRange -Worksheet $sectionSheet -Range ($sectionSheet.Cells[2, 1, 2, [Math]::Max($lastColumn, 4)].Address) `
-                -Merge -FontColor $darkBlue
-            $sectionSheet.View.FreezePanes(4, 1)
-            $sectionSheet.Cells[$sectionSheet.Dimension.Address].AutoFitColumns(10, 55)
-            for ($columnIndex = 1; $columnIndex -le $lastColumn; $columnIndex++) {
-                $headerText = [string]$sectionSheet.Cells[3, $columnIndex].Value
-                if ($sectionSheet.Column($columnIndex).Width -ge 54.5 -or
-                    $headerText -match 'Detail|Query|Message|Recommendation|Text|Error|Definition|Command|Smell|Risk') {
-                    $sectionSheet.Column($columnIndex).Style.WrapText = $true
-                }
-            }
-            $dataRange = $sectionSheet.Cells[3, 1, $sectionSheet.Dimension.End.Row, $lastColumn]
-            foreach ($side in 'Top', 'Bottom', 'Left', 'Right') { $dataRange.Style.Border.$side.Style = $thinBorder }
-        }
-
-        $errorRows = @(ConvertTo-ExportObject -Data @($CollectionErrors))
-        if ($errorRows.Count -gt 0) {
-            $errorSheetName = Get-SafeWorksheetName -Name 'SI-Collection Errs' -UsedNames $usedSheetNames
-            $excel = $errorRows | Export-Excel -ExcelPackage $excel -WorksheetName $errorSheetName `
-                -StartRow 3 -TableName 'tbl_Collection_Errors' -TableStyle 'Medium2' -PassThru
-            $errorSheet = $excel.Workbook.Worksheets[$errorSheetName]
-            $errorSheet.Cells[1, 1].Value = 'SQL Instance - Collection Errors'
-            Set-ExcelRange -Worksheet $errorSheet -Range 'A1:B1' -Merge -Bold -FontSize 13 `
-                -FontColor $darkBlue -BackgroundColor $skyBlue
-            $errorSheet.Cells[2, 1].Value = $subtitle
-            Set-ExcelRange -Worksheet $errorSheet -Range 'A2:B2' -Merge -FontColor $darkBlue
-            $errorSheet.View.FreezePanes(4, 1)
-            $errorSheet.Column(1).Width = 40
-            $errorSheet.Column(2).Width = 90
-            $errorSheet.Column(2).Style.WrapText = $true
-        }
-
-        Close-ExcelPackage $excel
-        return $ExcelPath
-    }
-    catch {
-        if ($excel) {
-            try { Close-ExcelPackage $excel -NoSave } catch { Write-Verbose 'Excel package cleanup failed.' }
-        }
-        throw
-    }
-}
-
 if ($WantExcel) {
     Write-Host 'Exporting Excel workbook...' -NoNewline
+    $installHint = 'Install-Module ImportExcel -Scope CurrentUser'
     if (-not (Get-Module -ListAvailable -Name ImportExcel)) {
-        $installHint = 'Install-Module ImportExcel -Scope CurrentUser'
         if ($WantHtml) {
             Write-Host 'SKIPPED' -ForegroundColor Yellow
             Write-AssessmentLog -Severity WARN -Section 'Excel Export' `
@@ -2803,25 +2261,53 @@ if ($WantExcel) {
             $excelPath = Join-Path $OutputPath ($ReportBaseName + '.xlsx')
             if (Test-Path -LiteralPath $excelPath) { Remove-Item -LiteralPath $excelPath -Force }
 
-            $null = Export-AssessmentExcel `
-                -ExcelPath $excelPath `
-                -ServerName $ServerIP `
-                -GeneratedAt $ReportTimestamp `
-                -LookbackDays $DaysToAnalyze `
-                -HealthScore $healthScore `
-                -HealthLabel $healthStatus `
-                -HealthClass $healthClass `
-                -PopulatedSections $PopulatedSectionCount `
-                -Findings $allFindings `
-                -CategoryGroups $CategoryGroups `
-                -CriticalFindings @($CriticalIssues) `
-                -WarningFindings @($WarningIssues) `
-                -InfoFindings @($InformationItems) `
-                -CollectionErrors @($CollectionErrors) `
-                -Sections $Sections `
-                -Disks @($Volumes) `
-                -Waits @($Sections['Wait Statistics']) `
-                -DatabaseScopeLabel $DatabaseScopeLabel
+            $usedSheetNames = @{}
+            [void](Get-SafeWorksheetName -Name 'Summary' -UsedNames $usedSheetNames)
+            $excel = Open-ExcelPackage -Path $excelPath -Create
+            try {
+                $summarySheet = Add-Worksheet -ExcelPackage $excel -WorksheetName 'Summary'
+                $summarySheet.Cells['A1'].Value = 'SQL Server Initial Assessment (limited)'
+                $summarySheet.Cells['A2'].Value = ("Server: {0} | Generated: {1} | Scope: {2} | Health: {3}/100 ({4})" -f `
+                    $ServerIP, $ReportTimestamp.ToString('yyyy-MM-dd HH:mm:ss'), $DatabaseScopeLabel, $healthScore, $healthStatus)
+                $findingRows = @(ConvertTo-ExportObject -Data $allFindings |
+                    Select-Object Severity, Category, Item, Detail, Recommendation)
+                if ($findingRows.Count -gt 0) {
+                    $excel = $findingRows | Export-Excel -ExcelPackage $excel -WorksheetName 'Summary' `
+                        -StartRow 4 -TableName 'Findings' -TableStyle 'Medium2' -PassThru
+                }
+                else {
+                    $summarySheet.Cells['A4'].Value = 'No findings were recorded.'
+                }
+
+                foreach ($sectionName in @($Sections.Keys)) {
+                    $rows = @(ConvertTo-ExportObject -Data $Sections[$sectionName])
+                    if ($rows.Count -eq 0) { continue }
+                    $sheetName = Get-SafeWorksheetName -Name $sectionName -UsedNames $usedSheetNames
+                    $tableName = 'tbl_' + ($sectionName -replace '\W', '_')
+                    if ($tableName.Length -gt 250) { $tableName = $tableName.Substring(0, 250) }
+                    $excel = $rows | Export-Excel -ExcelPackage $excel -WorksheetName $sheetName `
+                        -StartRow 3 -TableName $tableName -TableStyle 'Medium2' -PassThru
+                    $sectionSheet = $excel.Workbook.Worksheets[$sheetName]
+                    $sectionSheet.Cells[1, 1].Value = $sectionName
+                    $sectionSheet.Cells[2, 1].Value = ("{0} | {1} populated section(s)" -f $ServerIP, $PopulatedSectionCount)
+                    $sectionSheet.View.FreezePanes(4, 1)
+                }
+
+                if (@($CollectionErrors).Count -gt 0) {
+                    $errorRows = @(ConvertTo-ExportObject -Data @($CollectionErrors))
+                    $errorSheetName = Get-SafeWorksheetName -Name 'Collection Errors' -UsedNames $usedSheetNames
+                    $null = $errorRows | Export-Excel -ExcelPackage $excel -WorksheetName $errorSheetName `
+                        -StartRow 3 -TableName 'tbl_Collection_Errors' -TableStyle 'Medium2' -PassThru
+                }
+
+                Close-ExcelPackage $excel
+            }
+            catch {
+                if ($excel) {
+                    try { Close-ExcelPackage $excel -NoSave } catch { Write-Verbose 'Excel package cleanup failed.' }
+                }
+                throw
+            }
 
             $ExcelReportPath = $excelPath
             Write-AssessmentLog -Severity INFO -Section 'Excel Export' -Message ("Excel workbook written to '{0}'." -f $excelPath)
@@ -2851,7 +2337,7 @@ if ($WantExcel) {
 
 Write-Host ''
 Write-Host '========================================' -ForegroundColor Cyan
-Write-Host ' Assessment complete' -ForegroundColor Cyan
+Write-Host ' Assessment complete (limited collector)' -ForegroundColor Cyan
 Write-Host (" Format       : {0}" -f $ResolvedOutputFormat)
 Write-Host (" Critical     : {0}" -f $criticalCount)
 Write-Host (" Warning      : {0}" -f $warningCount)
@@ -2895,3 +2381,4 @@ if ($OpenReport) {
 }
 
 #endregion
+
