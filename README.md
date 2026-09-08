@@ -12,7 +12,9 @@ Production-oriented diagnostic handbooks for **Microsoft SQL Server** and **Post
 
 ```
 dba_essential_scripts/
+├── index.html                Website portal — browse, read, and download the handbook
 ├── README.md                 This file — complete documentation for both platforms
+├── docs/                     Portal builder (`build_handbook_portal.py`)
 ├── sql_server/               Microsoft SQL Server 2016+ (scripts, PowerShell, docs)
 └── postgres/                 PostgreSQL 12+ (scripts, shell HTML generator)
 ```
