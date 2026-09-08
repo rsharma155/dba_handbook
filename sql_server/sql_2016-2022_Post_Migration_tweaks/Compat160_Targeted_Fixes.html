@@ -1,0 +1,1059 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Compat 160 Performance Playbook  - SQL 2016 to 2022</title>
+<style>
+:root {
+  --bg-primary:#0f1419; --bg-secondary:#1a1f2e; --bg-card:#1e2538; --bg-hover:#263044;
+  --text-primary:#e1e5ee; --text-secondary:#8892a4; --accent:#3b82f6; --accent-hover:#2563eb;
+  --accent-light:rgba(59,130,246,0.15); --success:#22c55e; --warning:#f59e0b; --danger:#ef4444;
+  --border:#2d3748; --sidebar-width:268px; --header-height:64px;
+}
+[data-theme="light"] {
+  --bg-primary:#f0f2f5; --bg-secondary:#ffffff; --bg-card:#ffffff; --bg-hover:#f5f7fa;
+  --text-primary:#1a202c; --text-secondary:#4a5568; --accent:#0b6e4f; --accent-hover:#085c42;
+  --accent-light:rgba(11,110,79,0.10); --border:#e2e8f0;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Segoe UI',system-ui,sans-serif; background:var(--bg-primary); color:var(--text-primary); }
+.header {
+  position:fixed; top:0; left:0; right:0; height:var(--header-height);
+  background:var(--bg-secondary); border-bottom:1px solid var(--border);
+  display:grid; grid-template-columns:1fr auto 1fr; align-items:center;
+  padding:0 20px; z-index:1000; gap:10px;
+}
+.header-brand h1 { font-size:15px; font-weight:700; line-height:1.25; }
+.header-brand .subtitle { font-size:10px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.4px; }
+.header-actions { display:flex; gap:6px; justify-self:end; align-items:center; }
+.btn-icon, .btn-accent, .btn-sm, .copy-btn {
+  border-radius:8px; cursor:pointer; font-size:12px;
+}
+.btn-icon { width:36px; height:36px; border:1px solid var(--border); background:var(--bg-card); color:var(--text-secondary); }
+.btn-accent { padding:6px 12px; border:none; background:var(--accent); color:#fff; font-weight:500; }
+.btn-sm { padding:4px 9px; border:1px solid var(--border); background:var(--bg-hover); color:var(--text-secondary); }
+.btn-sm.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+.sidebar {
+  position:fixed; top:var(--header-height); left:0; bottom:0; width:var(--sidebar-width);
+  background:var(--bg-secondary); border-right:1px solid var(--border); overflow-y:auto; z-index:900;
+}
+.sidebar-label { padding:10px 18px; font-size:10px; font-weight:700; text-transform:uppercase; color:var(--text-secondary); }
+.sidebar-item { padding:9px 18px; font-size:13px; color:var(--text-secondary); cursor:pointer; border-left:3px solid transparent; }
+.sidebar-item:hover { background:var(--bg-hover); color:var(--text-primary); }
+.sidebar-item.active { background:var(--accent-light); color:var(--accent); border-left-color:var(--accent); font-weight:600; }
+.main-content { margin-left:var(--sidebar-width); margin-top:var(--header-height); padding:22px; min-height:calc(100vh - var(--header-height)); }
+.section-page { display:none; max-width:1060px; }
+.section-page.active { display:block; }
+.page-header h2 { font-size:21px; margin-bottom:5px; }
+.page-header p { color:var(--text-secondary); font-size:13px; margin-bottom:14px; }
+.card-box { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:16px 18px; margin-bottom:14px; }
+.card-box h3 { font-size:14px; margin-bottom:10px; }
+.note, .note-warn { padding:11px 14px; border-radius:0 8px 8px 0; font-size:13px; margin-bottom:12px; }
+.note { background:var(--accent-light); border-left:4px solid var(--accent); }
+.note-warn { background:rgba(245,158,11,0.12); border-left:4px solid var(--warning); }
+.search-bar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; align-items:center; }
+.search-bar input {
+  flex:1; min-width:200px; padding:8px 12px; border-radius:8px; border:1px solid var(--border);
+  background:var(--bg-hover); color:var(--text-primary); font-size:13px;
+}
+.tag-filters { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+.tag-btn {
+  padding:4px 10px; border-radius:20px; border:1px solid var(--border); background:var(--bg-hover);
+  font-size:11px; cursor:pointer; color:var(--text-secondary);
+}
+.tag-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+.script-row {
+  display:grid; grid-template-columns:1.4fr 1.6fr auto; gap:8px; align-items:start;
+  padding:12px 0; border-bottom:1px solid var(--border); font-size:12px;
+}
+@media(max-width:800px){ .script-row { grid-template-columns:1fr; } }
+.script-name { font-family:Consolas,monospace; color:var(--accent); cursor:pointer; font-weight:600; text-decoration:underline; }
+.script-meta-line { display:flex; flex-wrap:wrap; gap:5px; margin-top:5px; }
+.badge { font-size:10px; padding:2px 7px; border-radius:4px; font-weight:600; }
+.badge-safe { background:rgba(34,197,94,0.15); color:var(--success); }
+.badge-test { background:rgba(245,158,11,0.15); color:var(--warning); }
+.badge-risk { background:rgba(239,68,68,0.15); color:var(--danger); }
+.badge-ver { background:var(--bg-hover); color:var(--text-secondary); border:1px solid var(--border); }
+.badge-tag { background:var(--accent-light); color:var(--accent); }
+.deps { color:var(--text-secondary); font-size:11px; margin-top:4px; line-height:1.4; }
+.flowchart { display:flex; flex-direction:column; gap:0; align-items:stretch; max-width:640px; }
+.flow-node {
+  border:1px solid var(--border); border-radius:10px; padding:12px 14px; background:var(--bg-card);
+  cursor:pointer; transition:background .15s, border-color .15s;
+}
+.flow-node:hover { border-color:var(--accent); background:var(--accent-light); }
+.flow-node.last-resort { border-color:var(--warning); }
+.flow-node h4 { font-size:13px; margin-bottom:4px; }
+.flow-node p { font-size:11px; color:var(--text-secondary); margin:0; }
+.flow-arrow { text-align:center; color:var(--text-secondary); font-size:18px; padding:2px 0; }
+.ref-list { list-style:none; }
+.ref-list li { margin:8px 0; font-size:13px; }
+.ref-list a { color:var(--accent); }
+.script-viewer-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.72); z-index:3000; align-items:center; justify-content:center; padding:16px; }
+.script-viewer-overlay.active { display:flex; }
+.script-viewer { width:96vw; max-width:1120px; max-height:92vh; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; display:flex; flex-direction:column; overflow:hidden; }
+.script-viewer-header { padding:12px 16px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+.viewer-meta { font-size:11px; color:var(--text-secondary); margin-top:6px; line-height:1.5; }
+.script-viewer-body { flex:1; overflow:auto; }
+.sql-code { margin:0; padding:14px 18px; font-family:Consolas,monospace; font-size:12px; line-height:1.55; white-space:pre; background:#1e1e1e; color:#d4d4d4; }
+code { font-family:Consolas,monospace; font-size:0.9em; background:var(--bg-hover); color:var(--text-primary); padding:1px 5px; border-radius:4px; }
+pre { margin:0; background:#1e1e1e; border:1px solid var(--border); border-radius:8px; padding:12px 14px; overflow:auto; }
+pre code { background:none; color:#d4d4d4; padding:0; font-size:12px; line-height:1.55; white-space:pre; }
+.copy-btn { padding:5px 11px; border:1px solid var(--border); background:var(--bg-hover); color:var(--text-primary); }
+.copy-btn.accent { background:var(--accent); color:#fff; border-color:var(--accent); }
+.cat-header { font-size:10px; font-weight:700; text-transform:uppercase; color:var(--text-secondary); margin:12px 0 6px; padding-top:8px; border-top:1px solid var(--border); }
+.cat-header:first-child { border-top:none; padding-top:0; margin-top:0; }
+table.tech { width:100%; border-collapse:collapse; font-size:12px; }
+table.tech th, table.tech td { padding:8px; border-bottom:1px solid var(--border); text-align:left; vertical-align:top; }
+table.tech th { background:var(--bg-hover); }
+.guide-progress {
+  height:8px; background:var(--border); border-radius:4px; overflow:hidden; margin:10px 0 6px;
+}
+.guide-progress-fill { height:100%; background:linear-gradient(90deg,var(--accent),var(--success)); width:0%; transition:width .3s; }
+.guide-step-list { list-style:none; margin:0; padding:0; }
+.guide-step-list li {
+  display:flex; align-items:flex-start; gap:10px; padding:8px 0; border-bottom:1px solid var(--border);
+  font-size:12px; color:var(--text-secondary); cursor:pointer;
+}
+.guide-step-list li:hover { color:var(--text-primary); }
+.guide-step-list li.active { color:var(--accent); font-weight:600; }
+.guide-step-list li.done { color:var(--success); }
+.guide-step-list .gnum {
+  flex-shrink:0; width:22px; height:22px; border-radius:50%; border:1px solid var(--border);
+  display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:700;
+}
+.guide-step-list li.active .gnum { background:var(--accent); color:#fff; border-color:var(--accent); }
+.guide-step-list li.done .gnum { background:var(--success); color:#fff; border-color:var(--success); }
+.guide-panel { border:1px solid var(--border); border-radius:12px; padding:18px; background:var(--bg-card); }
+.guide-panel h3 { font-size:16px; margin-bottom:8px; }
+.guide-why, .guide-do, .guide-pass, .guide-fail {
+  font-size:13px; line-height:1.55; margin:10px 0; color:var(--text-secondary);
+}
+.guide-why strong, .guide-do strong, .guide-pass strong, .guide-fail strong { color:var(--text-primary); }
+.guide-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
+.btn-success { background:var(--success) !important; color:#fff !important; border-color:var(--success) !important; }
+.btn-next { background:var(--warning) !important; color:#1a202c !important; border-color:var(--warning) !important; }
+.guide-done-box {
+  display:none; padding:20px; border-radius:12px; border:1px solid var(--success);
+  background:rgba(34,197,94,0.12); font-size:14px; line-height:1.6;
+}
+.guide-done-box.show { display:block; }
+.guide-layout { display:grid; grid-template-columns:220px 1fr; gap:16px; }
+@media(max-width:900px){ .guide-layout { grid-template-columns:1fr; } }
+@media(max-width:768px){ .sidebar{transform:translateX(-100%);}.sidebar.open{transform:translateX(0);}.main-content{margin-left:0;} }
+</style>
+</head>
+<body>
+<div class="header">
+  <div><button class="btn-icon" onclick="document.getElementById('sidebar').classList.toggle('open')">&#9776;</button></div>
+  <div class="header-brand" style="text-align:center">
+    <h1>Compat 160 Performance Playbook</h1>
+    <div class="subtitle">SQL 2016 &#8594; 2022 &bull; Diagnose before hints</div>
+  </div>
+  <div class="header-actions">
+    <button class="btn-icon" onclick="toggleTheme()">&#127769;</button>
+    <button class="btn-accent" onclick="showPage('guided')">Guided steps</button>
+    <button class="btn-accent" onclick="showPage('scripts')">Scripts</button>
+  </div>
+</div>
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-label">Guide</div>
+  <div class="sidebar-item active" data-page="overview" onclick="showPage('overview')">Overview</div>
+  <div class="sidebar-item" data-page="guided" onclick="showPage('guided')">Guided approach</div>
+  <div class="sidebar-item" data-page="flow" onclick="showPage('flow')">Methodology flow</div>
+  <div class="sidebar-item" data-page="path" onclick="showPage('path')">Fix path @ CL 160</div>
+  <div class="sidebar-item" data-page="settings" onclick="showPage('settings')">Settings explained (FAQ)</div>
+  <div class="sidebar-item" data-page="refs" onclick="showPage('refs')">References</div>
+  <div class="sidebar-label">Scripts</div>
+  <div class="sidebar-item" data-page="scripts" onclick="showPage('scripts')">Script library</div>
+</nav>
+<main class="main-content">
+
+<div class="section-page active" id="page-overview">
+  <div class="page-header">
+    <h2>Overview</h2>
+    <p>
+      This playbook targets a very specific, common scenario: databases restored from SQL Server 2016 onto SQL Server 2022
+      run fine at <code>compatibility_level 130</code>, but the application slows down once the level is raised to <code>160</code>.
+      Compatibility 160 switches on a newer Cardinality Estimator, newer optimizer transformations, and Intelligent Query
+      Processing all at once, so plans that were healthy under 2016 can suddenly get worse estimates, join choices, and memory grants.
+      The goal here is to <strong>diagnose the real cause first</strong> (server config, statistics, CE, parameter sniffing, or IQP)
+      and remediate surgically while <strong>staying on CL 160</strong>, treating Legacy CE and full rollback to 130 as last resorts.
+      Everything you need is on this page and in the sidebar - work top to bottom, or jump straight to the guided approach.
+    </p>
+  </div>
+
+  <div class="card-box">
+    <h3>Typical root cause</h3>
+    <p style="font-size:13px;line-height:1.65;color:var(--text-secondary);margin-bottom:8px">
+      Slowness at CL 160 is usually <strong style="color:var(--text-primary)">not a broken install</strong>.
+      Compatibility 160 enables a newer Cardinality Estimator (CE), different optimizer transformations, and
+      Intelligent Query Processing (IQP). Plans that worked under CE 130 can get worse row estimates under CE 160,
+      leading to different join types, memory grants, spills, and parameter-sensitive plan changes.
+    </p>
+    <ul style="margin-left:18px;font-size:13px;line-height:1.6;color:var(--text-secondary)">
+      <li>CE estimate changes on joins, filters, and correlated predicates</li>
+      <li>IQP features turned on together when skipping 2017/2019: UDF inlining, batch mode on rowstore, PSP</li>
+      <li>Parameter sniffing amplified on skewed data</li>
+      <li>Implicit conversions and non-SARGable SQL exposed by new plan choices</li>
+      <li>Post-restore: stale 2016 stats / row counts if FULLSCAN + DBCC UPDATEUSAGE were skipped</li>
+    </ul>
+  </div>
+
+  <div class="card-box">
+    <h3>Backup/restore nuances (2016 -&gt; 2022)</h3>
+    <p style="font-size:13px;line-height:1.65;color:var(--text-secondary);margin-bottom:8px">
+      Restore carries over 2016 statistics headers and modification counters. Jumping to CL 160 also activates
+      SQL 2019 + 2022 IQP features the app never saw under 2016. New hosts often change core/NUMA counts, so
+      CTFP (raise from default 5 to 30-50) and MAXDOP must be re-baselined.
+      On engagements where stats/indexes/MAXDOP are already done, keep these steps as a checklist for the next migration.
+    </p>
+    <ul style="margin-left:18px;font-size:13px;line-height:1.65">
+      <li><strong>Post-restore:</strong> <code>DBCC UPDATEUSAGE(0)</code> then <code>UPDATE STATISTICS ... WITH FULLSCAN</code> before CL 160</li>
+      <li><strong>Instance:</strong> CTFP 30-50, MAXDOP per NUMA physical cores, optimize for ad hoc = 1</li>
+      <li><strong>Widespread CL 160 pain:</strong> Legacy CE / UDF inlining OFF / optimizer hotfixes as scoped bridges</li>
+    </ul>
+    <div style="margin-top:10px">
+      <button class="btn-sm primary" onclick="viewScript('04_Statistics_Indexes/05_Post_Restore_Maintenance_Before_CL160.sql')">Post-restore maintenance</button>
+      <button class="btn-sm" onclick="viewScript('02_Configuration/01_Recommended_Instance_Settings_2022.sql')">Instance settings</button>
+      <button class="btn-sm" onclick="viewScript('05_Compatibility_CE_Controls/04_SQL2022_IQP_and_CE_Feedback_Notes.sql')">IQP skip-release notes</button>
+    </div>
+  </div>
+
+  <div class="card-box">
+    <h3>What this playbook does</h3>
+    <ul style="margin-left:18px;font-size:13px;line-height:1.65">
+      <li><strong>Diagnose before hints</strong> - rule out server config, blocking, stats, CE, sniffing, and IQP layers</li>
+      <li><strong>Capture baselines</strong> - Query Store golden plans at CL 130 before flipping UAT/prod to 160</li>
+      <li><strong>Find regressions</strong> - compare duration, CPU, logical reads, and waits before vs after</li>
+      <li><strong>Remediate surgically</strong> - plan force, Query Store hints (SQL 2022), IQP isolation, targeted rewrites</li>
+      <li><strong>Cut over safely</strong> - controlled move to CL 160 with rollback and monitoring scripts</li>
+    </ul>
+  </div>
+
+  <div class="card-box">
+    <h3>How to run it</h3>
+    <ol style="margin-left:18px;font-size:13px;line-height:1.75">
+      <li><strong>Open this HTML</strong> in a browser (Chrome/Edge). Use the sidebar or <em>Script library</em>.</li>
+      <li><strong>Follow the methodology flow</strong> top to bottom. Click a step to open its recommended script.</li>
+      <li><strong>View or Download</strong> a script, open SSMS, replace <code>[YourDB]</code> and date windows where marked.</li>
+      <li><strong>Run read-only diagnostics first</strong> on UAT. Scripts show safety level (Safe / Test First / High Risk).</li>
+      <li><strong>Keep production at CL 130</strong> until Query Store has 3-7 days of baseline at 130, then test 160 in UAT.</li>
+      <li><strong>Do not flip prod to 160</strong> without Query Store or equivalent before/after comparison.</li>
+    </ol>
+    <div style="margin-top:12px">
+      <button class="btn-sm primary" onclick="showPage('guided')">Start guided approach (juniors)</button>
+      <button class="btn-sm" onclick="viewScript('03_QueryStore_PlanForce/01_Enable_QueryStore.sql')">Enable Query Store</button>
+      <button class="btn-sm" onclick="showPage('flow')">Methodology flow</button>
+      <button class="btn-sm" onclick="showPage('scripts')">Browse all scripts</button>
+    </div>
+  </div>
+
+  <div class="note-warn">
+    <strong>Consulting rule:</strong> Determine whether slowness is Server config, Engine (blocking/waits), CE, Statistics,
+    Parameter sniffing, IQP, or Application <em>before</em> query hints or Legacy CE. Hints and plan force are last resorts.
+  </div>
+
+  <div class="card-box">
+    <h3>Fastest safe path (from Quick Start)</h3>
+    <ol style="margin-left:18px;font-size:13px;line-height:1.65">
+      <li>Post-restore baseline: UPDATEUSAGE + stats FULLSCAN; set CTFP/MAXDOP/ad hoc on the new host.</li>
+      <li>Keep production at CL 130; enable Query Store and capture workload (3-7 days).</li>
+      <li>On UAT, set <code>COMPATIBILITY_LEVEL = 160</code>, clear proc cache, run the automatic regression report.</li>
+      <li>Few regressions: force last-good plan or apply Query Store hints (no app deploy on SQL 2022).</li>
+      <li>Many regressions: Legacy CE and/or disable UDF inlining / isolate one IQP feature - keep CL 160.</li>
+      <li>Rewrite stubborn SQL; remove temporary bridges; move production to 160 in a change window.</li>
+    </ol>
+    <p style="font-size:12px;color:var(--text-secondary);margin-top:10px">
+      Emergency rollback: <code>ALTER DATABASE [YourDB] SET COMPATIBILITY_LEVEL = 130;</code>
+    </p>
+  </div>
+
+  <div class="card-box">
+    <h3>What this file is</h3>
+    <p style="font-size:13px;line-height:1.65;color:var(--text-secondary);margin-bottom:10px">
+      This is a self-contained HTML runbook for DBAs and consultants. It packages diagnostic SQL, remediation scripts,
+      a methodology flowchart, and Microsoft/community references for the common scenario: databases restored from
+      SQL Server 2016 onto SQL Server 2022, application stable at <code>compatibility_level 130</code>, but slower after
+      moving to <code>160</code>.
+    </p>
+    <p style="font-size:13px;line-height:1.65;color:var(--text-secondary)">
+      All scripts are <strong>embedded</strong> in this HTML (View / Copy / Download work offline with no folder path required).
+      Companion markdown guides live under <code>docs/</code> (relative to this HTML):
+      <code>docs/00_README_Troubleshooting_Playbook.md</code>,
+      <code>docs/QUICK_START.md</code>,
+      <code>docs/CLIENT_CUTOVER_CHECKLIST.md</code>,
+      <code>docs/BACKUP_RESTORE_NUANCES_2016_to_2022.md</code>,
+      <code>docs/HOW_TO_SHARE.md</code>.
+    </p>
+    <p style="font-size:12px;line-height:1.55;color:var(--text-secondary);margin-top:8px">
+      <strong>Sharing:</strong> Zip this entire folder and send it. Recipients should unzip, then open
+      <code>Compat160_Targeted_Fixes.html</code> from the unzipped root. No drive letters or machine-specific paths are used.
+      Loose <code>.sql</code> files also sit under relative folders (<code>01_Diagnostics/</code>, <code>03_QueryStore_PlanForce/</code>, etc.).
+      Documentation is in <code>docs/</code>.
+    </p>
+  </div>
+</div>
+
+<div class="section-page" id="page-guided">
+  <div class="page-header">
+    <h2>Guided approach (for junior DBAs)</h2>
+    <p>Follow steps in order - like an expert mentor. Complete each step, then choose whether it fixed the issue or you must continue.</p>
+  </div>
+  <div class="note">
+    <strong>Rule:</strong> Do not skip ahead. Do not apply query hints or Legacy CE until Step 9+.
+    Work in <strong>UAT first</strong>. Keep production at CL 130 until you have a Query Store baseline.
+  </div>
+  <div class="card-box" style="margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <span style="font-size:13px"><strong>Progress:</strong> <span id="guideProgressLabel">Step 1 of 10</span></span>
+      <button class="btn-sm" onclick="resetGuided()">Reset guided progress</button>
+    </div>
+    <div class="guide-progress"><div class="guide-progress-fill" id="guideProgressBar"></div></div>
+  </div>
+  <div class="guide-layout">
+    <div class="card-box" style="margin:0">
+      <h3>Steps</h3>
+      <ul class="guide-step-list" id="guideStepList"></ul>
+    </div>
+    <div>
+      <div class="guide-panel" id="guidePanel"></div>
+      <div class="guide-done-box" id="guideDoneBox">
+        <strong>Resolved - good work.</strong><br>
+        Document what fixed it (script used, scoped config, forced plan_id, or rewrite).
+        Keep monitoring for 24-48 hours with the post-cutover health check.
+        If you only used a temporary bridge (Legacy CE / UDF inlining OFF), open a follow-up ticket to remove it after a permanent fix.
+        <div class="guide-actions">
+          <button class="btn-sm primary" onclick="viewScript('07_Monitoring_Baseline/02_Post_Cutover_Health_Check.sql')">Post-cutover health check</button>
+          <button class="btn-sm" onclick="resetGuided()">Start over</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section-page" id="page-flow">
+  <div class="page-header">
+    <h2>Methodology flow</h2>
+    <p>Click a step to open the recommended script. Only proceed down when the layer is ruled out or fixed.</p>
+  </div>
+  <div class="flowchart" id="flowchart"></div>
+  <div class="note" style="margin-top:16px">
+    <strong>Hints / Legacy CE / plan force</strong> sit at the bottom intentionally. Microsoft Learn and field consultants treat them as controlled mitigations after diagnosis.
+  </div>
+</div>
+
+<div class="section-page" id="page-path">
+  <div class="page-header"><h2>Fix path at CL 160</h2><p>After methodology confirms CE/IQP layer.</p></div>
+  <div class="card-box">
+    <ol style="margin-left:18px;font-size:13px;line-height:1.7">
+      <li>Run <button class="btn-sm primary" onclick="viewScript('03_QueryStore_PlanForce/05_Automatic_Regression_Report.sql')">Automatic regression report</button></li>
+      <li>Few queries -> QS hint or force plan</li>
+      <li>Many queries -> isolate one IQP feature; temp Legacy CE only as bridge</li>
+      <li>Enable Automatic Tuning; rewrite stubborn SQL; remove bridges</li>
+    </ol>
+  </div>
+</div>
+
+<div class="section-page" id="page-settings">
+  <div class="page-header">
+    <h2>Settings explained (FAQ)</h2>
+    <p>Deep dive on the two database-scoped toggles clients ask about most: <code>TSQL_SCALAR_UDF_INLINING = OFF</code> and <code>LEGACY_CARDINALITY_ESTIMATION = ON</code>. What each one is, why you would use it, the consequences, and how to troubleshoot further.</p>
+  </div>
+
+  <div class="note">
+    <strong>Read this first - the mental model.</strong> Compatibility level 160 bundles three separate things together:
+    (1) the <strong>Cardinality Estimator (CE)</strong> version, (2) <strong>Intelligent Query Processing (IQP)</strong> features such as scalar UDF inlining and batch mode, and (3) optimizer/parser behavior.
+    The two settings below let you turn off <em>one piece at a time</em> and keep the database at CL 160, instead of rolling the whole database back to 130. That is why they are "surgical bridges", not permanent fixes. Both are <strong>database-scoped configurations</strong>, not query hints - the client's application code and stored procedures do not change.
+  </div>
+
+  <!-- ======================= UDF INLINING ======================= -->
+  <div class="card-box">
+    <h3>1. TSQL_SCALAR_UDF_INLINING = OFF</h3>
+
+    <p style="font-size:13px;line-height:1.65;color:var(--text-secondary);margin-bottom:10px">
+      <strong style="color:var(--text-primary)">What it is.</strong>
+      Scalar UDF inlining is an IQP feature introduced in SQL Server 2019 and active at CL 150+. When ON (the default at CL 160),
+      the optimizer rewrites the body of a scalar user-defined function (e.g. <code>dbo.fn_CalcTax(...)</code>) directly into the
+      calling query, so the whole statement gets one combined execution plan instead of running the function row-by-row.
+      Setting <code>TSQL_SCALAR_UDF_INLINING = OFF</code> turns that rewrite off and returns to the classic SQL 2016 behavior
+      where the scalar UDF executes once per row.
+    </p>
+
+    <p style="font-size:13px;line-height:1.65;color:var(--text-secondary);margin-bottom:10px">
+      <strong style="color:var(--text-primary)">Why turning it OFF can help.</strong>
+      Inlining is usually a win, but for some functions it backfires and is a very common cause of post-CL-160 slowness:
+    </p>
+    <ul style="margin-left:18px;font-size:13px;line-height:1.6;color:var(--text-secondary)">
+      <li><strong>Bad cost/estimates on complex UDFs</strong> - functions with many statements, <code>WHILE</code> loops, or data access get inlined into a giant, hard-to-estimate plan that the optimizer costs poorly.</li>
+      <li><strong>Huge / slow-to-compile plans</strong> - inlining a UDF used in many places can explode plan size and increase compile time and memory grants.</li>
+      <li><strong>Different (worse) join or memory-grant choices</strong> - the combined plan picks a strategy that was never a problem when the UDF ran separately.</li>
+      <li><strong>Timeouts that only appear at CL 160</strong> - the same query text runs fine at 130/150-without-inlining but regresses once inlined.</li>
+    </ul>
+    <p style="font-size:13px;line-height:1.65;color:var(--text-secondary);margin-top:10px">
+      Turning inlining OFF keeps the database at CL 160 (so you retain every other 2022 improvement) while removing just this
+      one behavior, restoring the SQL 2016 execution pattern for scalar UDFs.
+    </p>
+
+    <div class="note">
+      <strong>Use case (when to reach for it).</strong> You confirmed via diagnostics that regressed queries call scalar UDFs,
+      the plans show inlined function logic, and disabling inlining in a test restores performance. Ideal when many objects are
+      affected and you cannot rewrite them all immediately.
+    </div>
+
+    <p style="font-size:13px;line-height:1.65;color:var(--text-secondary);margin-top:10px">
+      <strong style="color:var(--text-primary)">Consequences / trade-offs.</strong>
+    </p>
+    <ul style="margin-left:18px;font-size:13px;line-height:1.6;color:var(--text-secondary)">
+      <li>UDFs that <em>did</em> benefit from inlining lose that benefit database-wide (this is a blunt, DB-level switch).</li>
+      <li>It masks the root cause - the real fix is rewriting scalar UDFs as inline table-valued functions (iTVFs) or set-based logic.</li>
+      <li>Scope is the whole database; you cannot inline some UDFs and not others with this switch (use <code>OPTION(USE HINT('DISABLE_TSQL_SCALAR_UDF_INLINING'))</code> or the <code>INLINE = OFF</code> function option for per-object control).</li>
+    </ul>
+
+    <p style="font-size:13px;line-height:1.65;color:var(--text-secondary);margin-top:10px">
+      <strong style="color:var(--text-primary)">Scoping it tighter (preferred order).</strong>
+      Per-statement hint &rarr; per-function <code>WITH INLINE = OFF</code> &rarr; database-scoped OFF (broadest). Start narrow.
+    </p>
+
+    <p style="font-size:13px;line-height:1.65;color:var(--text-secondary);margin-top:10px">
+      <strong style="color:var(--text-primary)">How to troubleshoot further.</strong>
+    </p>
+    <ul style="margin-left:18px;font-size:13px;line-height:1.6;color:var(--text-secondary)">
+      <li>List inlineable functions and confirm which are actually being inlined.</li>
+      <li>Compare a regressed query with inlining ON vs OFF and diff the plans and metrics.</li>
+      <li>Long term, convert hot scalar UDFs to iTVFs / set-based code, then re-enable inlining.</li>
+    </ul>
+    <div style="margin-top:10px">
+      <button class="btn-sm primary" onclick="viewScript('05_Compatibility_CE_Controls/04_SQL2022_IQP_and_CE_Feedback_Notes.sql')">Inspect UDF inlining status</button>
+      <button class="btn-sm" onclick="viewScript('05_Compatibility_CE_Controls/05_IQP_Feature_Isolation_Toggles.sql')">Isolate IQP features</button>
+      <button class="btn-sm" onclick="viewScript('06_Code_Rewrite_Patterns/01_Before_After_Examples.sql')">Rewrite patterns</button>
+    </div>
+    <pre style="margin-top:12px"><code>-- Database-wide (blunt) - keeps CL 160, disables only UDF inlining:
+ALTER DATABASE SCOPED CONFIGURATION SET TSQL_SCALAR_UDF_INLINING = OFF;
+
+-- Narrower: single query
+SELECT ... OPTION (USE HINT('DISABLE_TSQL_SCALAR_UDF_INLINING'));
+
+-- Narrowest: single function
+ALTER FUNCTION dbo.fn_Example (...) WITH INLINE = OFF ...;</code></pre>
+  </div>
+
+  <!-- ======================= LEGACY CE ======================= -->
+  <div class="card-box">
+    <h3>2. LEGACY_CARDINALITY_ESTIMATION = ON</h3>
+
+    <p style="font-size:13px;line-height:1.65;color:var(--text-secondary);margin-bottom:10px">
+      <strong style="color:var(--text-primary)">What it does.</strong>
+      The Cardinality Estimator is the part of the optimizer that predicts how many rows each operator will produce.
+      SQL Server 2014 introduced a "new CE"; SQL 2016/2019/2022 refined it further. At CL 160 the database uses the
+      <em>newest</em> CE. Setting <code>LEGACY_CARDINALITY_ESTIMATION = ON</code> tells the optimizer to use the
+      <strong>SQL Server 2012-and-earlier "legacy" (CE 70) row-estimation model</strong> while keeping the database at CL 160.
+      It is the database-scoped equivalent of the trace flag 9481 / <code>USE HINT('FORCE_LEGACY_CARDINALITY_ESTIMATION')</code>.
+    </p>
+
+    <p style="font-size:13px;line-height:1.65;color:var(--text-secondary);margin-bottom:10px">
+      <strong style="color:var(--text-primary)">Why you might need it.</strong>
+      The new CE makes different assumptions (independence vs correlation of predicates, ascending-key handling, join
+      containment). On some schemas - especially older ones designed against the legacy CE - these assumptions produce
+      worse estimates, which cascade into wrong join types, undersized/oversized memory grants, and spills. When a broad set
+      of queries regress at CL 160 and diagnostics point at estimate changes (not blocking, not stats, not UDFs), the legacy
+      CE can restore the SQL 2016-era estimates immediately without an application change.
+    </p>
+
+    <div class="note-warn">
+      <strong>"Will this set all the CE back to 2016?" - Important clarification.</strong>
+      Not exactly. It does <em>not</em> revert the database to compatibility level 130, and it is <em>not</em> the same CE that CL 130 used.
+      CL 130 runs the <strong>CE 130</strong> model; <code>LEGACY_CARDINALITY_ESTIMATION = ON</code> forces the even older
+      <strong>CE 70 (legacy / pre-2014)</strong> model. It changes only the <em>cardinality estimation</em> component - all other
+      CL 160 behavior (IQP, optimizer transformations, parser features) stays active. So it is broader than a single query hint
+      (it affects <em>every</em> query in the database) but narrower than a full compatibility-level rollback.
+    </div>
+
+    <div class="note">
+      <strong>Use case (when to reach for it).</strong> Many queries regress after moving to CL 160, plan comparisons show the
+      difference is in <em>row estimates</em>, and testing with <code>FORCE_LEGACY_CARDINALITY_ESTIMATION</code> on a few of them
+      restores performance. Use it as a temporary bridge to keep CL 160 in production while you fix root causes.
+    </div>
+
+    <p style="font-size:13px;line-height:1.65;color:var(--text-secondary);margin-top:10px">
+      <strong style="color:var(--text-primary)">Consequences / trade-offs.</strong>
+    </p>
+    <ul style="margin-left:18px;font-size:13px;line-height:1.6;color:var(--text-secondary)">
+      <li><strong>Database-wide blunt instrument</strong> - every query now estimates with the old model, including ones that were <em>faster</em> under the new CE. You may fix 20 queries and slow down 5 others.</li>
+      <li><strong>You lose newer CE improvements</strong> - better handling of modern workloads, some IQP features rely on good estimates.</li>
+      <li><strong>It hides the real problem</strong> - usually stale statistics, missing/multi-column stats, skew, or non-SARGable SQL. Legacy CE just papers over the estimate.</li>
+      <li><strong>Not a permanent answer</strong> - Microsoft guidance is to stay on the current CE and remediate; treat this as a stabilizer while you do targeted work (Query Store hints, plan forcing, rewrites).</li>
+    </ul>
+
+    <p style="font-size:13px;line-height:1.65;color:var(--text-secondary);margin-top:10px">
+      <strong style="color:var(--text-primary)">Prefer narrower scope first.</strong>
+      Before flipping the whole database, force legacy CE on just the offending queries via a Query Store hint (SQL 2022, no code change)
+      or <code>OPTION (USE HINT('FORCE_LEGACY_CARDINALITY_ESTIMATION'))</code>. Only go database-wide if regressions are widespread.
+    </p>
+
+    <p style="font-size:13px;line-height:1.65;color:var(--text-secondary);margin-top:10px">
+      <strong style="color:var(--text-primary)">How to troubleshoot further.</strong>
+    </p>
+    <ul style="margin-left:18px;font-size:13px;line-height:1.6;color:var(--text-secondary)">
+      <li>Compare CE 130 vs CE 160 estimates on the regressed queries and confirm the gap is in estimated rows.</li>
+      <li>Fix inputs to the CE first: <code>UPDATE STATISTICS ... WITH FULLSCAN</code>, add missing/multi-column statistics, remove implicit conversions and functions on columns (SARGability).</li>
+      <li>Use Query Store to force last-good plans or apply per-query legacy-CE hints instead of the DB-wide switch.</li>
+      <li>Re-test with legacy CE OFF after fixing stats/SQL; the goal is to remove the bridge.</li>
+    </ul>
+    <div style="margin-top:10px">
+      <button class="btn-sm primary" onclick="viewScript('01_Diagnostics/02_Compare_Plans_CE130_vs_CE160.sql')">Compare CE 130 vs 160</button>
+      <button class="btn-sm" onclick="viewScript('05_Compatibility_CE_Controls/01_Database_Scoped_CE_and_Optimizer_Controls.sql')">DB-scoped CE controls</button>
+      <button class="btn-sm" onclick="viewScript('05_Compatibility_CE_Controls/02_Query_Level_Hints_CheatSheet.sql')">Per-query hint cheat sheet</button>
+      <button class="btn-sm" onclick="viewScript('04_Statistics_Indexes/01_Update_Statistics_PostMigration.sql')">Update statistics</button>
+    </div>
+    <pre style="margin-top:12px"><code>-- Database-wide (blunt) - keeps CL 160, forces the OLD CE 70 model everywhere:
+ALTER DATABASE SCOPED CONFIGURATION SET LEGACY_CARDINALITY_ESTIMATION = ON;
+
+-- Narrower: single query only (no app change needed on SQL 2022 via Query Store hint)
+SELECT ... OPTION (USE HINT('FORCE_LEGACY_CARDINALITY_ESTIMATION'));</code></pre>
+  </div>
+
+  <!-- ======================= DECISION GUIDE ======================= -->
+  <div class="card-box">
+    <h3>Which one, and in what order?</h3>
+    <ol style="margin-left:18px;font-size:13px;line-height:1.75;color:var(--text-secondary)">
+      <li><strong>Diagnose first.</strong> Confirm the layer: server config, blocking/waits, statistics, CE estimates, parameter sniffing, or IQP. Do not toggle blindly.</li>
+      <li><strong>If regressed queries use scalar UDFs</strong> and plans show inlined logic &rarr; test <code>DISABLE_TSQL_SCALAR_UDF_INLINING</code> (per query first).</li>
+      <li><strong>If the gap is in row estimates</strong> across many queries &rarr; test <code>FORCE_LEGACY_CARDINALITY_ESTIMATION</code> (per query first).</li>
+      <li><strong>Narrow before broad.</strong> Query Store hint / statement hint &rarr; per-object &rarr; database-scoped configuration.</li>
+      <li><strong>Both are bridges.</strong> Keep CL 160, stabilize, then fix root causes (stats, SARGability, UDF rewrites) and remove the toggle.</li>
+    </ol>
+    <div class="note-warn" style="margin-top:12px">
+      <strong>Golden rule:</strong> These two switches keep you on CL 160 while you fix the real problem - they are not a destination.
+      Reverting the whole database to CL 130 should be the <em>last</em> resort, not the first.
+    </div>
+  </div>
+</div>
+
+<div class="section-page" id="page-refs">
+  <div class="page-header"><h2>References</h2><p>Official and community sources aligned with this playbook.</p></div>
+  <div class="card-box">
+    <ul class="ref-list">
+      <li><a href="https://learn.microsoft.com/en-us/troubleshoot/sql/database-engine/install/windows/issues-upgrading-sql-server-2022" target="_blank" rel="noopener">Microsoft Learn  - Issues upgrading to SQL Server 2022</a></li>
+      <li><a href="https://learn.microsoft.com/en-us/answers/questions/5776733/how-to-resolve-degraded-sql-performance-since-upgr" target="_blank" rel="noopener">Microsoft Q&A  - Degraded performance after 2016->2022 upgrade</a></li>
+      <li><a href="https://techcommunity.microsoft.com/discussions/sql_server/compatibility-change-from-110-to-160-doubles-the-cpu/4405830" target="_blank" rel="noopener">Tech Community  - Compat 110->160 CPU doubling</a></li>
+      <li><a href="https://www.brentozar.com/archive/2023/04/how-to-go-live-on-sql-server-2022/" target="_blank" rel="noopener">Brent Ozar  - How to go live on SQL Server 2022</a></li>
+      <li><a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/alter-database-transact-sql-compatibility-level" target="_blank" rel="noopener">ALTER DATABASE compatibility level</a></li>
+      <li><a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/monitoring-performance-by-using-the-query-store" target="_blank" rel="noopener">Query Store overview</a></li>
+      <li><a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/query-store-hints" target="_blank" rel="noopener">Query Store hints (SQL 2022)</a></li>
+      <li><a href="https://learn.microsoft.com/en-us/sql/sql-server/" target="_blank" rel="noopener">SQL Server documentation hub</a></li>
+      <li><a href="https://www.sqlservercentral.com/forums/topic/upgrading-from-sql-server-2016-to-2022" target="_blank" rel="noopener">SQLServerCentral  - Upgrading 2016 to 2022</a></li>
+    </ul>
+  </div>
+</div>
+
+<div class="section-page" id="page-scripts">
+  <div class="page-header">
+    <h2>Script library</h2>
+    <p>Embedded SQL  - view, copy, or download. Filter by tag or search by keyword.</p>
+  </div>
+  <div class="search-bar">
+    <input type="search" id="scriptSearch" placeholder="Search scripts by name, tag, or keyword..." oninput="renderLibrary()" />
+    <span id="scriptCount" style="font-size:12px;color:var(--text-secondary)"></span>
+  </div>
+  <div class="tag-filters" id="tagFilters"></div>
+  <div class="card-box"><div id="scriptLibrary"></div></div>
+</div>
+
+</main>
+
+<div class="script-viewer-overlay" id="scriptViewer" onclick="if(event.target===this)closeViewer()">
+  <div class="script-viewer">
+    <div class="script-viewer-header">
+      <div>
+        <strong id="viewerTitle">SQL Script</strong>
+        <div class="viewer-meta" id="viewerMeta"></div>
+      </div>
+      <div>
+        <button class="copy-btn accent" onclick="downloadCurrent()">Download .sql</button>
+        <button class="copy-btn" onclick="copyScript()">Copy</button>
+        <button class="copy-btn" onclick="closeViewer()">Close</button>
+      </div>
+    </div>
+    <div class="script-viewer-body"><pre class="sql-code" id="viewerCode"></pre></div>
+  </div>
+</div>
+
+<script>
+var scriptContents = {
+  "04_Statistics_Indexes/05_Post_Restore_Maintenance_Before_CL160.sql": "/*\r\n================================================================================\r\n05_Post_Restore_Maintenance_Before_CL160.sql\r\nPurpose : Mandatory post-backup/restore maintenance BEFORE enabling CL 160.\r\nWhy     : A restore from SQL Server 2016 carries over stale statistics headers,\r\n          outdated histogram steps, and legacy modification counters. Page/row\r\n          counts in sys.allocation_units / usage metadata can also be stale and\r\n          feed Cardinality Estimator formulas incorrectly.\r\n\r\nWhen    : Immediately after restore onto SQL Server 2022, while still at CL 130\r\n          (or before first CL 160 flip in UAT).\r\n\r\nSafety  : Test First - FULLSCAN can be long/IO-heavy on large databases.\r\n          Prefer maintenance window. NORECOMPUTE not used (auto-update stays on).\r\n\r\nNote    : Stats/indexes/MAXDOP may already be done on some engagements - keep this\r\n          script in the package for future restore-based migrations.\r\n================================================================================\r\n*/\r\nUSE [YourDB]; -- <<< change\r\nGO\r\nSET NOCOUNT ON;\r\n\r\nPRINT '=== 1) DBCC UPDATEUSAGE - refresh page and row counts ===';\r\nPRINT 'Feeds accurate row/page metadata used by CE and space reports.';\r\n-- 0 = current database; WITH COUNT_ROWS updates row counts in sysindexes-compatible views\r\nDBCC UPDATEUSAGE(0) WITH COUNT_ROWS, NO_INFOMSGS;\r\nGO\r\n\r\nPRINT '=== 2) Generate FULLSCAN UPDATE STATISTICS for all user tables ===';\r\n-- Review the list, then run during a maintenance window.\r\nSELECT\r\n    'UPDATE STATISTICS ' + QUOTENAME(OBJECT_SCHEMA_NAME(t.object_id))\r\n        + '.' + QUOTENAME(t.name)\r\n        + ' WITH FULLSCAN;' AS update_sql,\r\n    SUM(p.rows) AS approx_rows\r\nFROM sys.tables AS t\r\nJOIN sys.partitions AS p\r\n  ON p.object_id = t.object_id AND p.index_id IN (0, 1)\r\nWHERE t.is_ms_shipped = 0\r\nGROUP BY t.object_id, t.name\r\nORDER BY approx_rows DESC;\r\n\r\nPRINT '=== 3) Optional: execute FULLSCAN for all user tables (UNCOMMENT TO RUN) ===';\r\n/*\r\n-- WARNING: Can take hours on multi-TB databases. Prefer generated scripts in batches.\r\nDECLARE @sql nvarchar(max) = N'';\r\nSELECT @sql = @sql + N'UPDATE STATISTICS '\r\n    + QUOTENAME(OBJECT_SCHEMA_NAME(t.object_id)) + N'.'\r\n    + QUOTENAME(t.name) + N' WITH FULLSCAN;' + CHAR(13)\r\nFROM sys.tables AS t\r\nWHERE t.is_ms_shipped = 0\r\nORDER BY t.name;\r\n\r\n-- Prefer cursor / Ola Hallengren for production control instead of one giant batch.\r\nPRINT LEFT(@sql, 4000);  -- preview\r\n-- EXEC sys.sp_executesql @sql;\r\n*/\r\n\r\nPRINT '=== 4) Avoid sp_MSforeachtable in production ===';\r\nPRINT 'sp_MSforeachtable is undocumented and can miss tables / fail silently.';\r\nPRINT 'Use the generated UPDATE STATISTICS list above, or Ola Hallengren IndexOptimize.';\r\n\r\n/*\r\nEXAMPLE (small DB only - undocumented; prefer generated scripts):\r\n-- EXEC sp_MSforeachtable N'UPDATE STATISTICS ? WITH FULLSCAN;';\r\n*/\r\n\r\nPRINT '=== 5) Verify freshness after maintenance ===';\r\nSELECT TOP (30)\r\n    OBJECT_SCHEMA_NAME(s.object_id) AS schema_name,\r\n    OBJECT_NAME(s.object_id) AS table_name,\r\n    s.name AS stats_name,\r\n    STATS_DATE(s.object_id, s.stats_id) AS last_updated,\r\n    sp.rows,\r\n    sp.rows_sampled,\r\n    CASE WHEN sp.rows > 0 AND sp.rows_sampled = sp.rows THEN N'FULLSCAN-like'\r\n         ELSE N'Sampled/other' END AS sample_quality\r\nFROM sys.stats AS s\r\nCROSS APPLY sys.dm_db_stats_properties(s.object_id, s.stats_id) AS sp\r\nWHERE OBJECTPROPERTY(s.object_id, 'IsUserTable') = 1\r\nORDER BY last_updated DESC;\r\n\r\nPRINT 'Next: keep CL 130, enable Query Store, capture 3-7 days, THEN test CL 160 in UAT.';\r\nGO\r\n",
+  "02_Configuration/01_Recommended_Instance_Settings_2022.sql": "/*\r\n================================================================================\r\n01_Recommended_Instance_Settings_2022.sql\r\nPurpose : Align SQL Server 2022 instance settings after migrating from 2016.\r\nIMPORTANT: Review each value for YOUR hardware before applying.\r\n           Script prints recommendations; APPLY section is commented.\r\n================================================================================\r\n*/\r\nSET NOCOUNT ON;\r\n\r\nDECLARE\r\n    @cpu int = (SELECT cpu_count FROM sys.dm_os_sys_info),\r\n    @mem_mb bigint = (SELECT physical_memory_kb/1024 FROM sys.dm_os_sys_info),\r\n    @recommended_maxdop int,\r\n    @recommended_ctfp int = 50,          -- common starting point (was often 5 on old installs)\r\n    @os_reserve_mb int,\r\n    @recommended_max_mem_mb bigint;\r\n\r\n-- MAXDOP: align with single NUMA node physical core count (common OLTP start: 4-8).\r\n-- Restored DBs often land on new hardware / different core & NUMA topology than 2016.\r\nSET @recommended_maxdop = CASE\r\n    WHEN @cpu <= 8 THEN @cpu\r\n    WHEN @cpu <= 16 THEN 4\r\n    ELSE 8\r\nEND;\r\n\r\nPRINT 'NOTE: Default Cost Threshold for Parallelism = 5 is too low on modern CPUs.';\r\nPRINT 'Under CL 160 batch mode, low CTFP causes unnecessary parallel overhead.';\r\nPRINT 'Recommended CTFP starting point: 30-50 (this script uses 50).';\r\nPRINT 'Confirm MAXDOP against soft-NUMA / physical cores per NUMA node (not just cpu_count).';\r\n\r\n-- Leave headroom for OS + other services (rough starting point)\r\nSET @os_reserve_mb = CASE\r\n    WHEN @mem_mb < 16384 THEN 2048\r\n    WHEN @mem_mb < 65536 THEN 4096\r\n    WHEN @mem_mb < 131072 THEN 8192\r\n    ELSE 16384\r\nEND;\r\nSET @recommended_max_mem_mb = @mem_mb - @os_reserve_mb;\r\n\r\nSELECT\r\n    @cpu AS logical_cpus,\r\n    @mem_mb AS physical_memory_mb,\r\n    @recommended_maxdop AS recommended_maxdop,\r\n    @recommended_ctfp AS recommended_cost_threshold,\r\n    @recommended_max_mem_mb AS recommended_max_server_memory_mb,\r\n    @os_reserve_mb AS os_reserve_mb;\r\n\r\nPRINT '--- Current values ---';\r\nSELECT name, value_in_use\r\nFROM sys.configurations\r\nWHERE name IN (\r\n    N'max degree of parallelism',\r\n    N'cost threshold for parallelism',\r\n    N'max server memory (MB)',\r\n    N'min server memory (MB)',\r\n    N'optimize for ad hoc workloads'\r\n);\r\n\r\n/*\r\n========== APPLY (uncomment after validation) ==========\r\nEXEC sp_configure 'show advanced options', 1; RECONFIGURE;\r\nEXEC sp_configure 'max degree of parallelism', @recommended_maxdop;           -- or hardcode\r\nEXEC sp_configure 'cost threshold for parallelism', 50;\r\nEXEC sp_configure 'max server memory (MB)', @recommended_max_mem_mb;\r\nEXEC sp_configure 'optimize for ad hoc workloads', 1;  -- good for ad-hoc heavy apps\r\nRECONFIGURE;\r\n*/\r\n\r\n/*\r\nCHECKLIST OUTSIDE T-SQL\r\n[ ] Instant File Initialization enabled for SQL service account\r\n[ ] Lock Pages in Memory only if vetted (and max server memory set correctly)\r\n[ ] Power plan = High Performance\r\n[ ] Antivirus exclusions for data/log/tempdb/backup dirs\r\n[ ] Windows / storage: 64KB allocation unit on data volumes (best practice)\r\n[ ] Backup compression default ON (optional)\r\n*/\r\n",
+  "02_Configuration/02_TempDB_and_Database_Files.sql": "/*\r\n================================================================================\r\n02_TempDB_and_Database_Files.sql\r\nPurpose : TempDB and user DB file layout best practices on SQL 2022.\r\n================================================================================\r\n*/\r\nSET NOCOUNT ON;\r\n\r\nPRINT '=== Current TempDB layout ===';\r\nSELECT\r\n    file_id, type_desc, name,\r\n    size*8/1024 AS size_mb,\r\n    growth AS growth_pages_or_pct,\r\n    is_percent_growth,\r\n    physical_name\r\nFROM tempdb.sys.database_files;\r\n\r\nDECLARE @cpus int = (SELECT cpu_count FROM sys.dm_os_sys_info);\r\nDECLARE @tempdb_files int = CASE WHEN @cpus >= 8 THEN 8 ELSE @cpus END;\r\n\r\nSELECT\r\n    @cpus AS logical_cpus,\r\n    @tempdb_files AS recommended_tempdb_data_files,\r\n    N'Equal size, equal growth (MB not %), pre-size to avoid autogrowth storms' AS guidance;\r\n\r\n/*\r\nEXAMPLE: resize / add TempDB files (edit paths & sizes)\r\n--- Run during maintenance window ---\r\n\r\nUSE master;\r\nALTER DATABASE tempdb MODIFY FILE (NAME = tempdev, SIZE = 8192MB, FILEGROWTH = 512MB);\r\nALTER DATABASE tempdb MODIFY FILE (NAME = templog, SIZE = 2048MB, FILEGROWTH = 256MB);\r\n\r\n-- Add files if you only have 1 data file (example for 8 files total)\r\nALTER DATABASE tempdb ADD FILE (NAME = tempdev2, FILENAME = 'T:\\TempDB\\tempdev2.ndf', SIZE = 8192MB, FILEGROWTH = 512MB);\r\nALTER DATABASE tempdb ADD FILE (NAME = tempdev3, FILENAME = 'T:\\TempDB\\tempdev3.ndf', SIZE = 8192MB, FILEGROWTH = 512MB);\r\nALTER DATABASE tempdb ADD FILE (NAME = tempdev4, FILENAME = 'T:\\TempDB\\tempdev4.ndf', SIZE = 8192MB, FILEGROWTH = 512MB);\r\nALTER DATABASE tempdb ADD FILE (NAME = tempdev5, FILENAME = 'T:\\TempDB\\tempdev5.ndf', SIZE = 8192MB, FILEGROWTH = 512MB);\r\nALTER DATABASE tempdb ADD FILE (NAME = tempdev6, FILENAME = 'T:\\TempDB\\tempdev6.ndf', SIZE = 8192MB, FILEGROWTH = 512MB);\r\nALTER DATABASE tempdb ADD FILE (NAME = tempdev7, FILENAME = 'T:\\TempDB\\tempdev7.ndf', SIZE = 8192MB, FILEGROWTH = 512MB);\r\nALTER DATABASE tempdb ADD FILE (NAME = tempdev8, FILENAME = 'T:\\TempDB\\tempdev8.ndf', SIZE = 8192MB, FILEGROWTH = 512MB);\r\n-- Restart SQL Server for all TempDB file count changes to fully stabilize (recommended).\r\n*/\r\n\r\nPRINT '=== User DB files with percent growth (fix these) ===';\r\nSELECT DB_NAME(database_id) AS db_name, name, type_desc, growth, is_percent_growth, physical_name\r\nFROM sys.master_files\r\nWHERE is_percent_growth = 1\r\nORDER BY db_name;\r\n",
+  "02_Configuration/03_Database_Options_Post_Restore.sql": "/*\r\n================================================================================\r\n03_Database_Options_Post_Restore.sql\r\nPurpose : Safe database options after restore onto SQL 2022.\r\n================================================================================\r\n*/\r\nUSE [YourDB]; -- <<< change\r\nGO\r\n\r\n-- Verify page checksum (should already be on from modern sources)\r\nSELECT name, page_verify_option_desc, is_auto_shrink_on, is_auto_close_on,\r\n       is_auto_create_stats_on, is_auto_update_stats_on, is_auto_update_stats_async_on,\r\n       target_recovery_time_in_seconds, compatibility_level\r\nFROM sys.databases WHERE name = DB_NAME();\r\n\r\n/*\r\nRECOMMENDED (uncomment as needed)\r\n\r\nALTER DATABASE CURRENT SET PAGE_VERIFY CHECKSUM WITH NO_WAIT;\r\nALTER DATABASE CURRENT SET AUTO_SHRINK OFF;\r\nALTER DATABASE CURRENT SET AUTO_CLOSE OFF;\r\nALTER DATABASE CURRENT SET AUTO_CREATE_STATISTICS ON;\r\nALTER DATABASE CURRENT SET AUTO_UPDATE_STATISTICS ON;\r\n-- Async stats: can reduce blocking on stats updates; validate for your workload\r\n-- ALTER DATABASE CURRENT SET AUTO_UPDATE_STATISTICS_ASYNC ON;\r\n\r\n-- Target recovery time (indirect checkpoint) - often 60 on modern systems\r\n-- ALTER DATABASE CURRENT SET TARGET_RECOVERY_TIME = 60 SECONDS;\r\n\r\n-- RCSI: reduces reader/writer blocking; test carefully (row versioning in TempDB)\r\n-- ALTER DATABASE CURRENT SET READ_COMMITTED_SNAPSHOT ON WITH ROLLBACK IMMEDIATE;\r\n*/\r\n\r\n-- Keep compatibility at 130 until Query Store baseline exists:\r\n-- ALTER DATABASE CURRENT SET COMPATIBILITY_LEVEL = 130;\r\n\r\n-- Target end state after remediation:\r\n-- ALTER DATABASE CURRENT SET COMPATIBILITY_LEVEL = 160;\r\n",
+  "03_QueryStore_PlanForce/01_Enable_QueryStore.sql": "/*\r\n================================================================================\r\n01_Enable_QueryStore.sql\r\nPurpose : Enable & size Query Store — mandatory before flipping to compat 160.\r\n================================================================================\r\n*/\r\nUSE [YourDB]; -- <<< change\r\nGO\r\n\r\nALTER DATABASE CURRENT SET QUERY_STORE = ON (\r\n    OPERATION_MODE = READ_WRITE,\r\n    CLEANUP_POLICY = (STALE_QUERY_THRESHOLD_DAYS = 30),\r\n    DATA_FLUSH_INTERVAL_SECONDS = 900,\r\n    INTERVAL_LENGTH_MINUTES = 60,\r\n    MAX_STORAGE_SIZE_MB = 2048,          -- increase for busy systems (4-10 GB+)\r\n    QUERY_CAPTURE_MODE = AUTO,           -- ALL if you need exhaustive capture briefly\r\n    SIZE_BASED_CLEANUP_MODE = AUTO,\r\n    MAX_PLANS_PER_QUERY = 200\r\n);\r\n\r\n-- WAIT_STATS_CAPTURE_MODE: separate ALTER (SQL 2017+; not valid in all builds inside initial ON block)\r\nIF CAST(SERVERPROPERTY('ProductMajorVersion') AS int) >= 14\r\nBEGIN\r\n    ALTER DATABASE CURRENT SET QUERY_STORE (WAIT_STATS_CAPTURE_MODE = ON);\r\nEND\r\nELSE\r\n    PRINT 'WAIT_STATS_CAPTURE_MODE requires SQL Server 2017+. Skipped.';\r\n\r\n-- Optional: capture waits deeper during migration week\r\n-- ALTER DATABASE CURRENT SET QUERY_STORE = ON (QUERY_CAPTURE_MODE = ALL);\r\n\r\nSELECT actual_state_desc, readonly_reason, current_storage_size_mb, max_storage_size_mb,\r\n       interval_length_minutes, query_capture_mode_desc, stale_query_threshold_days,\r\n       wait_stats_capture_mode_desc\r\nFROM sys.database_query_store_options;\r\n\r\n/*\r\nWORKFLOW\r\n1) Enable QS at compat 130; run production workload 3–7 days.\r\n2) In UAT, set compat 160; run same workload.\r\n3) Use 02_Find_Regressed_Queries.sql\r\n4) Force good plans / fix queries\r\n5) Only then change production to 160\r\n*/\r\n",
+  "03_QueryStore_PlanForce/02_Find_Regressed_Queries.sql": "/*\r\n================================================================================\r\n02_Find_Regressed_Queries.sql\r\nPurpose : Find queries whose duration/CPU got worse recently (e.g. after compat 160).\r\n          Tuned for \"before vs after\" windows you set below.\r\n================================================================================\r\n*/\r\nUSE [YourDB]; -- <<< change\r\nGO\r\nSET NOCOUNT ON;\r\n\r\nDECLARE\r\n    @before_start datetime2 = DATEADD(DAY, -14, SYSUTCDATETIME()),\r\n    @before_end   datetime2 = DATEADD(DAY, -7,  SYSUTCDATETIME()),  -- last week at 130\r\n    @after_start  datetime2 = DATEADD(DAY, -7,  SYSUTCDATETIME()),\r\n    @after_end    datetime2 = SYSUTCDATETIME();                      -- this week at 160\r\n\r\n;WITH before_stats AS (\r\n    SELECT\r\n        q.query_id,\r\n        SUM(rs.count_executions) AS execs,\r\n        SUM(rs.avg_duration * rs.count_executions) / NULLIF(SUM(rs.count_executions),0) AS avg_duration_us,\r\n        SUM(rs.avg_cpu_time * rs.count_executions) / NULLIF(SUM(rs.count_executions),0) AS avg_cpu_us,\r\n        SUM(rs.avg_logical_io_reads * rs.count_executions) / NULLIF(SUM(rs.count_executions),0) AS avg_reads\r\n    FROM sys.query_store_query q\r\n    JOIN sys.query_store_plan p ON p.query_id = q.query_id\r\n    JOIN sys.query_store_runtime_stats rs ON rs.plan_id = p.plan_id\r\n    JOIN sys.query_store_runtime_stats_interval i\r\n        ON i.runtime_stats_interval_id = rs.runtime_stats_interval_id\r\n    WHERE i.start_time >= @before_start AND i.start_time < @before_end\r\n    GROUP BY q.query_id\r\n),\r\nafter_stats AS (\r\n    SELECT\r\n        q.query_id,\r\n        SUM(rs.count_executions) AS execs,\r\n        SUM(rs.avg_duration * rs.count_executions) / NULLIF(SUM(rs.count_executions),0) AS avg_duration_us,\r\n        SUM(rs.avg_cpu_time * rs.count_executions) / NULLIF(SUM(rs.count_executions),0) AS avg_cpu_us,\r\n        SUM(rs.avg_logical_io_reads * rs.count_executions) / NULLIF(SUM(rs.count_executions),0) AS avg_reads\r\n    FROM sys.query_store_query q\r\n    JOIN sys.query_store_plan p ON p.query_id = q.query_id\r\n    JOIN sys.query_store_runtime_stats rs ON rs.plan_id = p.plan_id\r\n    JOIN sys.query_store_runtime_stats_interval i\r\n        ON i.runtime_stats_interval_id = rs.runtime_stats_interval_id\r\n    WHERE i.start_time >= @after_start AND i.start_time < @after_end\r\n    GROUP BY q.query_id\r\n)\r\nSELECT TOP (50)\r\n    b.query_id,\r\n    qt.query_sql_text,\r\n    b.execs AS before_execs,\r\n    a.execs AS after_execs,\r\n    b.avg_duration_us / 1000.0 AS before_avg_ms,\r\n    a.avg_duration_us / 1000.0 AS after_avg_ms,\r\n    (a.avg_duration_us * 1.0 / NULLIF(b.avg_duration_us,0)) AS duration_ratio,\r\n    b.avg_cpu_us / 1000.0 AS before_cpu_ms,\r\n    a.avg_cpu_us / 1000.0 AS after_cpu_ms,\r\n    (a.avg_cpu_us * 1.0 / NULLIF(b.avg_cpu_us,0)) AS cpu_ratio,\r\n    b.avg_reads AS before_avg_reads,\r\n    a.avg_reads AS after_avg_reads\r\nFROM before_stats b\r\nJOIN after_stats a ON a.query_id = b.query_id\r\nJOIN sys.query_store_query q ON q.query_id = b.query_id\r\nJOIN sys.query_store_query_text qt ON qt.query_text_id = q.query_text_id\r\nWHERE a.avg_duration_us > b.avg_duration_us * 1.5   -- 50%+ slower\r\n  AND a.execs >= 5\r\nORDER BY duration_ratio DESC, after_avg_ms DESC;\r\n\r\n-- Plans for a specific query_id:\r\n-- SELECT plan_id, is_forced_plan, last_execution_time, CAST(query_plan AS xml)\r\n-- FROM sys.query_store_plan WHERE query_id = 123;\r\n",
+  "03_QueryStore_PlanForce/03_Force_Last_Good_Plan.sql": "/*\r\n================================================================================\r\n03_Force_Last_Good_Plan.sql\r\nPurpose : Force a previously good plan for a regressed query_id.\r\nSafety  : Document owner + review date. Forced plans are technical debt.\r\n================================================================================\r\n*/\r\nUSE [YourDB]; -- <<< change\r\nGO\r\n\r\nDECLARE @query_id bigint = 123;   -- <<< from regression report\r\nDECLARE @plan_id  bigint = 456;   -- <<< last good plan_id\r\n\r\n-- Inspect candidates\r\nSELECT\r\n    p.plan_id,\r\n    p.is_forced_plan,\r\n    p.last_execution_time,\r\n    rs.avg_duration / 1000.0 AS avg_ms,\r\n    rs.count_executions,\r\n    CAST(p.query_plan AS xml) AS plan_xml\r\nFROM sys.query_store_plan p\r\nLEFT JOIN sys.query_store_runtime_stats rs ON rs.plan_id = p.plan_id\r\nWHERE p.query_id = @query_id\r\nORDER BY rs.avg_duration ASC;\r\n\r\n-- Force\r\nEXEC sys.sp_query_store_force_plan @query_id = @query_id, @plan_id = @plan_id;\r\n\r\n-- Verify\r\nSELECT query_id, plan_id, is_forced_plan, force_failure_count, last_force_failure_reason_desc\r\nFROM sys.query_store_plan\r\nWHERE query_id = @query_id;\r\n\r\n/*\r\nUNFORCE when rewrite is done:\r\nEXEC sys.sp_query_store_unforce_plan @query_id = @query_id, @plan_id = @plan_id;\r\n\r\nIf force fails repeatedly (statistics changed / plan invalid):\r\n- Update stats\r\n- Or use USE HINT / query rewrite instead of force\r\n*/\r\n\r\n-- Audit all forced plans\r\nSELECT q.query_id, p.plan_id, p.force_failure_count, p.last_force_failure_reason_desc,\r\n       qt.query_sql_text\r\nFROM sys.query_store_plan p\r\nJOIN sys.query_store_query q ON q.query_id = p.query_id\r\nJOIN sys.query_store_query_text qt ON qt.query_text_id = q.query_text_id\r\nWHERE p.is_forced_plan = 1\r\nORDER BY q.query_id;\r\n",
+  "03_QueryStore_PlanForce/04_QueryStore_Wait_Statistics_Report.sql": "/*\r\n================================================================================\r\n04_QueryStore_Wait_Statistics_Report.sql\r\nPurpose : Per-query wait breakdown from Query Store (requires WAIT_STATS_CAPTURE_MODE ON).\r\n          Compare wait categories before vs after compat 160 change.\r\nRequires: Query Store ON, SQL Server 2017+ (wait stats in QS)\r\nSafety  : Read-only\r\n================================================================================\r\n*/\r\nUSE [YourDB]; -- <<< change\r\nGO\r\nSET NOCOUNT ON;\r\n\r\nIF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = DB_NAME() AND is_query_store_on = 1)\r\nBEGIN\r\n    RAISERROR('Query Store must be ON. Enable WAIT_STATS_CAPTURE_MODE ON.', 16, 1);\r\n    RETURN;\r\nEND\r\n\r\nDECLARE\r\n    @WindowStart datetime2 = DATEADD(DAY, -7, SYSUTCDATETIME()),\r\n    @WindowEnd   datetime2 = SYSUTCDATETIME();\r\n\r\n-- Per query + wait category (recent window)\r\nSELECT TOP (80)\r\n    q.query_id,\r\n    ws.wait_category_desc,\r\n    SUM(ws.total_query_wait_time_ms) AS total_wait_ms,\r\n    SUM(ws.avg_query_wait_time_ms * ws.count_executions) / NULLIF(SUM(ws.count_executions),0) AS avg_wait_ms,\r\n    SUM(ws.count_executions) AS executions,\r\n    LEFT(qt.query_sql_text, 180) AS query_preview\r\nFROM sys.query_store_wait_stats AS ws\r\nJOIN sys.query_store_plan AS p ON p.plan_id = ws.plan_id\r\nJOIN sys.query_store_query AS q ON q.query_id = p.query_id\r\nJOIN sys.query_store_query_text AS qt ON qt.query_text_id = q.query_text_id\r\nJOIN sys.query_store_runtime_stats_interval AS i\r\n    ON i.runtime_stats_interval_id = ws.runtime_stats_interval_id\r\nWHERE i.start_time >= @WindowStart AND i.start_time < @WindowEnd\r\nGROUP BY q.query_id, ws.wait_category_desc, qt.query_sql_text\r\nHAVING SUM(ws.total_query_wait_time_ms) > 1000\r\nORDER BY total_wait_ms DESC;\r\n\r\n-- Wait category totals (instance-in-DB view)\r\nSELECT\r\n    ws.wait_category_desc,\r\n    SUM(ws.total_query_wait_time_ms) AS total_wait_ms,\r\n    SUM(ws.count_executions) AS executions\r\nFROM sys.query_store_wait_stats AS ws\r\nJOIN sys.query_store_runtime_stats_interval AS i\r\n    ON i.runtime_stats_interval_id = ws.runtime_stats_interval_id\r\nWHERE i.start_time >= @WindowStart AND i.start_time < @WindowEnd\r\nGROUP BY ws.wait_category_desc\r\nORDER BY total_wait_ms DESC;\r\n\r\n/*\r\nCOMPARE BEFORE/AFTER CL 160\r\nRun twice with different @WindowStart/@WindowEnd aligned to cutover date.\r\nWatch for increases in: Memory, Parallelism, Buffer IO, TranLog, Locking.\r\n*/\r\n",
+  "03_QueryStore_PlanForce/05_Automatic_Regression_Report.sql": "/*\r\n================================================================================\r\n05_Automatic_Regression_Report.sql\r\nPurpose : Combined before/after regression report: duration, CPU, logical reads,\r\n          and Query Store waits — single output for compat 130 vs 160 cutover.\r\nRequires: Query Store ON with history spanning both windows\r\nSafety  : Read-only\r\n================================================================================\r\n*/\r\nUSE [YourDB]; -- <<< change\r\nGO\r\nSET NOCOUNT ON;\r\n\r\nIF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = DB_NAME() AND is_query_store_on = 1)\r\nBEGIN\r\n    RAISERROR('Query Store must be ON with baseline at CL 130 before flipping to 160.', 16, 1);\r\n    RETURN;\r\nEND\r\n\r\n-- <<< Adjust windows to your cutover\r\nDECLARE\r\n    @before_start datetime2 = DATEADD(DAY, -14, SYSUTCDATETIME()),\r\n    @before_end   datetime2 = DATEADD(DAY, -7,  SYSUTCDATETIME()),\r\n    @after_start  datetime2 = DATEADD(DAY, -7,  SYSUTCDATETIME()),\r\n    @after_end    datetime2 = SYSUTCDATETIME(),\r\n    @MinExecs     int = 5,\r\n    @RegressPct   decimal(10,2) = 1.50;  -- 50% worse\r\n\r\n;WITH RuntimeBefore AS (\r\n    SELECT q.query_id,\r\n           SUM(rs.count_executions) AS execs,\r\n           SUM(rs.avg_duration * rs.count_executions) / NULLIF(SUM(rs.count_executions),0) AS avg_duration_us,\r\n           SUM(rs.avg_cpu_time * rs.count_executions) / NULLIF(SUM(rs.count_executions),0) AS avg_cpu_us,\r\n           SUM(rs.avg_logical_io_reads * rs.count_executions) / NULLIF(SUM(rs.count_executions),0) AS avg_reads\r\n    FROM sys.query_store_query q\r\n    JOIN sys.query_store_plan p ON p.query_id = q.query_id\r\n    JOIN sys.query_store_runtime_stats rs ON rs.plan_id = p.plan_id\r\n    JOIN sys.query_store_runtime_stats_interval i ON i.runtime_stats_interval_id = rs.runtime_stats_interval_id\r\n    WHERE i.start_time >= @before_start AND i.start_time < @before_end\r\n    GROUP BY q.query_id\r\n),\r\nRuntimeAfter AS (\r\n    SELECT q.query_id,\r\n           SUM(rs.count_executions) AS execs,\r\n           SUM(rs.avg_duration * rs.count_executions) / NULLIF(SUM(rs.count_executions),0) AS avg_duration_us,\r\n           SUM(rs.avg_cpu_time * rs.count_executions) / NULLIF(SUM(rs.count_executions),0) AS avg_cpu_us,\r\n           SUM(rs.avg_logical_io_reads * rs.count_executions) / NULLIF(SUM(rs.count_executions),0) AS avg_reads\r\n    FROM sys.query_store_query q\r\n    JOIN sys.query_store_plan p ON p.query_id = q.query_id\r\n    JOIN sys.query_store_runtime_stats rs ON rs.plan_id = p.plan_id\r\n    JOIN sys.query_store_runtime_stats_interval i ON i.runtime_stats_interval_id = rs.runtime_stats_interval_id\r\n    WHERE i.start_time >= @after_start AND i.start_time < @after_end\r\n    GROUP BY q.query_id\r\n),\r\nWaitsBefore AS (\r\n    SELECT p.query_id, SUM(ws.total_query_wait_time_ms) AS total_wait_ms\r\n    FROM sys.query_store_wait_stats ws\r\n    JOIN sys.query_store_plan p ON p.plan_id = ws.plan_id\r\n    JOIN sys.query_store_runtime_stats_interval i ON i.runtime_stats_interval_id = ws.runtime_stats_interval_id\r\n    WHERE i.start_time >= @before_start AND i.start_time < @before_end\r\n    GROUP BY p.query_id\r\n),\r\nWaitsAfter AS (\r\n    SELECT p.query_id, SUM(ws.total_query_wait_time_ms) AS total_wait_ms\r\n    FROM sys.query_store_wait_stats ws\r\n    JOIN sys.query_store_plan p ON p.plan_id = ws.plan_id\r\n    JOIN sys.query_store_runtime_stats_interval i ON i.runtime_stats_interval_id = ws.runtime_stats_interval_id\r\n    WHERE i.start_time >= @after_start AND i.start_time < @after_end\r\n    GROUP BY p.query_id\r\n)\r\nSELECT TOP (60)\r\n    b.query_id,\r\n    LEFT(qt.query_sql_text, 200) AS query_preview,\r\n    b.execs AS before_execs,\r\n    a.execs AS after_execs,\r\n    b.avg_duration_us / 1000.0 AS before_avg_ms,\r\n    a.avg_duration_us / 1000.0 AS after_avg_ms,\r\n    CAST(a.avg_duration_us / NULLIF(b.avg_duration_us,0) AS decimal(10,2)) AS duration_ratio,\r\n    b.avg_cpu_us / 1000.0 AS before_cpu_ms,\r\n    a.avg_cpu_us / 1000.0 AS after_cpu_ms,\r\n    CAST(a.avg_cpu_us / NULLIF(b.avg_cpu_us,0) AS decimal(10,2)) AS cpu_ratio,\r\n    b.avg_reads AS before_avg_reads,\r\n    a.avg_reads AS after_avg_reads,\r\n    CAST(a.avg_reads / NULLIF(b.avg_reads,0) AS decimal(10,2)) AS reads_ratio,\r\n    ISNULL(wb.total_wait_ms,0) AS before_wait_ms,\r\n    ISNULL(wa.total_wait_ms,0) AS after_wait_ms,\r\n    CAST(ISNULL(wa.total_wait_ms,0) / NULLIF(wb.total_wait_ms,0) AS decimal(10,2)) AS wait_ratio,\r\n    CASE\r\n        WHEN a.avg_duration_us > b.avg_duration_us * @RegressPct THEN N'Duration regression'\r\n        WHEN a.avg_cpu_us > b.avg_cpu_us * @RegressPct THEN N'CPU regression'\r\n        WHEN a.avg_reads > b.avg_reads * @RegressPct THEN N'IO regression'\r\n        WHEN ISNULL(wa.total_wait_ms,0) > ISNULL(wb.total_wait_ms,0) * @RegressPct THEN N'Wait regression'\r\n        ELSE N'Mixed'\r\n    END AS regression_type\r\nFROM RuntimeBefore b\r\nJOIN RuntimeAfter a ON a.query_id = b.query_id\r\nJOIN sys.query_store_query q ON q.query_id = b.query_id\r\nJOIN sys.query_store_query_text qt ON qt.query_text_id = q.query_text_id\r\nLEFT JOIN WaitsBefore wb ON wb.query_id = b.query_id\r\nLEFT JOIN WaitsAfter wa ON wa.query_id = b.query_id\r\nWHERE a.execs >= @MinExecs\r\n  AND (\r\n        a.avg_duration_us > b.avg_duration_us * @RegressPct\r\n     OR a.avg_cpu_us > b.avg_cpu_us * @RegressPct\r\n     OR a.avg_reads > b.avg_reads * @RegressPct\r\n     OR ISNULL(wa.total_wait_ms,0) > ISNULL(wb.total_wait_ms,0) * @RegressPct\r\n  )\r\nORDER BY duration_ratio DESC, after_avg_ms DESC;\r\n\r\nPRINT 'Use query_id to open plans, compare CE/IQP fingerprints, then apply targeted fix — hints last.';\r\n",
+  "05_Compatibility_CE_Controls/06_Automatic_Tuning_and_QueryStore_Hints.sql": "/*\r\n================================================================================\r\n06_Automatic_Tuning_and_QueryStore_Hints.sql\r\nPurpose : Stay on compat 160 without app deploy — auto plan correction + QS hints.\r\n================================================================================\r\n*/\r\nUSE [YourDB]; -- <<< change\r\nGO\r\n\r\n/*----- A) Automatic plan correction (FORCE_LAST_GOOD_PLAN) -----*/\r\nALTER DATABASE CURRENT SET AUTOMATIC_TUNING (FORCE_LAST_GOOD_PLAN = ON);\r\n-- Keep index auto-create/drop OFF unless explicitly approved:\r\n-- ALTER DATABASE CURRENT SET AUTOMATIC_TUNING (CREATE_INDEX = OFF, DROP_INDEX = OFF);\r\n\r\nSELECT name, actual_state_desc, desired_state_desc, reason_desc\r\nFROM sys.database_automatic_tuning_options;\r\n\r\n-- Recommendations (if any)\r\nSELECT reason, score, state = JSON_VALUE(state, '$.currentValue'), details\r\nFROM sys.dm_db_tuning_recommendations;\r\n\r\n/*----- B) Query Store hints (no code change) — SQL 2022 -----*/\r\n-- Examples (set real query_id from regression report):\r\n/*\r\nEXEC sys.sp_query_store_set_hints\r\n    @query_id = 123,\r\n    @query_hints = N'OPTION (USE HINT(''FORCE_LEGACY_CARDINALITY_ESTIMATION''))';\r\n\r\nEXEC sys.sp_query_store_set_hints\r\n    @query_id = 124,\r\n    @query_hints = N'OPTION (RECOMPILE)';\r\n\r\nEXEC sys.sp_query_store_set_hints\r\n    @query_id = 125,\r\n    @query_hints = N'OPTION (OPTIMIZE FOR UNKNOWN)';\r\n\r\nEXEC sys.sp_query_store_set_hints\r\n    @query_id = 126,\r\n    @query_hints = N'OPTION (USE HINT(''DISABLE_TSQL_SCALAR_UDF_INLINING''))';\r\n\r\nEXEC sys.sp_query_store_set_hints\r\n    @query_id = 127,\r\n    @query_hints = N'OPTION (USE HINT(''QUERY_OPTIMIZER_COMPATIBILITY_LEVEL_130''))';\r\n\r\nEXEC sys.sp_query_store_set_hints\r\n    @query_id = 128,\r\n    @query_hints = N'OPTION (USE HINT(''DISABLE_BATCH_MODE_ON_ROWSTORE''))';\r\n\r\nEXEC sys.sp_query_store_set_hints\r\n    @query_id = 129,\r\n    @query_hints = N'OPTION (USE HINT(''DISABLE_PARAMETER_SNIFFING''))';\r\n*/\r\n\r\n-- Audit hints\r\nSELECT qsh.query_id, qsh.query_hint_text, qsh.last_query_hint_failure_reason_desc,\r\n       LEFT(qt.query_sql_text, 200) AS preview\r\nFROM sys.query_store_query_hints qsh\r\nJOIN sys.query_store_query q ON q.query_id = qsh.query_id\r\nJOIN sys.query_store_query_text qt ON qt.query_text_id = q.query_text_id;\r\n\r\n-- Clear one hint:\r\n-- EXEC sys.sp_query_store_clear_hints @query_id = 123;\r\n\r\n/*----- C) Manual force last-good plan (when Automatic Tuning is not enough) -----*/\r\n-- EXEC sys.sp_query_store_force_plan @query_id = 123, @plan_id = 456;\r\nGO\r\n",
+  "01_Diagnostics/01_Capture_Environment_Baseline.sql": "/*\r\n================================================================================\r\n01_Capture_Environment_Baseline.sql\r\nPurpose : Capture instance + database configuration after 2016→2022 restore.\r\nUse     : Run on OLD (if still available) and NEW servers; save outputs for diff.\r\nReplace : @DBName\r\n================================================================================\r\n*/\r\nSET NOCOUNT ON;\r\nDECLARE @DBName sysname = N'YourDB'; -- <<< change\r\n\r\nPRINT '=== SERVER / INSTANCE ===';\r\nSELECT\r\n    SERVERPROPERTY('ProductVersion')   AS ProductVersion,\r\n    SERVERPROPERTY('ProductLevel')     AS ProductLevel,\r\n    SERVERPROPERTY('Edition')          AS Edition,\r\n    SERVERPROPERTY('EngineEdition')    AS EngineEdition,\r\n    SERVERPROPERTY('MachineName')      AS MachineName,\r\n    SERVERPROPERTY('ServerName')       AS ServerName,\r\n    cpu_count,\r\n    hyperthread_ratio,\r\n    physical_memory_kb / 1024          AS physical_memory_mb,\r\n    committed_kb / 1024                AS committed_mb,\r\n    committed_target_kb / 1024         AS committed_target_mb\r\nFROM sys.dm_os_sys_info;\r\n\r\nPRINT '=== IMPORTANT sp_configure ===';\r\nEXEC sp_configure 'show advanced options', 1;\r\nRECONFIGURE;\r\nSELECT name, value, value_in_use, description\r\nFROM sys.configurations\r\nWHERE name IN (\r\n    N'max degree of parallelism',\r\n    N'cost threshold for parallelism',\r\n    N'max server memory (MB)',\r\n    N'min server memory (MB)',\r\n    N'optimize for ad hoc workloads',\r\n    N'backup compression default',\r\n    N'remote admin connections',\r\n    N'XP_cmdshell'  -- should usually be 0\r\n)\r\nORDER BY name;\r\n\r\nPRINT '=== DATABASE PROPERTIES ===';\r\nSELECT\r\n    d.name,\r\n    d.compatibility_level,\r\n    d.collation_name,\r\n    d.is_auto_create_stats_on,\r\n    d.is_auto_update_stats_on,\r\n    d.is_auto_update_stats_async_on,\r\n    d.is_auto_shrink_on,          -- should be 0\r\n    d.page_verify_option_desc,   -- CHECKSUM\r\n    d.is_query_store_on,\r\n    d.is_parameterization_forced,\r\n    d.snapshot_isolation_state_desc,\r\n    d.is_read_committed_snapshot_on,\r\n    d.target_recovery_time_in_seconds,\r\n    d.delayed_durability_desc\r\nFROM sys.databases d\r\nWHERE d.name = @DBName;\r\n\r\nPRINT '=== DATABASE SCOPED CONFIGURATIONS ===';\r\nDECLARE @sql nvarchar(max) = N'\r\nUSE ' + QUOTENAME(@DBName) + N';\r\nSELECT name, value, value_for_secondary, is_value_default\r\nFROM sys.database_scoped_configurations\r\nORDER BY name;';\r\nEXEC (@sql);\r\n\r\nPRINT '=== FILES / SIZE / GROWTH ===';\r\nSELECT\r\n    DB_NAME(database_id) AS db_name,\r\n    type_desc,\r\n    name AS logical_name,\r\n    physical_name,\r\n    CAST(size AS bigint) * 8 / 1024 AS size_mb,\r\n    CASE WHEN max_size = -1 THEN CAST(-1 AS bigint) ELSE CAST(max_size AS bigint) * 8 / 1024 END AS max_size_mb,\r\n    growth,\r\n    is_percent_growth\r\nFROM sys.master_files\r\nWHERE database_id = DB_ID(@DBName)\r\nORDER BY type_desc, file_id;\r\n\r\nPRINT '=== TEMPDB FILES ===';\r\nSELECT name, type_desc, CAST(size AS bigint) * 8 / 1024 AS size_mb, growth, is_percent_growth, physical_name\r\nFROM tempdb.sys.database_files;\r\n\r\nPRINT '=== GLOBAL TRACE FLAGS (STATUS) ===';\r\nDBCC TRACESTATUS(-1);\r\n\r\nPRINT '=== QUERY STORE OPTIONS (if on) ===';\r\nSET @sql = N'\r\nUSE ' + QUOTENAME(@DBName) + N';\r\nSELECT actual_state_desc, readonly_reason, current_storage_size_mb, max_storage_size_mb,\r\n       interval_length_minutes, query_capture_mode_desc, size_based_cleanup_mode_desc,\r\n       stale_query_threshold_days, max_plans_per_query\r\nFROM sys.database_query_store_options;';\r\nEXEC (@sql);\r\n\r\nPRINT 'Baseline capture complete.';\r\n",
+  "01_Diagnostics/02_Compare_Plans_CE130_vs_CE160.sql": "/*\r\n================================================================================\r\n02_Compare_Plans_CE130_vs_CE160.sql\r\nPurpose : Side-by-side estimate/actual plan comparison for a suspect query\r\n          under legacy CE vs modern CE (compat 160 behavior).\r\nHow     : Paste the problem statement into @sql. Run in the user database.\r\nNotes   : Uses query-level hints so you need NOT change DB compatibility to test.\r\n          Review SET STATISTICS IO/TIME and the graphical/XML plans in SSMS.\r\n================================================================================\r\n*/\r\nUSE [YourDB];  -- <<< change\r\nGO\r\nSET NOCOUNT ON;\r\nSET STATISTICS IO ON;\r\nSET STATISTICS TIME ON;\r\n\r\nDECLARE @sql nvarchar(max) = N'\r\n-- PASTE the slow statement / proc body HERE (single batch). Example:\r\nSELECT TOP (100) *\r\nFROM dbo.YourTable AS t\r\nWHERE t.SomeDate >= @d\r\nORDER BY t.Id\r\n';\r\n\r\nDECLARE @sqlExec nvarchar(max);\r\nDECLARE @d date = DATEADD(DAY, -30, CAST(GETDATE() AS date));  -- sample params\r\n\r\nPRINT '========== A) FORCE LEGACY CE (2016-like estimates) ==========';\r\nSET @sqlExec = @sql + N' OPTION (RECOMPILE, USE HINT(''FORCE_LEGACY_CARDINALITY_ESTIMATION''));';\r\nEXEC sp_executesql @stmt = @sqlExec, @params = N'@d date', @d = @d;\r\n\r\nPRINT '========== B) DEFAULT / MODERN CE (160-like) ==========';\r\nSET @sqlExec = @sql + N' OPTION (RECOMPILE);';\r\nEXEC sp_executesql @stmt = @sqlExec, @params = N'@d date', @d = @d;\r\n\r\nPRINT '========== C) OPTIONAL: DISABLE ROW GOAL (sometimes helps TOP/EXISTS) ==========';\r\nSET @sqlExec = @sql + N' OPTION (RECOMPILE, USE HINT(''DISABLE_OPTIMIZER_ROWGOAL''));';\r\nEXEC sp_executesql @stmt = @sqlExec, @params = N'@d date', @d = @d;\r\n\r\nSET STATISTICS IO OFF;\r\nSET STATISTICS TIME OFF;\r\n\r\n/*\r\nWHAT TO COMPARE IN THE PLAN\r\n- Estimated rows vs actual rows (biggest CE failures)\r\n- Join type change (NL vs Hash vs Merge)\r\n- Memory grant / spill to tempdb (thick warnings)\r\n- Parallelism (Degree of Parallelism) changes\r\n- Implicit conversion warnings\r\n- Key Lookup percentage\r\n\r\nNEXT STEPS\r\n- If Legacy CE is fast -> use DB scoped LEGACY_CE temporarily OR fix estimates (stats/rewrite)\r\n- If only parameter sets are bad -> sniffing / PSP / OPTIMIZE FOR\r\n*/\r\nGO\r\n\r\n/*\r\n================================================================================\r\nBonus: Capture live plan handles for a running session / known query text\r\n================================================================================\r\n*/\r\n-- Find plans by query text fragment\r\nSELECT TOP (20)\r\n    qs.total_elapsed_time / NULLIF(qs.execution_count,0) AS avg_elapsed_us,\r\n    qs.total_worker_time / NULLIF(qs.execution_count,0)  AS avg_cpu_us,\r\n    qs.execution_count,\r\n    qs.total_logical_reads / NULLIF(qs.execution_count,0) AS avg_reads,\r\n    DB_NAME(st.dbid) AS db_name,\r\n    SUBSTRING(st.text, (qs.statement_start_offset/2)+1,\r\n        ((CASE qs.statement_end_offset WHEN -1 THEN DATALENGTH(st.text)\r\n          ELSE qs.statement_end_offset END - qs.statement_start_offset)/2)+1) AS statement_text,\r\n    qp.query_plan,\r\n    qs.plan_handle\r\nFROM sys.dm_exec_query_stats AS qs\r\nCROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) AS st\r\nCROSS APPLY sys.dm_exec_query_plan(qs.plan_handle) AS qp\r\nWHERE st.text LIKE N'%YourTable%'   -- <<< change\r\nORDER BY avg_elapsed_us DESC;\r\n",
+  "01_Diagnostics/04_Find_Implicit_Conversions_and_Warnings.sql": "/*\r\n================================================================================\r\n04_Find_Implicit_Conversions_and_Warnings.sql\r\nPurpose : Surface plan warnings that often get worse under CE 160.\r\nRequires: Query Store ON (preferred) OR plan cache XML (heavier).\r\n================================================================================\r\n*/\r\nUSE [YourDB]; -- <<< change\r\nGO\r\nSET NOCOUNT ON;\r\n\r\n-- A) Query Store: plans containing Convert / Implicit conversion warnings in XML\r\nSELECT TOP (50)\r\n    q.query_id,\r\n    qt.query_sql_text,\r\n    p.plan_id,\r\n    rs.avg_duration / 1000.0 AS avg_duration_ms,\r\n    rs.avg_cpu_time / 1000.0 AS avg_cpu_ms,\r\n    rs.count_executions,\r\n    CAST(p.query_plan AS xml) AS query_plan_xml\r\nFROM sys.query_store_query AS q\r\nJOIN sys.query_store_query_text AS qt ON qt.query_text_id = q.query_text_id\r\nJOIN sys.query_store_plan AS p ON p.query_id = q.query_id\r\nJOIN sys.query_store_runtime_stats AS rs ON rs.plan_id = p.plan_id\r\nJOIN sys.query_store_runtime_stats_interval AS rsi\r\n    ON rsi.runtime_stats_interval_id = rs.runtime_stats_interval_id\r\nWHERE rsi.start_time >= DATEADD(DAY, -7, GETUTCDATE())\r\n  AND (\r\n        CAST(p.query_plan AS nvarchar(max)) LIKE N'%Implicit Convert%'\r\n     OR CAST(p.query_plan AS nvarchar(max)) LIKE N'%Convert Issue%'\r\n     OR CAST(p.query_plan AS nvarchar(max)) LIKE N'%CardinalityEstimate%'\r\n     OR CAST(p.query_plan AS nvarchar(max)) LIKE N'%SpillToTempDb%'\r\n     OR CAST(p.query_plan AS nvarchar(max)) LIKE N'%ColumnsWithNoStatistics%'\r\n  )\r\nORDER BY rs.avg_duration DESC;\r\n\r\n-- B) Quick schema smell: nvarchar vs varchar join/filter mismatch candidates\r\nSELECT\r\n    t.name AS table_name,\r\n    c.name AS column_name,\r\n    ty.name AS data_type,\r\n    c.max_length,\r\n    c.collation_name\r\nFROM sys.tables t\r\nJOIN sys.columns c ON c.object_id = t.object_id\r\nJOIN sys.types ty ON ty.user_type_id = c.user_type_id\r\nWHERE ty.name IN (N'varchar', N'nvarchar', N'char', N'nchar')\r\nORDER BY t.name, c.column_id;\r\n",
+  "01_Diagnostics/05_Find_IQP_and_CE_Plan_Fingerprints.sql": "/*\r\n================================================================================\r\n05_Find_IQP_and_CE_Plan_Fingerprints.sql\r\nPurpose : Flag plans showing Legacy CE, UDF inlining, batch mode, spills, MGF.\r\n================================================================================\r\n*/\r\nUSE [YourDB]; -- <<< change\r\nGO\r\nSET NOCOUNT ON;\r\n\r\nSELECT TOP (40)\r\n    q.query_id,\r\n    p.plan_id,\r\n    rs.avg_duration / 1000.0 AS avg_ms,\r\n    rs.avg_cpu_time / 1000.0 AS avg_cpu_ms,\r\n    rs.avg_memory_grant_kb,\r\n    rs.avg_used_memory_grant_kb,\r\n    rs.avg_spills,\r\n    rs.count_executions,\r\n    CASE\r\n        WHEN CAST(p.query_plan AS nvarchar(max)) LIKE N'%LegacyCardinalityEstimation=\"true\"%'\r\n          OR CAST(p.query_plan AS nvarchar(max)) LIKE N'%LegacyCardinalityEstimation=\"1\"%'\r\n            THEN N'Legacy CE'\r\n        ELSE N'Default CE'\r\n    END AS ce_mode,\r\n    CASE\r\n        WHEN CAST(p.query_plan AS nvarchar(max)) LIKE N'%IsInlined=\"true\"%'\r\n          OR CAST(p.query_plan AS nvarchar(max)) LIKE N'%IsInlined=\"1\"%'\r\n            THEN N'UDF inlined'\r\n        ELSE N'-'\r\n    END AS udf_inline,\r\n    CASE\r\n        WHEN CAST(p.query_plan AS nvarchar(max)) LIKE N'%BatchMode=\"true\"%'\r\n          OR CAST(p.query_plan AS nvarchar(max)) LIKE N'%EstimatedExecutionMode=\"Batch\"%'\r\n            THEN N'Batch'\r\n        ELSE N'Row'\r\n    END AS exec_mode,\r\n    LEFT(qt.query_sql_text, 160) AS preview\r\nFROM sys.query_store_query q\r\nJOIN sys.query_store_query_text qt ON qt.query_text_id = q.query_text_id\r\nJOIN sys.query_store_plan p ON p.query_id = q.query_id\r\nJOIN sys.query_store_runtime_stats rs ON rs.plan_id = p.plan_id\r\nJOIN sys.query_store_runtime_stats_interval i\r\n    ON i.runtime_stats_interval_id = rs.runtime_stats_interval_id\r\nWHERE i.start_time >= DATEADD(DAY, -7, GETUTCDATE())\r\nORDER BY rs.avg_duration DESC;\r\nGO\r\n",
+  "01_Diagnostics/06_Plan_Cache_Comparison.sql": "/*\r\n================================================================================\r\n06_Plan_Cache_Comparison.sql\r\nPurpose : Compare cached plans for the same query text / object before and after\r\n          a compatibility level change (or after CLEAR PROCEDURE CACHE on one side).\r\nUse     : Run snapshot A at CL 130 (or export results), flip to CL 160, run again.\r\n          Compare plan_hash, operators, memory grant, and avg elapsed.\r\nRequires: VIEW DATABASE STATE (plan cache DMVs)\r\nSafety  : Read-only\r\n================================================================================\r\n*/\r\nUSE [YourDB]; -- <<< change\r\nGO\r\nSET NOCOUNT ON;\r\n\r\nDECLARE @TopN int = 50;\r\nDECLARE @TextFilter nvarchar(200) = N'%';  -- e.g. N'%Orders%' to narrow\r\n\r\n;WITH PlanCache AS (\r\n    SELECT\r\n        qs.plan_handle,\r\n        qs.sql_handle,\r\n        qs.query_hash,\r\n        qs.query_plan_hash,\r\n        qs.execution_count,\r\n        qs.total_worker_time,\r\n        qs.total_elapsed_time,\r\n        qs.total_logical_reads,\r\n        qs.total_grant_kb,\r\n        qs.total_used_grant_kb,\r\n        qs.total_spills,\r\n        qs.min_grant_kb,\r\n        qs.max_grant_kb,\r\n        DB_NAME(st.dbid) AS db_name,\r\n        OBJECT_SCHEMA_NAME(st.objectid, st.dbid) AS schema_name,\r\n        OBJECT_NAME(st.objectid, st.dbid) AS object_name,\r\n        SUBSTRING(st.text, (qs.statement_start_offset/2)+1,\r\n            ((CASE qs.statement_end_offset WHEN -1 THEN DATALENGTH(st.text)\r\n              ELSE qs.statement_end_offset END - qs.statement_start_offset)/2)+1) AS statement_text,\r\n        qp.query_plan,\r\n        CAST(qp.query_plan AS nvarchar(max)) AS plan_xml\r\n    FROM sys.dm_exec_query_stats AS qs\r\n    CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) AS st\r\n    CROSS APPLY sys.dm_exec_query_plan(qs.plan_handle) AS qp\r\n    WHERE st.dbid = DB_ID()\r\n      AND st.text NOT LIKE N'%sys.dm_exec_query_stats%'\r\n)\r\nSELECT TOP (@TopN)\r\n    pc.db_name,\r\n    pc.schema_name,\r\n    pc.object_name,\r\n    pc.query_hash,\r\n    pc.query_plan_hash,\r\n    pc.execution_count,\r\n    pc.total_elapsed_time / NULLIF(pc.execution_count,0) AS avg_elapsed_us,\r\n    pc.total_worker_time / NULLIF(pc.execution_count,0) AS avg_cpu_us,\r\n    pc.total_logical_reads / NULLIF(pc.execution_count,0) AS avg_logical_reads,\r\n    pc.total_grant_kb / NULLIF(pc.execution_count,0) AS avg_grant_kb,\r\n    pc.total_used_grant_kb / NULLIF(pc.execution_count,0) AS avg_used_grant_kb,\r\n    pc.total_spills,\r\n    CASE\r\n        WHEN pc.plan_xml LIKE N'%LegacyCardinalityEstimation=\"true\"%'\r\n          OR pc.plan_xml LIKE N'%LegacyCardinalityEstimation=\"1\"%' THEN N'Legacy CE'\r\n        WHEN pc.plan_xml LIKE N'%CardinalityEstimationModel=\"130\"%' THEN N'CE 130'\r\n        WHEN pc.plan_xml LIKE N'%CardinalityEstimationModel=\"160\"%' THEN N'CE 160'\r\n        ELSE N'Default'\r\n    END AS ce_hint_in_plan,\r\n    CASE\r\n        WHEN pc.plan_xml LIKE N'%BatchMode=\"true\"%' THEN N'Batch'\r\n        ELSE N'Row'\r\n    END AS exec_mode,\r\n    LEFT(pc.statement_text, 200) AS statement_preview,\r\n    pc.plan_handle\r\nFROM PlanCache AS pc\r\nWHERE pc.statement_text LIKE @TextFilter\r\nORDER BY pc.total_elapsed_time DESC;\r\n\r\n/*\r\nWORKFLOW\r\n1) Save result set as \"PlanCache_CL130.csv\" before compat flip.\r\n2) ALTER DATABASE ... SET COMPATIBILITY_LEVEL = 160;\r\n3) ALTER DATABASE SCOPED CONFIGURATION CLEAR PROCEDURE_CACHE;\r\n4) Run representative workload; re-run this script → \"PlanCache_CL160.csv\".\r\n5) Join on query_hash (or object_name + statement hash) and diff plan_hash, avg_elapsed, spills.\r\n\r\nOptional: export plan XML for one plan_handle\r\nSELECT CAST(query_plan AS xml) FROM sys.dm_exec_query_plan(0xYOURPLANHANDLE);\r\n*/\r\n",
+  "01_Diagnostics/07_Parameter_Sensitive_Query_Detector.sql": "/*\r\n================================================================================\r\n07_Parameter_Sensitive_Query_Detector.sql\r\nPurpose : Find procedures / ad-hoc batches with multiple plans or highly variable\r\n          runtimes (parameter sniffing / PSP candidates after CL 160).\r\nRequires: VIEW SERVER STATE\r\nSafety  : Read-only\r\n================================================================================\r\n*/\r\nUSE [YourDB]; -- <<< change\r\nGO\r\nSET NOCOUNT ON;\r\n\r\n-- A) Plan cache: same query_hash, multiple plan_hash (classic sniffing signal)\r\nSELECT\r\n    qs.query_hash,\r\n    COUNT(DISTINCT qs.plan_handle) AS plan_count,\r\n    COUNT(DISTINCT qs.query_plan_hash) AS distinct_plan_hashes,\r\n    SUM(qs.execution_count) AS total_execs,\r\n    MIN(qs.total_elapsed_time / NULLIF(qs.execution_count,0)) AS min_avg_elapsed_us,\r\n    MAX(qs.total_elapsed_time / NULLIF(qs.execution_count,0)) AS max_avg_elapsed_us,\r\n    CAST(\r\n        MAX(qs.total_elapsed_time * 1.0 / NULLIF(qs.execution_count,0))\r\n        / NULLIF(MIN(qs.total_elapsed_time * 1.0 / NULLIF(qs.execution_count,0)),0)\r\n        AS decimal(12,2)) AS elapsed_variance_ratio,\r\n    OBJECT_SCHEMA_NAME(st.objectid, st.dbid) AS schema_name,\r\n    OBJECT_NAME(st.objectid, st.dbid) AS object_name,\r\n    LEFT(MIN(st.text), 220) AS sample_text\r\nFROM sys.dm_exec_query_stats AS qs\r\nCROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) AS st\r\nWHERE st.dbid = DB_ID()\r\nGROUP BY qs.query_hash, st.objectid, st.dbid\r\nHAVING COUNT(DISTINCT qs.query_plan_hash) > 1\r\n   AND SUM(qs.execution_count) >= 10\r\n   AND MAX(qs.total_elapsed_time / NULLIF(qs.execution_count,0))\r\n       > MIN(qs.total_elapsed_time / NULLIF(qs.execution_count,0)) * 3\r\nORDER BY elapsed_variance_ratio DESC, total_execs DESC;\r\n\r\n-- B) Query Store: multiple plans per query_id with wide duration spread\r\nIF EXISTS (SELECT 1 FROM sys.databases WHERE name = DB_NAME() AND is_query_store_on = 1)\r\nBEGIN\r\n    ;WITH PlanStats AS (\r\n        SELECT\r\n            q.query_id,\r\n            p.plan_id,\r\n            SUM(rs.count_executions) AS execs,\r\n            SUM(rs.avg_duration * rs.count_executions) / NULLIF(SUM(rs.count_executions),0) AS avg_duration_us\r\n        FROM sys.query_store_query AS q\r\n        JOIN sys.query_store_plan AS p ON p.query_id = q.query_id\r\n        JOIN sys.query_store_runtime_stats AS rs ON rs.plan_id = p.plan_id\r\n        JOIN sys.query_store_runtime_stats_interval AS i\r\n            ON i.runtime_stats_interval_id = rs.runtime_stats_interval_id\r\n        WHERE i.start_time >= DATEADD(DAY, -14, GETUTCDATE())\r\n        GROUP BY q.query_id, p.plan_id\r\n    ),\r\n    QuerySpread AS (\r\n        SELECT\r\n            query_id,\r\n            COUNT(*) AS plan_count,\r\n            MIN(avg_duration_us) AS min_avg_us,\r\n            MAX(avg_duration_us) AS max_avg_us,\r\n            SUM(execs) AS total_execs\r\n        FROM PlanStats\r\n        GROUP BY query_id\r\n        HAVING COUNT(*) > 1\r\n    )\r\n    SELECT TOP (40)\r\n        qs.query_id,\r\n        qs.plan_count,\r\n        qs.min_avg_us / 1000.0 AS min_avg_ms,\r\n        qs.max_avg_us / 1000.0 AS max_avg_ms,\r\n        CAST(qs.max_avg_us / NULLIF(qs.min_avg_us,0) AS decimal(12,2)) AS duration_ratio,\r\n        qs.total_execs,\r\n        LEFT(qt.query_sql_text, 220) AS query_preview\r\n    FROM QuerySpread AS qs\r\n    JOIN sys.query_store_query AS q ON q.query_id = qs.query_id\r\n    JOIN sys.query_store_query_text AS qt ON qt.query_text_id = q.query_text_id\r\n    WHERE qs.max_avg_us > qs.min_avg_us * 2\r\n    ORDER BY duration_ratio DESC;\r\nEND\r\nELSE\r\n    PRINT 'Query Store is OFF — enable for richer PSP / sniffing history.';\r\n\r\n/*\r\nNEXT STEPS\r\n- Test OPTION (RECOMPILE) on suspect proc in UAT\r\n- Check PSP: multiple plan variants in QS after CL 160\r\n- Consider OPTIMIZE FOR / Query Store hints only after confirming sniffing\r\n*/\r\n",
+  "01_Diagnostics/08_Memory_Grant_and_Spill_Analysis.sql": "/*\r\n================================================================================\r\n08_Memory_Grant_and_Spill_Analysis.sql\r\nPurpose : Correlate active/recent memory grants with spills and plan cache stats.\r\n          Strong signal for CE 160 regressions (wrong estimates → hash/sort grants).\r\nRequires: VIEW SERVER STATE\r\nSafety  : Read-only\r\n================================================================================\r\n*/\r\nSET NOCOUNT ON;\r\n\r\n-- A) Currently executing / queued memory grants\r\nSELECT\r\n    mg.session_id,\r\n    mg.request_id,\r\n    mg.grant_time,\r\n    mg.requested_memory_kb / 1024.0 AS requested_mb,\r\n    mg.granted_memory_kb / 1024.0 AS granted_mb,\r\n    mg.used_memory_kb / 1024.0 AS used_mb,\r\n    mg.max_used_memory_kb / 1024.0 AS max_used_mb,\r\n    mg.ideal_memory_kb / 1024.0 AS ideal_mb,\r\n    mg.required_memory_kb / 1024.0 AS required_mb,\r\n    mg.query_cost,\r\n    mg.dop,\r\n    mg.wait_time_ms,\r\n    mg.wait_order,\r\n    mg.is_next_candidate,\r\n    mg.queue_id,\r\n    DB_NAME(er.database_id) AS db_name,\r\n    SUBSTRING(st.text, (er.statement_start_offset/2)+1,\r\n        ((CASE er.statement_end_offset WHEN -1 THEN DATALENGTH(st.text)\r\n          ELSE er.statement_end_offset END - er.statement_start_offset)/2)+1) AS statement_text,\r\n    mg.plan_handle\r\nFROM sys.dm_exec_query_memory_grants AS mg\r\nLEFT JOIN sys.dm_exec_requests AS er\r\n    ON er.session_id = mg.session_id AND er.request_id = mg.request_id\r\nOUTER APPLY sys.dm_exec_sql_text(COALESCE(er.sql_handle, mg.sql_handle)) AS st\r\nORDER BY mg.granted_memory_kb DESC, mg.requested_memory_kb DESC;\r\n\r\n-- B) Plan cache: top spillers + grant utilization\r\nSELECT TOP (40)\r\n    DB_NAME(st.dbid) AS db_name,\r\n    OBJECT_NAME(st.objectid, st.dbid) AS object_name,\r\n    qs.total_spills,\r\n    qs.execution_count,\r\n    qs.total_grant_kb / NULLIF(qs.execution_count,0) AS avg_grant_kb,\r\n    qs.total_used_grant_kb / NULLIF(qs.execution_count,0) AS avg_used_grant_kb,\r\n    CAST(qs.total_used_grant_kb * 100.0 / NULLIF(qs.total_grant_kb,0) AS decimal(8,2)) AS grant_util_pct,\r\n    qs.total_elapsed_time / NULLIF(qs.execution_count,0) AS avg_elapsed_us,\r\n    LEFT(SUBSTRING(st.text, (qs.statement_start_offset/2)+1,\r\n        ((CASE qs.statement_end_offset WHEN -1 THEN DATALENGTH(st.text)\r\n          ELSE qs.statement_end_offset END - qs.statement_start_offset)/2)+1), 200) AS statement_preview\r\nFROM sys.dm_exec_query_stats AS qs\r\nCROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) AS st\r\nWHERE (qs.total_spills > 0\r\n    OR qs.total_grant_kb / NULLIF(qs.execution_count,0) > 51200)  -- >50MB avg grant\r\n  AND st.dbid = DB_ID()  -- remove filter for instance-wide\r\nORDER BY qs.total_spills DESC, avg_grant_kb DESC;\r\n\r\n-- C) Query Store: high memory + duration (if ON)\r\nIF EXISTS (SELECT 1 FROM sys.databases WHERE name = DB_NAME() AND is_query_store_on = 1)\r\nBEGIN\r\n    SELECT TOP (30)\r\n        q.query_id,\r\n        p.plan_id,\r\n        rs.avg_query_max_used_memory / 1024.0 AS avg_max_used_memory_mb,\r\n        rs.avg_duration / 1000.0 AS avg_ms,\r\n        rs.count_executions,\r\n        LEFT(qt.query_sql_text, 180) AS preview\r\n    FROM sys.query_store_runtime_stats AS rs\r\n    JOIN sys.query_store_plan AS p ON p.plan_id = rs.plan_id\r\n    JOIN sys.query_store_query AS q ON q.query_id = p.query_id\r\n    JOIN sys.query_store_query_text AS qt ON qt.query_text_id = q.query_text_id\r\n    ORDER BY rs.avg_query_max_used_memory DESC, rs.avg_duration DESC;\r\nEND\r\n\r\nPRINT 'Interpretation: high grant + low utilization or spills → CE estimate issue or batch-mode hash join.';\r\n",
+  "01_Diagnostics/09_Blocking_Chain_Collector.sql": "/*\r\n================================================================================\r\n09_Blocking_Chain_Collector.sql\r\nPurpose : Live snapshot of blockers, victims, wait types, and statement text.\r\n          Rule out blocking before blaming compat 160 / CE.\r\nRequires: VIEW SERVER STATE\r\nSafety  : Read-only (run during slowness incident)\r\n================================================================================\r\n*/\r\nSET NOCOUNT ON;\r\n\r\n;WITH BlockingChain AS (\r\n    SELECT\r\n        r.session_id,\r\n        r.blocking_session_id,\r\n        r.wait_type,\r\n        r.wait_time,\r\n        r.wait_resource,\r\n        r.status,\r\n        r.command,\r\n        r.cpu_time,\r\n        r.total_elapsed_time,\r\n        r.reads,\r\n        r.writes,\r\n        r.logical_reads,\r\n        DB_NAME(r.database_id) AS db_name,\r\n        s.login_name,\r\n        s.host_name,\r\n        s.program_name,\r\n        SUBSTRING(st.text, (r.statement_start_offset/2)+1,\r\n            ((CASE r.statement_end_offset WHEN -1 THEN DATALENGTH(st.text)\r\n              ELSE r.statement_end_offset END - r.statement_start_offset)/2)+1) AS statement_text\r\n    FROM sys.dm_exec_requests AS r\r\n    JOIN sys.dm_exec_sessions AS s ON s.session_id = r.session_id\r\n    OUTER APPLY sys.dm_exec_sql_text(r.sql_handle) AS st\r\n    WHERE r.session_id <> @@SPID\r\n)\r\nSELECT\r\n    bc.session_id AS victim_session_id,\r\n    bc.blocking_session_id,\r\n    bc.wait_type,\r\n    bc.wait_time AS wait_time_ms,\r\n    bc.wait_resource,\r\n    bc.db_name,\r\n    bc.login_name,\r\n    bc.program_name,\r\n    bc.total_elapsed_time AS elapsed_ms,\r\n    LEFT(bc.statement_text, 220) AS victim_statement,\r\n    LEFT(blocker.statement_text, 220) AS blocker_statement,\r\n    blocker.total_elapsed_time AS blocker_elapsed_ms\r\nFROM BlockingChain AS bc\r\nLEFT JOIN BlockingChain AS blocker ON blocker.session_id = bc.blocking_session_id\r\nWHERE bc.blocking_session_id <> 0\r\n   OR bc.session_id IN (SELECT DISTINCT blocking_session_id FROM BlockingChain WHERE blocking_session_id <> 0)\r\nORDER BY bc.wait_time DESC;\r\n\r\n-- Head blockers (not blocked themselves but blocking others)\r\nSELECT\r\n    r.session_id AS head_blocker_session,\r\n    COUNT(*) AS victims_blocked,\r\n    MAX(r.wait_time) AS max_victim_wait_ms,\r\n    s.login_name,\r\n    s.program_name,\r\n    LEFT(st.text, 250) AS batch_text\r\nFROM sys.dm_exec_requests AS r\r\nJOIN sys.dm_exec_sessions AS s ON s.session_id = r.session_id\r\nOUTER APPLY sys.dm_exec_sql_text(r.sql_handle) AS st\r\nWHERE r.blocking_session_id = 0\r\n  AND EXISTS (\r\n      SELECT 1 FROM sys.dm_exec_requests r2\r\n      WHERE r2.blocking_session_id = r.session_id\r\n  )\r\nGROUP BY r.session_id, s.login_name, s.program_name, st.text\r\nORDER BY victims_blocked DESC;\r\n",
+  "01_Diagnostics/03_Wait_Stats_and_Top_Queries.sql": "/*\r\n================================================================================\r\n03_Wait_Stats_and_Top_Queries.sql\r\nPurpose : Identify whether slowness is CPU, IO, parallelism, memory grants,\r\n          or specific query regressions after moving to compat 160.\r\n================================================================================\r\n*/\r\nSET NOCOUNT ON;\r\n\r\nPRINT '=== TOP WAITS (clear noise) ===';\r\n;WITH Waits AS (\r\n    SELECT\r\n        wait_type,\r\n        waiting_tasks_count,\r\n        wait_time_ms,\r\n        signal_wait_time_ms,\r\n        wait_time_ms - signal_wait_time_ms AS resource_wait_ms,\r\n        100.0 * wait_time_ms / NULLIF(SUM(wait_time_ms) OVER (), 0) AS pct\r\n    FROM sys.dm_os_wait_stats\r\n    WHERE wait_type NOT IN (\r\n        N'BROKER_EVENTHANDLER', N'BROKER_RECEIVE_WAITFOR', N'BROKER_TASK_STOP',\r\n        N'BROKER_TO_FLUSH', N'BROKER_TRANSMITTER', N'CHECKPOINT_QUEUE',\r\n        N'CHKPT', N'CLR_AUTO_EVENT', N'CLR_MANUAL_EVENT', N'CLR_SEMAPHORE',\r\n        N'DBMIRROR_DBM_EVENT', N'DBMIRROR_EVENTS_QUEUE', N'DBMIRROR_WORKER_QUEUE',\r\n        N'DBMIRRORING_CMD', N'DIRTY_PAGE_POLL', N'DISPATCHER_QUEUE_SEMAPHORE',\r\n        N'EXECSYNC', N'FSAGENT', N'FT_IFTS_SCHEDULER_IDLE_WAIT', N'FT_IFTSHC_MUTEX',\r\n        N'HADR_CLUSINTER_CONTRACT', N'HADR_FILESTREAM_IOMGR_IOCOMPLETION',\r\n        N'HADR_LOGCAPTURE_WAIT', N'HADR_NOTIFICATION_DEQUEUE', N'HADR_TIMER_TASK',\r\n        N'HADR_WORK_QUEUE', N'KSOURCE_WAKEUP', N'LAZYWRITER_SLEEP', N'LOGMGR_QUEUE',\r\n        N'MEMORY_ALLOCATION_EXT', N'ONDEMAND_TASK_QUEUE', N'PARALLEL_REDO_DRAIN_WORKER',\r\n        N'PARALLEL_REDO_LOG_CACHE', N'PARALLEL_REDO_TRAN_LIST', N'PARALLEL_REDO_WORKER_SYNC',\r\n        N'PARALLEL_REDO_WORKER_WAIT_WORK', N'PREEMPTIVE_OS_FLUSHFILEBUFFERS',\r\n        N'PREEMPTIVE_XE_GETTARGETSTATE', N'PWAIT_ALL_COMPONENTS_INITIALIZED',\r\n        N'PWAIT_DIRECTLOGCONSUMER_GETNEXT', N'QDS_PERSIST_TASK_MAIN_LOOP_SLEEP',\r\n        N'QDS_ASYNC_QUEUE', N'QDS_CLEANUP_STALE_QUERIES_TASK_MAIN_LOOP_SLEEP',\r\n        N'QDS_SHUTDOWN_QUEUE', N'REDO_THREAD_PENDING_WORK', N'REQUEST_FOR_DEADLOCK_SEARCH',\r\n        N'RESOURCE_QUEUE', N'SERVER_IDLE_CHECK', N'SLEEP_BPOOL_FLUSH', N'SLEEP_DBSTARTUP',\r\n        N'SLEEP_DCOMSTARTUP', N'SLEEP_MASTERDBREADY', N'SLEEP_MASTERMDREADY',\r\n        N'SLEEP_MASTERUPGRADED', N'SLEEP_MSDBSTARTUP', N'SLEEP_SYSTEMTASK', N'SLEEP_TASK',\r\n        N'SLEEP_TEMPDBSTARTUP', N'SNI_HTTP_ACCEPT', N'SP_SERVER_DIAGNOSTICS_SLEEP',\r\n        N'SQLTRACE_BUFFER_FLUSH', N'SQLTRACE_INCREMENTAL_FLUSH_SLEEP', N'SQLTRACE_WAIT_ENTRIES',\r\n        N'WAIT_FOR_RESULTS', N'WAITFOR', N'WAITFOR_TASKSHUTDOWN', N'WAIT_XTP_CKPT_CLOSE',\r\n        N'WAIT_XTP_HOST_WAIT', N'WAIT_XTP_OFFLINE_CKPT_NEW_LOG', N'WAIT_XTP_RECOVERY',\r\n        N'XE_DISPATCHER_JOIN', N'XE_DISPATCHER_WAIT', N'XE_TIMER_EVENT'\r\n    )\r\n)\r\nSELECT TOP (20) *\r\nFROM Waits\r\nWHERE waiting_tasks_count > 0\r\nORDER BY wait_time_ms DESC;\r\n\r\nPRINT '=== INTERPRETATION HINTS ===';\r\nPRINT 'CXPACKET/CXCONSUMER + high SOS_SCHEDULER_YIELD → parallelism / CPU pressure; revisit MAXDOP & CTFP';\r\nPRINT 'PAGEIOLATCH_* / WRITELOG → storage latency; check disk and log Autogrowth';\r\nPRINT 'RESOURCE_SEMAPHORE → memory grant waits (often bad CE → oversized hash/sort grants)';\r\nPRINT 'LCK_M_* → blocking (not usually caused by compat alone)';\r\n\r\nPRINT '=== TOP CPU QUERIES (plan cache) ===';\r\nSELECT TOP (25)\r\n    qs.total_worker_time / NULLIF(qs.execution_count,0) AS avg_cpu_us,\r\n    qs.total_elapsed_time / NULLIF(qs.execution_count,0) AS avg_elapsed_us,\r\n    qs.execution_count,\r\n    qs.total_logical_reads / NULLIF(qs.execution_count,0) AS avg_logical_reads,\r\n    qs.total_grant_kb / NULLIF(qs.execution_count,0) AS avg_grant_kb,\r\n    qs.total_used_grant_kb / NULLIF(qs.execution_count,0) AS avg_used_grant_kb,\r\n    qs.total_spills AS total_spills,\r\n    DB_NAME(st.dbid) AS db_name,\r\n    OBJECT_NAME(st.objectid, st.dbid) AS object_name,\r\n    SUBSTRING(st.text, (qs.statement_start_offset/2)+1,\r\n        ((CASE qs.statement_end_offset WHEN -1 THEN DATALENGTH(st.text)\r\n          ELSE qs.statement_end_offset END - qs.statement_start_offset)/2)+1) AS statement_text\r\nFROM sys.dm_exec_query_stats AS qs\r\nCROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) AS st\r\nWHERE st.dbid = DB_ID()  -- current DB; remove filter for instance-wide\r\nORDER BY qs.total_worker_time DESC;\r\n\r\nPRINT '=== MEMORY GRANT SPILLS (strong CE smell) ===';\r\nSELECT TOP (25)\r\n    qs.total_spills,\r\n    qs.execution_count,\r\n    qs.total_grant_kb / NULLIF(qs.execution_count,0) AS avg_grant_kb,\r\n    qs.total_used_grant_kb / NULLIF(qs.execution_count,0) AS avg_used_grant_kb,\r\n    SUBSTRING(st.text, (qs.statement_start_offset/2)+1,\r\n        ((CASE qs.statement_end_offset WHEN -1 THEN DATALENGTH(st.text)\r\n          ELSE qs.statement_end_offset END - qs.statement_start_offset)/2)+1) AS statement_text\r\nFROM sys.dm_exec_query_stats AS qs\r\nCROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) AS st\r\nWHERE qs.total_spills > 0\r\nORDER BY qs.total_spills DESC;\r\n",
+  "04_Statistics_Indexes/01_Update_Statistics_PostMigration.sql": "/*\r\n================================================================================\r\n01_Update_Statistics_PostMigration.sql\r\nPurpose : Refresh statistics after restore / before or after flipping to compat 160.\r\nWhy     : New CE is more sensitive to density/histogram quality. FULLSCAN on hot\r\n          tables often eliminates large estimate errors overnight.\r\n================================================================================\r\n*/\r\nUSE [YourDB]; -- <<< change\r\nGO\r\nSET NOCOUNT ON;\r\n\r\n-- A) Inventory: oldest / most modified stats\r\nSELECT TOP (100)\r\n    OBJECT_SCHEMA_NAME(s.object_id) AS schema_name,\r\n    OBJECT_NAME(s.object_id) AS table_name,\r\n    s.name AS stats_name,\r\n    STATS_DATE(s.object_id, s.stats_id) AS last_updated,\r\n    sp.rows,\r\n    sp.rows_sampled,\r\n    sp.modification_counter,\r\n    CASE WHEN sp.rows > 0\r\n         THEN CAST(sp.modification_counter * 100.0 / sp.rows AS decimal(10,2))\r\n         ELSE 0 END AS pct_modified\r\nFROM sys.stats AS s\r\nCROSS APPLY sys.dm_db_stats_properties(s.object_id, s.stats_id) AS sp\r\nWHERE OBJECTPROPERTY(s.object_id, 'IsUserTable') = 1\r\nORDER BY sp.modification_counter DESC, last_updated ASC;\r\n\r\n-- B) Update ALL stats in DB (sampled) — good first pass on large DBs\r\n-- EXEC sp_updatestats;\r\n\r\n-- C) Targeted FULLSCAN for critical tables (preferred for top offenders)\r\n/*\r\nUPDATE STATISTICS dbo.Orders WITH FULLSCAN;\r\nUPDATE STATISTICS dbo.OrderDetails WITH FULLSCAN;\r\nUPDATE STATISTICS dbo.Customers WITH FULLSCAN;\r\n*/\r\n\r\n-- D) Generate FULLSCAN scripts for top modified tables\r\nSELECT\r\n    'UPDATE STATISTICS ' + QUOTENAME(OBJECT_SCHEMA_NAME(s.object_id))\r\n        + '.' + QUOTENAME(OBJECT_NAME(s.object_id))\r\n        + ' WITH FULLSCAN;' AS update_sql,\r\n    sp.modification_counter,\r\n    STATS_DATE(s.object_id, s.stats_id) AS last_updated\r\nFROM sys.stats AS s\r\nCROSS APPLY sys.dm_db_stats_properties(s.object_id, s.stats_id) AS sp\r\nWHERE s.stats_id = 1  -- often clustered / first; expand as needed\r\n  AND OBJECTPROPERTY(s.object_id, 'IsUserTable') = 1\r\n  AND sp.modification_counter > 1000\r\nORDER BY sp.modification_counter DESC;\r\n\r\n/*\r\nE) Optional: permanent auto-stats async\r\nALTER DATABASE CURRENT SET AUTO_UPDATE_STATISTICS_ASYNC ON;\r\n*/\r\n",
+  "04_Statistics_Indexes/02_Index_Health_and_Missing_Indexes.sql": "/*\r\n================================================================================\r\n02_Index_Health_and_Missing_Indexes.sql\r\nPurpose : After CE change, new plans may need different covering indexes.\r\nCaution : Missing-index DMVs are suggestions — validate with workload + writes.\r\n================================================================================\r\n*/\r\nUSE [YourDB]; -- <<< change\r\nGO\r\nSET NOCOUNT ON;\r\n\r\nPRINT '=== Fragmentation (sample; filter large tables) ===';\r\nSELECT\r\n    OBJECT_SCHEMA_NAME(ips.object_id) AS schema_name,\r\n    OBJECT_NAME(ips.object_id) AS table_name,\r\n    i.name AS index_name,\r\n    ips.index_type_desc,\r\n    ips.avg_fragmentation_in_percent,\r\n    ips.page_count\r\nFROM sys.dm_db_index_physical_stats(DB_ID(), NULL, NULL, NULL, N'SAMPLED') AS ips\r\nJOIN sys.indexes AS i\r\n  ON i.object_id = ips.object_id AND i.index_id = ips.index_id\r\nWHERE ips.page_count > 1000\r\n  AND ips.avg_fragmentation_in_percent > 30\r\nORDER BY ips.avg_fragmentation_in_percent DESC;\r\n\r\nPRINT '=== Missing index suggestions (impact * seeks) ===';\r\nSELECT TOP (30)\r\n    ROUND(migs.avg_total_user_cost * migs.avg_user_impact * (migs.user_seeks + migs.user_scans), 0) AS improvement_measure,\r\n    mid.statement AS table_name,\r\n    mid.equality_columns,\r\n    mid.inequality_columns,\r\n    mid.included_columns,\r\n    migs.user_seeks,\r\n    migs.user_scans,\r\n    migs.avg_user_impact\r\nFROM sys.dm_db_missing_index_groups mig\r\nJOIN sys.dm_db_missing_index_group_stats migs ON migs.group_handle = mig.index_group_handle\r\nJOIN sys.dm_db_missing_index_details mid ON mid.index_handle = mig.index_handle\r\nWHERE mid.database_id = DB_ID()\r\nORDER BY improvement_measure DESC;\r\n\r\nPRINT '=== Unused indexes (careful in short uptime windows) ===';\r\nSELECT\r\n    OBJECT_SCHEMA_NAME(i.object_id) AS schema_name,\r\n    OBJECT_NAME(i.object_id) AS table_name,\r\n    i.name AS index_name,\r\n    ius.user_seeks, ius.user_scans, ius.user_lookups, ius.user_updates,\r\n    ius.last_user_seek, ius.last_user_scan\r\nFROM sys.indexes i\r\nLEFT JOIN sys.dm_db_index_usage_stats ius\r\n  ON ius.object_id = i.object_id AND ius.index_id = i.index_id AND ius.database_id = DB_ID()\r\nWHERE OBJECTPROPERTY(i.object_id, 'IsUserTable') = 1\r\n  AND i.type_desc <> 'HEAP'\r\n  AND i.is_primary_key = 0\r\n  AND i.is_unique_constraint = 0\r\n  AND ISNULL(ius.user_seeks,0) + ISNULL(ius.user_scans,0) + ISNULL(ius.user_lookups,0) = 0\r\nORDER BY ISNULL(ius.user_updates,0) DESC;\r\n",
+  "04_Statistics_Indexes/03_Statistics_Quality_Report.sql": "/*\r\n================================================================================\r\n03_Statistics_Quality_Report.sql\r\nPurpose : Histogram depth, sample rate, last update, modification counters.\r\n          Validate statistics quality before blaming CE / applying hints.\r\nRequires: VIEW DATABASE STATE\r\nSafety  : Read-only\r\n================================================================================\r\n*/\r\nUSE [YourDB]; -- <<< change\r\nGO\r\nSET NOCOUNT ON;\r\n\r\nSELECT TOP (150)\r\n    OBJECT_SCHEMA_NAME(s.object_id) AS schema_name,\r\n    OBJECT_NAME(s.object_id) AS table_name,\r\n    s.name AS stats_name,\r\n    s.stats_id,\r\n    STATS_DATE(s.object_id, s.stats_id) AS last_updated,\r\n    sp.rows,\r\n    sp.rows_sampled,\r\n    CASE WHEN sp.rows > 0\r\n         THEN CAST(sp.rows_sampled * 100.0 / sp.rows AS decimal(8,2))\r\n         ELSE 0 END AS sample_pct,\r\n    sp.modification_counter,\r\n    CASE WHEN sp.rows > 0\r\n         THEN CAST(sp.modification_counter * 100.0 / sp.rows AS decimal(8,2))\r\n         ELSE 0 END AS pct_modified_since_update,\r\n    (SELECT COUNT(*) FROM sys.dm_db_stats_histogram(s.object_id, s.stats_id)) AS histogram_steps,\r\n    CASE\r\n        WHEN sp.rows_sampled = sp.rows THEN N'FULLSCAN (likely)'\r\n        WHEN sp.rows > 0 AND sp.rows_sampled * 100.0 / sp.rows < 5 THEN N'LOW SAMPLE'\r\n        ELSE N'SAMPLED'\r\n    END AS update_quality,\r\n    CASE\r\n        WHEN sp.modification_counter > sp.rows * 0.20 THEN N'HIGH churn — update stats'\r\n        WHEN STATS_DATE(s.object_id, s.stats_id) < DATEADD(DAY, -30, GETDATE()) THEN N'STALE date'\r\n        ELSE N'OK'\r\n    END AS recommendation\r\nFROM sys.stats AS s\r\nCROSS APPLY sys.dm_db_stats_properties(s.object_id, s.stats_id) AS sp\r\nWHERE OBJECTPROPERTY(s.object_id, 'IsUserTable') = 1\r\nORDER BY sp.modification_counter DESC, last_updated ASC;\r\n\r\n-- Leading column of each stat (for targeted FULLSCAN)\r\nSELECT TOP (80)\r\n    OBJECT_SCHEMA_NAME(sc.object_id) + '.' + OBJECT_NAME(sc.object_id) AS table_name,\r\n    s.name AS stats_name,\r\n    c.name AS leading_column,\r\n    STATS_DATE(s.object_id, s.stats_id) AS last_updated,\r\n    sp.modification_counter\r\nFROM sys.stats AS s\r\nJOIN sys.stats_columns AS sc ON sc.object_id = s.object_id AND sc.stats_id = s.stats_id AND sc.stats_column_id = 1\r\nJOIN sys.columns AS c ON c.object_id = sc.object_id AND c.column_id = sc.column_id\r\nCROSS APPLY sys.dm_db_stats_properties(s.object_id, s.stats_id) AS sp\r\nWHERE OBJECTPROPERTY(s.object_id, 'IsUserTable') = 1\r\n  AND sp.modification_counter > 5000\r\nORDER BY sp.modification_counter DESC;\r\n",
+  "04_Statistics_Indexes/04_Missing_Statistics_Detector.sql": "/*\r\n================================================================================\r\n04_Missing_Statistics_Detector.sql\r\nPurpose : Find columns referenced in plans with ColumnsWithNoStatistics warnings,\r\n          plus heuristic: filter/join columns without stats on user tables.\r\nRequires: Query Store ON (section A) or plan cache (section B)\r\nSafety  : Read-only\r\n================================================================================\r\n*/\r\nUSE [YourDB]; -- <<< change\r\nGO\r\nSET NOCOUNT ON;\r\n\r\n-- A) Query Store plans with ColumnsWithNoStatistics warning\r\nIF EXISTS (SELECT 1 FROM sys.databases WHERE name = DB_NAME() AND is_query_store_on = 1)\r\nBEGIN\r\n    SELECT TOP (50)\r\n        q.query_id,\r\n        p.plan_id,\r\n        rs.avg_duration / 1000.0 AS avg_ms,\r\n        rs.count_executions,\r\n        LEFT(qt.query_sql_text, 200) AS query_preview,\r\n        CAST(p.query_plan AS xml) AS plan_xml\r\n    FROM sys.query_store_query AS q\r\n    JOIN sys.query_store_query_text AS qt ON qt.query_text_id = q.query_text_id\r\n    JOIN sys.query_store_plan AS p ON p.query_id = q.query_id\r\n    JOIN sys.query_store_runtime_stats AS rs ON rs.plan_id = p.plan_id\r\n    WHERE CAST(p.query_plan AS nvarchar(max)) LIKE N'%ColumnsWithNoStatistics%'\r\n    ORDER BY rs.avg_duration DESC;\r\nEND\r\n\r\n-- B) Plan cache — same warning\r\nSELECT TOP (30)\r\n    qs.total_elapsed_time / NULLIF(qs.execution_count,0) AS avg_elapsed_us,\r\n    OBJECT_NAME(st.objectid, st.dbid) AS object_name,\r\n    LEFT(SUBSTRING(st.text, (qs.statement_start_offset/2)+1,\r\n        ((CASE qs.statement_end_offset WHEN -1 THEN DATALENGTH(st.text)\r\n          ELSE qs.statement_end_offset END - qs.statement_start_offset)/2)+1), 200) AS statement_preview,\r\n    qp.query_plan\r\nFROM sys.dm_exec_query_stats AS qs\r\nCROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) AS st\r\nCROSS APPLY sys.dm_exec_query_plan(qs.plan_handle) AS qp\r\nWHERE st.dbid = DB_ID()\r\n  AND CAST(qp.query_plan AS nvarchar(max)) LIKE N'%ColumnsWithNoStatistics%'\r\nORDER BY avg_elapsed_us DESC;\r\n\r\n-- C) Heuristic: index key columns without dedicated stats (beyond auto single-column)\r\nSELECT\r\n    OBJECT_SCHEMA_NAME(i.object_id) AS schema_name,\r\n    OBJECT_NAME(i.object_id) AS table_name,\r\n    i.name AS index_name,\r\n    c.name AS column_name,\r\n    N'Consider CREATE STATISTICS on filter/join column' AS suggestion\r\nFROM sys.indexes AS i\r\nJOIN sys.index_columns AS ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id\r\nJOIN sys.columns AS c ON c.object_id = ic.object_id AND c.column_id = ic.column_id\r\nWHERE i.type > 0\r\n  AND OBJECTPROPERTY(i.object_id, 'IsUserTable') = 1\r\n  AND ic.is_included_column = 0\r\n  AND ic.key_ordinal > 1\r\n  AND NOT EXISTS (\r\n      SELECT 1 FROM sys.stats_columns sc\r\n      WHERE sc.object_id = i.object_id AND sc.column_id = c.column_id AND sc.stats_column_id = 1\r\n  )\r\nORDER BY table_name, index_name, ic.key_ordinal;\r\n\r\n/*\r\nREMEDIATION (after validation)\r\nCREATE STATISTICS [stat_Table_Col] ON dbo.TableName (ColumnName) WITH FULLSCAN;\r\n-- or UPDATE STATISTICS on parent table\r\n*/\r\n",
+  "05_Compatibility_CE_Controls/01_Database_Scoped_CE_and_Optimizer_Controls.sql": "/*\r\n================================================================================\r\n01_Database_Scoped_CE_and_Optimizer_Controls.sql\r\nPurpose : Temporary bridges while remediating queries under compat 160.\r\nStrategy: Prefer Query Store plan force / query hints for few offenders.\r\n          Use database-scoped bridges only when regressions are widespread.\r\n          Keep CL 160 ON so other engine features remain available.\r\n================================================================================\r\n*/\r\nUSE [YourDB]; -- <<< change\r\nGO\r\n\r\nSELECT name, value, value_for_secondary, is_value_default\r\nFROM sys.database_scoped_configurations\r\nORDER BY name;\r\n\r\n/*\r\n--------------------------------------------------------------------------------\r\nSAFE BRIDGES (keep CL 160; clear proc cache after each change)\r\nUse when Step 5B: widespread regressions after flipping to 160.\r\n--------------------------------------------------------------------------------\r\n\r\n-- Option A: Legacy CE globally (emergency bridge - restores 2016-like estimates)\r\nALTER DATABASE SCOPED CONFIGURATION SET LEGACY_CARDINALITY_ESTIMATION = ON;\r\nALTER DATABASE SCOPED CONFIGURATION CLEAR PROCEDURE_CACHE;\r\n\r\n-- Option B: Disable Scalar UDF Inlining (CPU spikes / bad UDF plans after skip from 2016)\r\nALTER DATABASE SCOPED CONFIGURATION SET TSQL_SCALAR_UDF_INLINING = OFF;\r\nALTER DATABASE SCOPED CONFIGURATION CLEAR PROCEDURE_CACHE;\r\n\r\n-- Option C: Optimizer hotfixes (cumulative CE/optimizer fixes under modern CE)\r\nALTER DATABASE SCOPED CONFIGURATION SET QUERY_OPTIMIZER_HOTFIXES = ON;\r\nALTER DATABASE SCOPED CONFIGURATION CLEAR PROCEDURE_CACHE;\r\n\r\n-- Option D: Batch mode on rowstore OFF (only if spills / CX* after CL 160)\r\n-- ALTER DATABASE SCOPED CONFIGURATION SET BATCH_MODE_ON_ROWSTORE = OFF;\r\n-- ALTER DATABASE SCOPED CONFIGURATION CLEAR PROCEDURE_CACHE;\r\n\r\n-- Option E: PSP OFF (only if variant thrashing proven)\r\n-- ALTER DATABASE SCOPED CONFIGURATION SET PARAMETER_SENSITIVE_PLAN_OPTIMIZATION = OFF;\r\n-- ALTER DATABASE SCOPED CONFIGURATION CLEAR PROCEDURE_CACHE;\r\n\r\nGOAL STATE (after rewrites / forced plans validated):\r\nALTER DATABASE SCOPED CONFIGURATION SET LEGACY_CARDINALITY_ESTIMATION = OFF;\r\nALTER DATABASE SCOPED CONFIGURATION SET TSQL_SCALAR_UDF_INLINING = ON;  -- if safe\r\nALTER DATABASE SCOPED CONFIGURATION CLEAR PROCEDURE_CACHE;\r\n\r\nParameter sniffing OFF is a last resort - prefer query-level OPTIMIZE FOR / RECOMPILE.\r\n-- ALTER DATABASE SCOPED CONFIGURATION SET PARAMETER_SNIFFING = OFF;\r\n*/\r\nGO\r\n",
+  "05_Compatibility_CE_Controls/02_Query_Level_Hints_CheatSheet.sql": "/*\r\n================================================================================\r\n02_Query_Level_Hints_CheatSheet.sql\r\nPurpose : Surgical hints for CE 160 regressions without changing whole DB.\r\n================================================================================\r\n*/\r\n\r\n-- 1) Force legacy CE for one statement (best first A/B test)\r\nSELECT /* your query */\r\nFROM dbo.YourTable\r\nWHERE ...\r\nOPTION (USE HINT('FORCE_LEGACY_CARDINALITY_ESTIMATION'));\r\n\r\n-- 2) Disable optimizer row goal (helps some TOP / EXISTS / IN / FAST patterns)\r\nSELECT TOP (100) *\r\nFROM dbo.YourTable\r\nWHERE ...\r\nOPTION (USE HINT('DISABLE_OPTIMIZER_ROWGOAL'));\r\n\r\n-- 3) Force CE version explicitly (120 = 2014 CE family; useful experiments)\r\nSELECT ...\r\nOPTION (USE HINT('QUERY_OPTIMIZER_COMPATIBILITY_LEVEL_130'));  -- 2016-like optimizer model\r\n-- Other values: 140, 150, 160\r\n\r\n-- 4) Parameter sniffing mitigations\r\nSELECT ...\r\nWHERE Col = @p\r\nOPTION (OPTIMIZE FOR UNKNOWN);\r\n\r\nSELECT ...\r\nWHERE Col = @p\r\nOPTION (OPTIMIZE FOR (@p = 12345));  -- sniffed \"typical\" value\r\n\r\n-- 5) Recompile (volatile params / skewed data; CPU cost on high-freq calls)\r\nEXEC dbo.YourProc @p = 1 WITH RECOMPILE;\r\n-- or inside proc: OPTION (RECOMPILE)\r\n\r\n-- 6) Join / memory pressure tactics (validate!)\r\nSELECT ...\r\nOPTION (HASH JOIN);          -- or LOOP JOIN / MERGE JOIN\r\nSELECT ...\r\nOPTION (MIN_GRANT_PERCENT = 5, MAX_GRANT_PERCENT = 25);\r\n\r\n-- 7) Disable interleaved execution for MSTVFs if it hurts a specific query\r\nSELECT ...\r\nOPTION (USE HINT('DISABLE_INTERLEAVED_EXECUTION_TVF'));\r\n\r\n-- 8) Adaptive joins off for one query (rare)\r\nSELECT ...\r\nOPTION (USE HINT('DISABLE_BATCH_MODE_ADAPTIVE_JOINS'));\r\n\r\n/*\r\nPROCEDURE WRAPPER PATTERN — add hint without rewriting app SQL\r\n*/\r\nCREATE OR ALTER PROCEDURE dbo.usp_Report_Orders\r\n    @FromDate date,\r\n    @ToDate   date\r\nAS\r\nBEGIN\r\n    SET NOCOUNT ON;\r\n    SELECT o.*\r\n    FROM dbo.Orders AS o\r\n    WHERE o.OrderDate >= @FromDate AND o.OrderDate < @ToDate\r\n    OPTION (USE HINT('FORCE_LEGACY_CARDINALITY_ESTIMATION'), RECOMPILE);\r\nEND;\r\nGO\r\n\r\n/*\r\nQUERY STORE HINTS (SQL 2022) — apply hint without changing code\r\n*/\r\n-- EXEC sys.sp_query_store_set_hints @query_id = 123,\r\n--      @query_hints = N'OPTION (USE HINT(''FORCE_LEGACY_CARDINALITY_ESTIMATION''))';\r\n-- Check: SELECT * FROM sys.query_store_query_hints;\r\n-- Clear: EXEC sys.sp_query_store_clear_hints @query_id = 123;\r\n",
+  "05_Compatibility_CE_Controls/03_Compatibility_Level_Change_Runbook.sql": "/*\r\n================================================================================\r\n03_Compatibility_Level_Change_Runbook.sql\r\nPurpose : Safe production cutover / rollback between 130 and 160.\r\n================================================================================\r\n*/\r\nUSE [YourDB]; -- <<< change\r\nGO\r\n\r\n-- Pre-check\r\nSELECT name, compatibility_level, is_query_store_on\r\nFROM sys.databases WHERE name = DB_NAME();\r\n\r\nSELECT actual_state_desc, current_storage_size_mb, max_storage_size_mb\r\nFROM sys.database_query_store_options;\r\n\r\n/*\r\n======================== CUTOVER TO 160 ========================\r\nWindow: low traffic. Have app owners on call. Rollback script ready.\r\n*/\r\n-- 1) Ensure Query Store is healthy (READ_WRITE, not tiny)\r\n-- 2) Optional: take a manual stats pass on hot tables first\r\n-- 3) Flip:\r\n-- ALTER DATABASE CURRENT SET COMPATIBILITY_LEVEL = 160;\r\n-- 4) Clear proc cache for THIS database only:\r\n-- ALTER DATABASE SCOPED CONFIGURATION CLEAR PROCEDURE_CACHE;\r\n-- 5) Watch: Query Store regressions, wait stats, app APDEX/timeouts for 30–120 min\r\n-- 6) If widespread pain:\r\n--    ALTER DATABASE SCOPED CONFIGURATION SET LEGACY_CARDINALITY_ESTIMATION = ON;\r\n--    ALTER DATABASE SCOPED CONFIGURATION CLEAR PROCEDURE_CACHE;\r\n--    (keeps compat 160 features where possible while restoring old CE)\r\n\r\n/*\r\n======================== EMERGENCY ROLLBACK ========================\r\n*/\r\n-- ALTER DATABASE CURRENT SET COMPATIBILITY_LEVEL = 130;\r\n-- ALTER DATABASE SCOPED CONFIGURATION SET LEGACY_CARDINALITY_ESTIMATION = OFF;\r\n-- ALTER DATABASE SCOPED CONFIGURATION CLEAR PROCEDURE_CACHE;\r\n\r\n/*\r\nDocument in change ticket:\r\n- Start time / end time\r\n- Forced plan IDs\r\n- Scoped config flags changed\r\n- Queries rewritten\r\n*/\r\n",
+  "05_Compatibility_CE_Controls/04_SQL2022_IQP_and_CE_Feedback_Notes.sql": "/*\r\n================================================================================\r\n04_SQL2022_IQP_and_CE_Feedback_Notes.sql\r\nPurpose : IQP / CE feedback context when jumping SQL 2016 (CL 130) -> 2022 (CL 160).\r\nWhy it matters: Backup/restore migrations SKIP 2017 and 2019. Enabling CL 160\r\n          activates multiple IQP features at once that apps never saw under 2016.\r\n================================================================================\r\n*/\r\nUSE [YourDB]; -- <<< change\r\nGO\r\n\r\n/*\r\n================================================================================\r\nSKIP-RELEASE EFFECT (2016 -> 2022 directly)\r\n--------------------------------------------------------------------------------\r\nSQL 2019 / CL 150 features that turn ON when you go to CL 160:\r\n  - TSQL Scalar UDF Inlining\r\n      Intended to remove row-by-row UDF cost. Can cause severe plan regressions,\r\n      compilation CPU spikes, or wrong estimates on UDFs with complex logic,\r\n      WHILE loops, or table access.\r\n      Bridge: ALTER DATABASE SCOPED CONFIGURATION SET TSQL_SCALAR_UDF_INLINING = OFF;\r\n      Or: ALTER FUNCTION ... WITH INLINE = OFF; / query hint DISABLE_TSQL_SCALAR_UDF_INLINING\r\n\r\n  - Batch Mode on Rowstore\r\n      Batch operators on rowstore tables. Bad CE -> oversized memory grants,\r\n      TempDB spills, or CXPACKET/CXCONSUMER under parallel batch plans.\r\n      Bridge: SET BATCH_MODE_ON_ROWSTORE = OFF (test only); fix estimates/stats first.\r\n      Also raise Cost Threshold for Parallelism (30-50) so trivial queries stay serial.\r\n\r\nSQL 2022 / CL 160 features:\r\n  - Parameter Sensitive Plan (PSP) Optimization\r\n      Multiple plan variants for skewed parameters. Usually helps; can add QS\r\n      overhead or thrash at variant boundaries. Check multi-plan queries in QS.\r\n      Bridge: SET PARAMETER_SENSITIVE_PLAN_OPTIMIZATION = OFF (targeted test).\r\n\r\n  - CE Feedback / DOP Feedback / Memory Grant Feedback (refined)\r\n      Learn over time; first executions after flip can still be bad.\r\n\r\nIsolate ONE feature at a time - see 05_IQP_Feature_Isolation_Toggles.sql\r\n================================================================================\r\n*/\r\n\r\nPRINT '=== Scoped configs that control IQP / CE bridges ===';\r\nSELECT name, value, is_value_default\r\nFROM sys.database_scoped_configurations\r\nWHERE name IN (\r\n    N'LEGACY_CARDINALITY_ESTIMATION',\r\n    N'TSQL_SCALAR_UDF_INLINING',\r\n    N'BATCH_MODE_ON_ROWSTORE',\r\n    N'PARAMETER_SENSITIVE_PLAN_OPTIMIZATION',\r\n    N'OPTIONAL_PARAMETER_OPTIMIZATION',\r\n    N'CE_FEEDBACK',\r\n    N'DOP_FEEDBACK',\r\n    N'ROW_MODE_MEMORY_GRANT_FEEDBACK',\r\n    N'BATCH_MODE_MEMORY_GRANT_FEEDBACK',\r\n    N'QUERY_OPTIMIZER_HOTFIXES'\r\n)\r\nORDER BY name;\r\n\r\n-- Query Store hints currently applied\r\nIF EXISTS (SELECT 1 FROM sys.databases WHERE name = DB_NAME() AND is_query_store_on = 1)\r\nBEGIN\r\n    SELECT qsh.query_id, qsh.query_hint_id, qsh.query_hint_text,\r\n           qsh.last_query_hint_failure_reason_desc,\r\n           LEFT(qt.query_sql_text, 200) AS preview\r\n    FROM sys.query_store_query_hints AS qsh\r\n    JOIN sys.query_store_query AS q ON q.query_id = qsh.query_id\r\n    JOIN sys.query_store_query_text AS qt ON qt.query_text_id = q.query_text_id;\r\n\r\n    -- PSP signal: many plans per query after CL 160\r\n    SELECT q.query_id, COUNT(*) AS plan_count, LEFT(MAX(qt.query_sql_text), 120) AS preview\r\n    FROM sys.query_store_query q\r\n    JOIN sys.query_store_plan p ON p.query_id = q.query_id\r\n    JOIN sys.query_store_query_text qt ON qt.query_text_id = q.query_text_id\r\n    GROUP BY q.query_id\r\n    HAVING COUNT(*) >= 3\r\n    ORDER BY plan_count DESC;\r\nEND\r\n\r\n-- INLINE = OFF candidates among scalar UDFs (if inlining hurts)\r\nSELECT OBJECT_SCHEMA_NAME(o.object_id) AS schema_name,\r\n       OBJECT_NAME(o.object_id) AS function_name,\r\n       m.is_inlineable,\r\n       m.inline_type\r\nFROM sys.sql_modules AS m\r\nJOIN sys.objects AS o ON o.object_id = m.object_id\r\nWHERE o.type = N'FN';  -- scalar functions\r\nGO\r\n",
+  "05_Compatibility_CE_Controls/05_IQP_Feature_Isolation_Toggles.sql": "/*\r\n================================================================================\r\n05_IQP_Feature_Isolation_Toggles.sql\r\nPurpose : At compat 160, disable ONE Intelligent Query Processing feature at a\r\n          time to find which feature caused the regression. Never disable all.\r\nPrereq  : Stats / indexes / MAXDOP already tuned. Compat set to 160 in test.\r\n================================================================================\r\n*/\r\nUSE [YourDB]; -- <<< change\r\nGO\r\n\r\n-- Current scoped configs (focus on IQP-related)\r\nSELECT name, value, is_value_default\r\nFROM sys.database_scoped_configurations\r\nWHERE name IN (\r\n    N'LEGACY_CARDINALITY_ESTIMATION',\r\n    N'TSQL_SCALAR_UDF_INLINING',\r\n    N'BATCH_MODE_ON_ROWSTORE',\r\n    N'ROW_MODE_MEMORY_GRANT_FEEDBACK',\r\n    N'BATCH_MODE_MEMORY_GRANT_FEEDBACK',\r\n    N'DOP_FEEDBACK',\r\n    N'CE_FEEDBACK',\r\n    N'PARAMETER_SENSITIVE_PLAN_OPTIMIZATION',\r\n    N'OPTIONAL_PARAMETER_OPTIMIZATION',\r\n    N'PARAMETER_SNIFFING',\r\n    N'INTERLEAVED_EXECUTION_TVF',\r\n    N'BATCH_MODE_ADAPTIVE_JOINS'\r\n)\r\nORDER BY name;\r\n\r\n/*\r\nTEST PROTOCOL (UAT only)\r\n1) ALTER DATABASE CURRENT SET COMPATIBILITY_LEVEL = 160;\r\n2) Clear cache: ALTER DATABASE SCOPED CONFIGURATION CLEAR PROCEDURE_CACHE;\r\n3) Run workload / top procs; note duration\r\n4) Toggle ONE setting OFF; clear cache; retest\r\n5) If fixed → keep that OFF (or use query-level hint) and re-enable others\r\n6) If not → set it back ON; try next\r\n\r\n--- A) Legacy CE (whole-DB bridge; proves CE regression) ---\r\n-- ALTER DATABASE SCOPED CONFIGURATION SET LEGACY_CARDINALITY_ESTIMATION = ON;\r\n\r\n--- B) Scalar UDF inlining ---\r\n-- ALTER DATABASE SCOPED CONFIGURATION SET TSQL_SCALAR_UDF_INLINING = OFF;\r\n\r\n--- C) Batch mode on rowstore (memory grant / aggregate shape) ---\r\n-- ALTER DATABASE SCOPED CONFIGURATION SET BATCH_MODE_ON_ROWSTORE = OFF;\r\n\r\n--- D) Memory grant feedback ---\r\n-- ALTER DATABASE SCOPED CONFIGURATION SET ROW_MODE_MEMORY_GRANT_FEEDBACK = OFF;\r\n-- ALTER DATABASE SCOPED CONFIGURATION SET BATCH_MODE_MEMORY_GRANT_FEEDBACK = OFF;\r\n\r\n--- E) DOP feedback ---\r\n-- ALTER DATABASE SCOPED CONFIGURATION SET DOP_FEEDBACK = OFF;\r\n\r\n--- F) CE feedback ---\r\n-- ALTER DATABASE SCOPED CONFIGURATION SET CE_FEEDBACK = OFF;\r\n\r\n--- G) Parameter Sensitive Plan (PSP) ---\r\n-- ALTER DATABASE SCOPED CONFIGURATION SET PARAMETER_SENSITIVE_PLAN_OPTIMIZATION = OFF;\r\n\r\n--- H) Optional parameter optimization ---\r\n-- ALTER DATABASE SCOPED CONFIGURATION SET OPTIONAL_PARAMETER_OPTIMIZATION = OFF;\r\n\r\n-- After ANY change:\r\n-- ALTER DATABASE SCOPED CONFIGURATION CLEAR PROCEDURE_CACHE;\r\n\r\nGOAL STATE: compat 160 with as many features ON as possible; isolate only the offender.\r\n*/\r\nGO\r\n",
+  "06_Code_Rewrite_Patterns/01_Before_After_Examples.sql": "/*\r\n================================================================================\r\n01_Before_After_Examples.sql\r\nPurpose : T-SQL rewrite templates for SQL 2016 -> 2022 (compat 160) regressions.\r\n          Each section: ISSUE | WHY AT CL 160 | HOW THE FIX HELPS | BEFORE/AFTER\r\nNote    : Examples use placeholder objects (dbo.Orders, etc.). Adapt to your schema.\r\n          Run sections individually in SSMS; not all blocks execute end-to-end.\r\n================================================================================\r\n*/\r\nUSE [YourDB];  -- <<< change\r\nGO\r\n\r\nSET NOCOUNT ON;\r\n\r\n/*############################################################################\r\n  PATTERN A) OR across columns\r\n  ISSUE     : WHERE Email = @v OR Phone = @v forces broad scan + residual filter.\r\n  AT CL 160 : CE often mis-estimates OR selectivity; may pick hash + large grant.\r\n  FIX HELPS : Each branch uses its own index seek; estimates are per-branch.\r\n##############################################################################*/\r\n/*\r\n-- BEFORE\r\nSELECT * FROM dbo.Customers WHERE Email = @v OR Phone = @v;\r\n\r\n-- AFTER (UNION removes duplicate rows if both match)\r\nSELECT * FROM dbo.Customers WHERE Email = @v\r\nUNION\r\nSELECT * FROM dbo.Customers WHERE Phone = @v AND (Email IS NULL OR Email <> @v);\r\n*/\r\n\r\n/*############################################################################\r\n  PATTERN B) Non-SARGable date function on column\r\n  ISSUE     : YEAR(OrderDate)=2024 or CONVERT(date, Col)=@d prevents index seek.\r\n  AT CL 160 : Same anti-pattern, but new CE may choose worse join on scanned heap.\r\n  FIX HELPS : Range predicate is SARGable; seek on index; stable row estimate.\r\n##############################################################################*/\r\n/*\r\n-- BEFORE\r\nWHERE CONVERT(date, CreatedAt) = @d\r\n\r\n-- AFTER\r\n*/\r\nDECLARE @d date = '2024-01-15';\r\nDECLARE @dEnd date = DATEADD(DAY, 1, @d);\r\n-- SELECT * FROM dbo.Events WHERE CreatedAt >= @d AND CreatedAt < @dEnd;\r\n\r\n/*############################################################################\r\n  PATTERN C) ISNULL / COALESCE on filtered column\r\n  ISSUE     : WHERE ISNULL(Status, 0) = 1 is not SARGable; scans all rows.\r\n  AT CL 160 : Underestimated scans + bad join order on large tables.\r\n  FIX HELPS : Explicit NULL logic allows index on Status when most rows non-null.\r\n##############################################################################*/\r\n/*\r\n-- BEFORE\r\nWHERE ISNULL(Status, 0) = 1\r\n\r\n-- AFTER\r\nWHERE Status = 1 OR Status IS NULL   -- only if NULL should match; else Status = 1\r\n*/\r\n\r\n/*############################################################################\r\n  PATTERN D) Leading-wildcard LIKE\r\n  ISSUE     : LIKE '%' + @name + '%' cannot use B-tree index.\r\n  AT CL 160 : Full scan cost amplified if CE picks nested loops on huge estimate error.\r\n  FIX HELPS : Prefix search uses index; Full-Text for contains; or trigram/GIN elsewhere.\r\n##############################################################################*/\r\n/*\r\n-- BEFORE\r\nWHERE CustomerName LIKE '%' + @name + '%'\r\n\r\n-- AFTER (prefix only)\r\nWHERE CustomerName LIKE @name + N'%'\r\n*/\r\n\r\n/*############################################################################\r\n  PATTERN E) NOT IN (subquery) — NULL trap\r\n  ISSUE     : NOT IN returns UNKNOWN if subquery has NULL; often becomes scan.\r\n  AT CL 160 : Bad CE + anti-semi join confusion; unpredictable plans.\r\n  FIX HELPS : NOT EXISTS is NULL-safe and typically gets better anti-semi plan.\r\n##############################################################################*/\r\n/*\r\n-- BEFORE\r\nWHERE CustomerId NOT IN (SELECT CustomerId FROM dbo.Blacklist)\r\n\r\n-- AFTER\r\n*/\r\n-- SELECT c.*\r\n-- FROM dbo.Customers AS c\r\n-- WHERE NOT EXISTS (\r\n--     SELECT 1 FROM dbo.Blacklist AS b WHERE b.CustomerId = c.CustomerId\r\n-- );\r\n\r\n/*############################################################################\r\n  PATTERN F) IN (large list) vs EXISTS / temp table\r\n  ISSUE     : WHERE Id IN (500+ literals) bloats plan, bad compile time.\r\n  AT CL 160 : Large IN lists + new CE = compile-heavy, unstable plans.\r\n  FIX HELPS : #ids temp table + join gives stats after INSERT; reusable plan.\r\n##############################################################################*/\r\n/*\r\n-- BEFORE\r\nWHERE OrderId IN (1,2,3, ... hundreds ...)\r\n\r\n-- AFTER\r\n*/\r\nIF OBJECT_ID('tempdb..#OrderIds') IS NOT NULL DROP TABLE #OrderIds;\r\nCREATE TABLE #OrderIds (OrderId int NOT NULL PRIMARY KEY);\r\n-- INSERT #OrderIds VALUES (1),(2),(3);  -- or INSERT...SELECT from app list\r\n-- SELECT o.* FROM dbo.Orders o INNER JOIN #OrderIds i ON i.OrderId = o.OrderId;\r\n\r\n/*############################################################################\r\n  PATTERN G) CROSS APPLY TOP 1 per group\r\n  ISSUE     : Correlated TOP 1 per row; CE guesses rows wrong on APPLY.\r\n  AT CL 160 : Nested loops explosion or hash on wrong estimate.\r\n  FIX HELPS : ROW_NUMBER once over partition; filter rn=1; single pass sort/scan.\r\n##############################################################################*/\r\n/*\r\n-- BEFORE\r\nSELECT c.*, la.LastOrderDate\r\nFROM dbo.Customers c\r\nCROSS APPLY (\r\n    SELECT TOP (1) o.OrderDate AS LastOrderDate\r\n    FROM dbo.Orders o\r\n    WHERE o.CustomerId = c.CustomerId\r\n    ORDER BY o.OrderDate DESC\r\n) la;\r\n\r\n-- AFTER\r\n-- ;WITH Ranked AS (\r\n--     SELECT o.CustomerId, o.OrderDate,\r\n--            ROW_NUMBER() OVER (PARTITION BY o.CustomerId ORDER BY o.OrderDate DESC) AS rn\r\n--     FROM dbo.Orders AS o\r\n-- )\r\n-- SELECT c.*, r.OrderDate AS LastOrderDate\r\n-- FROM dbo.Customers c\r\n-- LEFT JOIN Ranked r ON r.CustomerId = c.CustomerId AND r.rn = 1;\r\n*/\r\n\r\n/*############################################################################\r\n  PATTERN H) Multi-statement TVF -> inline TVF (iTVF)\r\n  ISSUE     : MSTVF fixed cardinality (~1 row pre-2019); opaque to optimizer.\r\n  AT CL 160 : Interleaved execution helps some MSTVFs; many still regress.\r\n  FIX HELPS : iTVF inlines into parent query; real estimates on base tables.\r\n##############################################################################*/\r\n/*\r\n-- BEFORE: CREATE FUNCTION dbo.mstvf_Orders(@CustomerId int) ... INSERT @t SELECT ...\r\n\r\n-- AFTER\r\n*/\r\nCREATE OR ALTER FUNCTION dbo.ifn_OrdersForCustomer (@CustomerId int)\r\nRETURNS TABLE\r\nAS\r\nRETURN\r\n(\r\n    SELECT OrderId, OrderDate, Amount\r\n    FROM dbo.Orders\r\n    WHERE CustomerId = @CustomerId\r\n);\r\nGO\r\n\r\n/*############################################################################\r\n  PATTERN I) Scalar UDF in SELECT — inline logic or INLINE=OFF\r\n  ISSUE     : Non-inlineable UDF = per-row UDF operator (hidden cursor cost).\r\n  AT CL 160 : UDF inlining may CHANGE plan (sometimes faster, sometimes worse).\r\n  FIX HELPS : Inline CASE/expression = set-based; or INLINE=OFF to restore old shape.\r\n##############################################################################*/\r\n/*\r\n-- BEFORE\r\nSELECT o.OrderId, dbo.fn_CalcTax(o.Amount) AS Tax FROM dbo.Orders o;\r\n\r\n-- AFTER (inline expression)\r\nSELECT o.OrderId,\r\n       CASE WHEN o.Region = N'EU' THEN o.Amount * 0.20 ELSE o.Amount * 0.08 END AS Tax\r\nFROM dbo.Orders o;\r\n\r\n-- OR keep UDF but prevent inlining if CL 160 plan regresses:\r\n-- ALTER FUNCTION dbo.fn_CalcTax ... WITH INLINE = OFF;\r\n*/\r\n\r\n/*############################################################################\r\n  PATTERN J) Implicit conversion (nvarchar param vs varchar column)\r\n  ISSUE     : WHERE VarcharCol = @nvarcharParam converts column; index not used.\r\n  AT CL 160 : CE + CONVERT_IMPLICIT warning; scans on large tables.\r\n  FIX HELPS : Convert parameter to column type; seek on index resumes.\r\n##############################################################################*/\r\n/*\r\nDECLARE @AppId nvarchar(20) = N'ABC123';\r\n-- BEFORE: WHERE ExternalId = @AppId   -- ExternalId is varchar(20)\r\n\r\n-- AFTER\r\n*/\r\nDECLARE @AppId nvarchar(20) = N'ABC123';\r\nDECLARE @id varchar(20) = CAST(@AppId AS varchar(20));\r\n-- SELECT * FROM dbo.ExternalKeys WHERE ExternalId = @id;\r\n\r\n/*############################################################################\r\n  PATTERN K) Table variable vs temp table for intermediate sets\r\n  ISSUE     : Table variable @t had fixed low estimate (unless RECOMPILE).\r\n  AT CL 160 : Table variable deferred compilation helps; still weak for large sets.\r\n  FIX HELPS : #temp gets stats after INSERT; CE picks correct join (NL vs hash).\r\n##############################################################################*/\r\n/*\r\n-- BEFORE (large intermediate set)\r\nDECLARE @ids TABLE (Id int PRIMARY KEY);\r\nINSERT @ids SELECT OrderId FROM dbo.Orders WHERE OrderDate >= @From;\r\nSELECT * FROM @ids i JOIN dbo.OrderDetails d ON d.OrderId = i.Id;\r\n\r\n-- AFTER\r\n*/\r\nIF OBJECT_ID('tempdb..#ids') IS NOT NULL DROP TABLE #ids;\r\nCREATE TABLE #ids (Id int NOT NULL PRIMARY KEY);\r\n-- INSERT #ids SELECT OrderId FROM dbo.Orders WHERE OrderDate >= @From;\r\n-- SELECT * FROM #ids i JOIN dbo.OrderDetails d ON d.OrderId = i.Id;\r\n\r\n/*############################################################################\r\n  PATTERN L) Stage selective keys — break multi-predicate CE correlation\r\n  ISSUE     : 4+ AND filters on different tables; CE correlates selectivity wrong.\r\n  AT CL 160 : Hash join on massive estimate; memory grant spill to TempDB.\r\n  FIX HELPS : Materialize tiny selective set first; join to large tables second.\r\n##############################################################################*/\r\nIF OBJECT_ID('tempdb..#keys') IS NOT NULL DROP TABLE #keys;\r\n/*\r\nDECLARE @Region varchar(20) = 'North', @FromDate date = '2024-01-01';\r\n\r\nSELECT CustomerId\r\nINTO #keys\r\nFROM dbo.Customers\r\nWHERE Region = @Region AND IsActive = 1;\r\n\r\nCREATE CLUSTERED INDEX CX_keys ON #keys(CustomerId);\r\n\r\nSELECT o.*\r\nFROM #keys k\r\nJOIN dbo.Orders o ON o.CustomerId = k.CustomerId\r\nWHERE o.OrderDate >= @FromDate;\r\n*/\r\n\r\n/*############################################################################\r\n  PATTERN M) Optional parameters (OR @p IS NULL pattern)\r\n  ISSUE     : WHERE (@Status IS NULL OR Status = @Status) — single plan for all.\r\n  AT CL 160 : CE assumes unknown selectivity; often scan + bad join.\r\n  FIX HELPS : Dynamic SQL adds only supplied filters; each shape gets right plan.\r\n##############################################################################*/\r\n/*\r\n-- BEFORE\r\nCREATE PROC dbo.usp_Search @Status int = NULL, @Region varchar(20) = NULL AS\r\nSELECT * FROM dbo.Orders\r\nWHERE (@Status IS NULL OR StatusId = @Status)\r\n  AND (@Region IS NULL OR Region = @Region);\r\n\r\n-- AFTER (dynamic SQL skeleton)\r\n*/\r\nCREATE OR ALTER PROCEDURE dbo.usp_SearchOrders\r\n    @StatusId int = NULL,\r\n    @Region   varchar(20) = NULL\r\nAS\r\nBEGIN\r\n    SET NOCOUNT ON;\r\n    DECLARE @sql nvarchar(max) = N'\r\n        SELECT OrderId, CustomerId, OrderDate, StatusId, Region\r\n        FROM dbo.Orders\r\n        WHERE 1 = 1';\r\n    IF @StatusId IS NOT NULL SET @sql += N' AND StatusId = @StatusId';\r\n    IF @Region   IS NOT NULL SET @sql += N' AND Region = @Region';\r\n    EXEC sp_executesql @sql,\r\n        N'@StatusId int, @Region varchar(20)',\r\n        @StatusId = @StatusId, @Region = @Region;\r\nEND;\r\nGO\r\n\r\n/*############################################################################\r\n  PATTERN N) Parameter sniffing — OPTIMIZE FOR UNKNOWN / RECOMPILE\r\n  ISSUE     : Plan compiled for first @StatusId (e.g. rare=1 row vs common=millions).\r\n  AT CL 160 : PSP may help; may also flip to worse variant — verify in Query Store.\r\n  FIX HELPS : UNKNOWN = average density; RECOMPILE = plan per execution (CPU cost).\r\n##############################################################################*/\r\nCREATE OR ALTER PROCEDURE dbo.usp_OrdersByStatus\r\n    @StatusId int\r\nAS\r\nBEGIN\r\n    SET NOCOUNT ON;\r\n    SELECT OrderId, CustomerId, OrderDate\r\n    FROM dbo.Orders\r\n    WHERE StatusId = @StatusId\r\n    OPTION (OPTIMIZE FOR UNKNOWN);\r\n    -- Heavy report run rarely: OPTION (RECOMPILE);\r\n    -- Known typical value: OPTION (OPTIMIZE FOR (@StatusId = 2));\r\nEND;\r\nGO\r\n\r\n/*############################################################################\r\n  PATTERN O) Local variable in proc (sniffing mitigation — use carefully)\r\n  ISSUE     : Proc parameter sniffed at compile; variable copied = density estimate.\r\n  AT CL 160 : Same as 130 but CE 160 density math differs — test both ways.\r\n  FIX HELPS : Can flatten skew when PSP not available; can also hide good sniff.\r\n##############################################################################*/\r\nCREATE OR ALTER PROCEDURE dbo.usp_OrdersByCustomer\r\n    @CustomerId int\r\nAS\r\nBEGIN\r\n    SET NOCOUNT ON;\r\n    DECLARE @cid int = @CustomerId;  -- copy parameter\r\n    SELECT OrderId, OrderDate, Amount\r\n    FROM dbo.Orders\r\n    WHERE CustomerId = @cid;\r\nEND;\r\nGO\r\n\r\n/*############################################################################\r\n  PATTERN P) SELECT * on wide tables in joins\r\n  ISSUE     : All columns flow through hash/sort; wide rows = memory grant bloat.\r\n  AT CL 160 : Batch/hash operators on wide rows spill more often.\r\n  FIX HELPS : Project only needed columns; smaller grants; better chance of merge join.\r\n##############################################################################*/\r\n/*\r\n-- BEFORE\r\nSELECT o.*, c.* FROM dbo.Orders o JOIN dbo.Customers c ON c.CustomerId = o.CustomerId;\r\n\r\n-- AFTER\r\nSELECT o.OrderId, o.OrderDate, o.Amount, c.Name, c.Region\r\nFROM dbo.Orders o\r\nJOIN dbo.Customers c ON c.CustomerId = o.CustomerId;\r\n*/\r\n\r\n/*############################################################################\r\n  PATTERN Q) Pre-aggregate before join (DISTINCT / GROUP BY explosion)\r\n  ISSUE     : GROUP BY on huge join output; CE underestimates distinct keys.\r\n  AT CL 160 : Hash aggregate + spill; serial plan on large grant wait.\r\n  FIX HELPS : Aggregate one table first; join smaller aggregated set.\r\n##############################################################################*/\r\n/*\r\n-- BEFORE\r\nSELECT p.CategoryId, SUM(d.Qty * d.UnitPrice)\r\nFROM dbo.Orders o\r\nJOIN dbo.OrderDetails d ON d.OrderId = o.OrderId\r\nJOIN dbo.Products p ON p.ProductId = d.ProductId\r\nWHERE o.OrderDate >= @From\r\nGROUP BY p.CategoryId;\r\n\r\n-- AFTER (pre-filter orders, then aggregate)\r\n*/\r\nIF OBJECT_ID('tempdb..#ord') IS NOT NULL DROP TABLE #ord;\r\n-- SELECT OrderId INTO #ord FROM dbo.Orders WHERE OrderDate >= @From;\r\n-- CREATE CLUSTERED INDEX CX ON #ord(OrderId);\r\n-- SELECT p.CategoryId, SUM(d.Qty * d.UnitPrice)\r\n-- FROM #ord o\r\n-- JOIN dbo.OrderDetails d ON d.OrderId = o.OrderId\r\n-- JOIN dbo.Products p ON p.ProductId = d.ProductId\r\n-- GROUP BY p.CategoryId;\r\n\r\n/*############################################################################\r\n  PATTERN R) Ascending key / latest rows (MAX(Id), open-ended range)\r\n  ISSUE     : WHERE Id > @maxId or recent dates — histogram stale on ascending key.\r\n  AT CL 160 : CE thinks few rows; nested loops; or opposite — huge hash grant.\r\n  FIX HELPS : RECOMPILE uses runtime values; OPTIMIZE FOR UNKNOWN for steady plan.\r\n##############################################################################*/\r\n/*\r\nDECLARE @Since date = DATEADD(DAY, -7, CAST(GETDATE() AS date));\r\nSELECT * FROM dbo.Orders WHERE OrderDate >= @Since\r\nOPTION (RECOMPILE);\r\n*/\r\n\r\n/*############################################################################\r\n  PATTERN S) EXISTS vs IN for correlated subqueries\r\n  ISSUE     : IN (subquery) sometimes gets semi-join rewrite; not always optimal.\r\n  AT CL 160 : Plan shape change vs 130; EXISTS often more predictable.\r\n  FIX HELPS : EXISTS short-circuits; optimizer typically uses hash/merge semi-join.\r\n##############################################################################*/\r\n/*\r\n-- BEFORE\r\nSELECT * FROM dbo.Customers c\r\nWHERE c.CustomerId IN (SELECT CustomerId FROM dbo.Orders WHERE OrderDate >= @From);\r\n\r\n-- AFTER\r\nSELECT * FROM dbo.Customers c\r\nWHERE EXISTS (\r\n    SELECT 1 FROM dbo.Orders o\r\n    WHERE o.CustomerId = c.CustomerId AND o.OrderDate >= @From\r\n);\r\n*/\r\n\r\n/*############################################################################\r\n  PATTERN T) Linked server — pull keys locally first\r\n  ISSUE     : Four-part name join; remote CE assumes ~1 row per lookup.\r\n  AT CL 160 : Same issue, worse with parallel nested loops across network.\r\n  FIX HELPS : OPENQUERY/INSERT #remote with filter pushdown; join locally with stats.\r\n##############################################################################*/\r\n/*\r\n-- BEFORE\r\nSELECT * FROM dbo.Local l\r\nJOIN [LINKED].RemoteDb.dbo.Remote r ON r.Id = l.RemoteId;\r\n\r\n-- AFTER\r\nSELECT Id, Col INTO #r FROM OPENQUERY(LINKED, 'SELECT Id, Col FROM RemoteDb.dbo.Remote WHERE Active = 1');\r\nCREATE CLUSTERED INDEX CX ON #r(Id);\r\nSELECT * FROM dbo.Local l JOIN #r r ON r.Id = l.RemoteId;\r\n*/\r\n\r\n/*############################################################################\r\n  PATTERN U) Query Store hints — no deploy (SQL 2022)\r\n  ISSUE     : Cannot change app code quickly; need per-query CE/RECOMPILE control.\r\n  AT CL 160 : Bridge while rewriting; document query_id and review date.\r\n  FIX HELPS : Hint applied via QS; remove after permanent T-SQL fix validated.\r\n##############################################################################*/\r\n/*\r\nEXEC sys.sp_query_store_set_hints\r\n    @query_id = 42,\r\n    @query_hints = N'OPTION (USE HINT(''FORCE_LEGACY_CARDINALITY_ESTIMATION''))';\r\n\r\n-- Audit: SELECT * FROM sys.query_store_query_hints;\r\n-- Remove: EXEC sys.sp_query_store_clear_hints @query_id = 42;\r\n*/\r\n\r\n/*############################################################################\r\n  PATTERN V) Filtered index + parameterized predicate (filtered index mismatch)\r\n  ISSUE     : Proc uses Status='Active' but parameter @Status — filtered index not chosen.\r\n  AT CL 160 : CE may ignore filtered index benefit; scan base table instead.\r\n  FIX HELPS : Match filter literal in proc branch, or RECOMPILE, or OPTIMIZE FOR value.\r\n##############################################################################*/\r\n/*\r\n-- Index: CREATE INDEX IX_Orders_Active ON dbo.Orders(OrderDate) WHERE Status = 'Active';\r\n\r\n-- BEFORE (parameter prevents filtered index match)\r\nWHERE Status = @Status\r\n\r\n-- AFTER (separate paths or static Active branch)\r\nIF @Status = N'Active'\r\n    SELECT ... FROM dbo.Orders WHERE Status = N'Active' AND OrderDate >= @From;\r\nELSE\r\n    SELECT ... FROM dbo.Orders WHERE Status = @Status AND OrderDate >= @From;\r\n*/\r\n\r\n/*############################################################################\r\n  QUICK REFERENCE — when to use which pattern\r\n  --------------------------------------------------------------------------\r\n  Scan where seek expected     -> B, C, D, J (SARGability / conversion)\r\n  Spill / high memory grant    -> L, P, Q (stage keys, narrow select, pre-agg)\r\n  Slow after CL 160 only       -> H, I, K (TVF / UDF / table variable)\r\n  Fast for one param, slow else-> N, O, R (sniffing / ascending key)\r\n  Optional report params       -> M (dynamic SQL)\r\n  App cannot deploy            -> U (Query Store hints)\r\n##############################################################################*/\r\n\r\nPRINT '01_Before_After_Examples.sql loaded. Uncomment and run one pattern at a time.';\r\n",
+  "07_Monitoring_Baseline/01_Capture_Before_After_Metrics.sql": "/*\r\n================================================================================\r\n01_Capture_Before_After_Metrics.sql\r\nPurpose : Snapshot metrics before compat flip and after (same workload window).\r\nSave     : Export result grids to CSV with timestamp in filename.\r\n================================================================================\r\n*/\r\nSET NOCOUNT ON;\r\nDECLARE @label nvarchar(100) = N'BEFORE_compat130';  -- change to AFTER_compat160\r\n\r\nSELECT\r\n    @label AS capture_label,\r\n    SYSUTCDATETIME() AS capture_utc,\r\n    SERVERPROPERTY('ProductVersion') AS version,\r\n    d.name AS database_name,\r\n    d.compatibility_level,\r\n    dsc.value AS legacy_ce\r\nFROM sys.databases d\r\nOUTER APPLY (\r\n    SELECT value\r\n    FROM sys.database_scoped_configurations\r\n    WHERE name = N'LEGACY_CARDINALITY_ESTIMATION'\r\n) dsc\r\nWHERE d.name = DB_NAME();\r\n\r\n-- Batch requests / compilations (instance counters since startup — compare rates over time)\r\nSELECT @label AS capture_label, counter_name, cntr_value\r\nFROM sys.dm_os_performance_counters\r\nWHERE counter_name IN (\r\n    N'Batch Requests/sec',\r\n    N'SQL Compilations/sec',\r\n    N'SQL Re-Compilations/sec',\r\n    N'Page life expectancy',\r\n    N'Processes blocked'\r\n)\r\nAND (instance_name = N'' OR instance_name = N'_Total' OR object_name LIKE N'%Buffer Manager%' OR object_name LIKE N'%SQL Statistics%' OR object_name LIKE N'%General Statistics%');\r\n\r\n-- Wait snapshot\r\nSELECT TOP (15)\r\n    @label AS capture_label,\r\n    wait_type,\r\n    waiting_tasks_count,\r\n    wait_time_ms,\r\n    signal_wait_time_ms\r\nFROM sys.dm_os_wait_stats\r\nWHERE waiting_tasks_count > 0\r\nORDER BY wait_time_ms DESC;\r\n\r\n-- Query Store top duration (requires QS)\r\nIF EXISTS (SELECT 1 FROM sys.databases WHERE name = DB_NAME() AND is_query_store_on = 1)\r\nBEGIN\r\n    SELECT TOP (20)\r\n        @label AS capture_label,\r\n        q.query_id,\r\n        rs.avg_duration / 1000.0 AS avg_ms,\r\n        rs.avg_cpu_time / 1000.0 AS avg_cpu_ms,\r\n        rs.count_executions,\r\n        LEFT(qt.query_sql_text, 200) AS query_preview\r\n    FROM sys.query_store_runtime_stats rs\r\n    JOIN sys.query_store_plan p ON p.plan_id = rs.plan_id\r\n    JOIN sys.query_store_query q ON q.query_id = p.query_id\r\n    JOIN sys.query_store_query_text qt ON qt.query_text_id = q.query_text_id\r\n    JOIN sys.query_store_runtime_stats_interval i\r\n        ON i.runtime_stats_interval_id = rs.runtime_stats_interval_id\r\n    WHERE i.start_time >= DATEADD(HOUR, -24, GETUTCDATE())\r\n    ORDER BY rs.avg_duration DESC;\r\nEND\r\n",
+  "07_Monitoring_Baseline/02_Post_Cutover_Health_Check.sql": "/*\r\n================================================================================\r\n02_Post_Cutover_Health_Check.sql\r\nPurpose : Run every 15–30 minutes during first hours after compat 160 cutover.\r\n================================================================================\r\n*/\r\nUSE [YourDB]; -- <<< change\r\nGO\r\nSET NOCOUNT ON;\r\n\r\nPRINT '1) Compat + scoped configs';\r\nSELECT name, compatibility_level, is_query_store_on FROM sys.databases WHERE name = DB_NAME();\r\nSELECT name, value FROM sys.database_scoped_configurations\r\nWHERE name IN (\r\n    N'LEGACY_CARDINALITY_ESTIMATION',\r\n    N'PARAMETER_SNIFFING',\r\n    N'QUERY_OPTIMIZER_HOTFIXES',\r\n    N'BATCH_MODE_ON_ROWSTORE'\r\n);\r\n\r\nPRINT '2) Query Store health (must stay READ_WRITE)';\r\nSELECT actual_state_desc, readonly_reason, current_storage_size_mb, max_storage_size_mb\r\nFROM sys.database_query_store_options;\r\n\r\nPRINT '3) Forced plans with failures';\r\nSELECT query_id, plan_id, force_failure_count, last_force_failure_reason_desc\r\nFROM sys.query_store_plan\r\nWHERE is_forced_plan = 1 AND force_failure_count > 0;\r\n\r\nPRINT '4) Recent expensive queries (1 hour)';\r\nSELECT TOP (20)\r\n    q.query_id,\r\n    rs.avg_duration/1000.0 AS avg_ms,\r\n    rs.avg_cpu_time/1000.0 AS avg_cpu_ms,\r\n    rs.avg_logical_io_reads AS avg_reads,\r\n    rs.count_executions,\r\n    LEFT(qt.query_sql_text, 180) AS preview\r\nFROM sys.query_store_runtime_stats rs\r\nJOIN sys.query_store_plan p ON p.plan_id = rs.plan_id\r\nJOIN sys.query_store_query q ON q.query_id = p.query_id\r\nJOIN sys.query_store_query_text qt ON qt.query_text_id = q.query_text_id\r\nJOIN sys.query_store_runtime_stats_interval i ON i.runtime_stats_interval_id = rs.runtime_stats_interval_id\r\nWHERE i.start_time >= DATEADD(HOUR, -1, GETUTCDATE())\r\nORDER BY rs.avg_duration * rs.count_executions DESC;\r\n\r\nPRINT '5) Memory grant waits present?';\r\nSELECT wait_type, waiting_tasks_count, wait_time_ms\r\nFROM sys.dm_os_wait_stats\r\nWHERE wait_type IN (N'RESOURCE_SEMAPHORE', N'RESOURCE_SEMAPHORE_QUERY_COMPILE', N'CXPACKET', N'CXCONSUMER', N'PAGEIOLATCH_SH', N'WRITELOG')\r\nORDER BY wait_time_ms DESC;\r\n\r\nPRINT 'If avg_ms spikes vs baseline → open 03_QueryStore_PlanForce\\\\02_Find_Regressed_Queries.sql';\r\nPRINT 'If widespread → LEGACY_CARDINALITY_ESTIMATION = ON or rollback compat to 130.';\r\n"
+};
+
+var scriptMeta = [{"key":"04_Statistics_Indexes/05_Post_Restore_Maintenance_Before_CL160.sql","title":"Post-restore UPDATEUSAGE + FULLSCAN (before CL 160)","cat":"Statistics","tags":["Statistics","Baseline","Config"],"execTime":"Minutes-hours","safety":"Test First","versions":["2016","2019","2022"],"deps":["ALTER / db_owner","Maintenance window for FULLSCAN"],"flowStep":"postrestore"},{"key":"02_Configuration/01_Recommended_Instance_Settings_2022.sql","title":"Instance settings (CTFP, MAXDOP, ad hoc, memory)","cat":"Configuration","tags":["Config","Baseline"],"execTime":"\u003c 1 min","safety":"Test First","versions":["2016","2019","2022"],"deps":["ALTER SERVER / sysadmin for apply"],"flowStep":"postrestore"},{"key":"02_Configuration/02_TempDB_and_Database_Files.sql","title":"TempDB \u0026 database file layout","cat":"Configuration","tags":["Config","Baseline"],"execTime":"\u003c 1 min","safety":"Test First","versions":["2016","2019","2022"],"deps":["VIEW SERVER STATE","sysadmin to apply file changes"],"flowStep":"postrestore"},{"key":"02_Configuration/03_Database_Options_Post_Restore.sql","title":"Database options post-restore (page verify, auto stats)","cat":"Configuration","tags":["Config","Baseline"],"execTime":"\u003c 1 min","safety":"Test First","versions":["2016","2019","2022"],"deps":["ALTER DATABASE for apply"],"flowStep":"postrestore"},{"key":"03_QueryStore_PlanForce/01_Enable_QueryStore.sql","title":"Enable Query Store","cat":"Query Store","tags":["Query Store","Baseline"],"execTime":"\u003c 1 min","safety":"Test First","versions":["2016","2019","2022"],"deps":["ALTER DATABASE","Query Store feature","Brief IO spike on enable"],"flowStep":"baseline"},{"key":"03_QueryStore_PlanForce/02_Find_Regressed_Queries.sql","title":"Find regressed queries (duration)","cat":"Query Store","tags":["Query Store","Regression"],"execTime":"\u003c 2 min","safety":"Safe","versions":["2016","2019","2022"],"deps":["Query Store ON","VIEW DATABASE STATE"],"flowStep":"regression"},{"key":"03_QueryStore_PlanForce/03_Force_Last_Good_Plan.sql","title":"Force last good plan","cat":"Query Store","tags":["Query Store","Plan Force"],"execTime":"\u003c 1 min","safety":"Test First","versions":["2016","2019","2022"],"deps":["Query Store ON","sys.sp_query_store_force_plan"],"flowStep":"hints"},{"key":"03_QueryStore_PlanForce/04_QueryStore_Wait_Statistics_Report.sql","title":"Query Store wait statistics report","cat":"Query Store","tags":["Query Store","Waits","Regression"],"execTime":"1-3 min","safety":"Safe","versions":["2017","2019","2022"],"deps":["Query Store ON","WAIT_STATS_CAPTURE_MODE ON"],"flowStep":"config"},{"key":"03_QueryStore_PlanForce/05_Automatic_Regression_Report.sql","title":"Automatic regression report (duration/CPU/IO/waits)","cat":"Query Store","tags":["Query Store","Regression","Waits"],"execTime":"2-5 min","safety":"Safe","versions":["2017","2019","2022"],"deps":["Query Store ON","Baseline window at CL 130"],"flowStep":"regression"},{"key":"05_Compatibility_CE_Controls/06_Automatic_Tuning_and_QueryStore_Hints.sql","title":"Automatic Tuning + Query Store hints","cat":"Compat 160 Controls","tags":["Query Store","IQP","CE","Hints"],"execTime":"\u003c 1 min","safety":"Test First","versions":["2022"],"deps":["Query Store ON","SQL 2022 for QS hints"],"flowStep":"hints"},{"key":"01_Diagnostics/01_Capture_Environment_Baseline.sql","title":"Environment baseline (server + DB)","cat":"Diagnostics","tags":["Config","Baseline"],"execTime":"1-2 min","safety":"Safe","versions":["2016","2019","2022"],"deps":["VIEW SERVER STATE","Some sp_configure read"],"flowStep":"config"},{"key":"01_Diagnostics/02_Compare_Plans_CE130_vs_CE160.sql","title":"Compare Legacy CE vs modern CE (A/B)","cat":"Diagnostics","tags":["CE","Plan Compare"],"execTime":"Per query","safety":"Test First","versions":["2019","2022"],"deps":["Test DB","STATISTICS IO permission"],"flowStep":"ce"},{"key":"01_Diagnostics/04_Find_Implicit_Conversions_and_Warnings.sql","title":"Implicit conversions \u0026 plan warnings","cat":"Diagnostics","tags":["CE","Plan Compare"],"execTime":"2-4 min","safety":"Safe","versions":["2016","2019","2022"],"deps":["Query Store ON preferred"],"flowStep":"ce"},{"key":"01_Diagnostics/05_Find_IQP_and_CE_Plan_Fingerprints.sql","title":"IQP / CE plan fingerprints","cat":"Diagnostics","tags":["CE","IQP","Memory"],"execTime":"1-3 min","safety":"Safe","versions":["2019","2022"],"deps":["Query Store ON"],"flowStep":"iqp"},{"key":"01_Diagnostics/06_Plan_Cache_Comparison.sql","title":"Plan cache comparison (before/after CL)","cat":"Diagnostics","tags":["Plan Compare","Regression"],"execTime":"1-3 min","safety":"Safe","versions":["2016","2019","2022"],"deps":["VIEW DATABASE STATE"],"flowStep":"regression"},{"key":"01_Diagnostics/07_Parameter_Sensitive_Query_Detector.sql","title":"Parameter-sensitive query detector","cat":"Diagnostics","tags":["PSP","Parameter Sniffing"],"execTime":"1-3 min","safety":"Safe","versions":["2016","2019","2022"],"deps":["VIEW SERVER STATE","Query Store optional"],"flowStep":"sniffing"},{"key":"01_Diagnostics/08_Memory_Grant_and_Spill_Analysis.sql","title":"Memory grant \u0026 spill analysis","cat":"Diagnostics","tags":["Memory","CE","IQP"],"execTime":"\u003c 2 min","safety":"Safe","versions":["2016","2019","2022"],"deps":["VIEW SERVER STATE"],"flowStep":"iqp"},{"key":"01_Diagnostics/09_Blocking_Chain_Collector.sql","title":"Blocking chain collector (live)","cat":"Diagnostics","tags":["Blocking","Engine"],"execTime":"\u003c 30 sec","safety":"Safe","versions":["2016","2019","2022"],"deps":["VIEW SERVER STATE"],"flowStep":"config"},{"key":"01_Diagnostics/03_Wait_Stats_and_Top_Queries.sql","title":"Wait stats \u0026 top CPU queries","cat":"Diagnostics","tags":["Waits","Engine"],"execTime":"\u003c 1 min","safety":"Safe","versions":["2016","2019","2022"],"deps":["VIEW SERVER STATE"],"flowStep":"config"},{"key":"04_Statistics_Indexes/01_Update_Statistics_PostMigration.sql","title":"Update statistics post-migration (FULLSCAN on hot tables)","cat":"Statistics","tags":["Statistics","CE","Baseline"],"execTime":"Minutes-hours","safety":"Test First","versions":["2016","2019","2022"],"deps":["ALTER on tables / db_owner","Maintenance window for FULLSCAN"],"flowStep":"stats"},{"key":"04_Statistics_Indexes/02_Index_Health_and_Missing_Indexes.sql","title":"Index health \u0026 missing index suggestions","cat":"Statistics","tags":["Statistics","Config"],"execTime":"2-10 min","safety":"Safe","versions":["2016","2019","2022"],"deps":["VIEW SERVER STATE","Validate suggestions before creating"],"flowStep":"stats"},{"key":"04_Statistics_Indexes/03_Statistics_Quality_Report.sql","title":"Statistics quality report","cat":"Statistics","tags":["Statistics"],"execTime":"2-5 min","safety":"Safe","versions":["2016","2019","2022"],"deps":["VIEW DATABASE STATE"],"flowStep":"stats"},{"key":"04_Statistics_Indexes/04_Missing_Statistics_Detector.sql","title":"Missing statistics detector","cat":"Statistics","tags":["Statistics","CE"],"execTime":"2-4 min","safety":"Safe","versions":["2016","2019","2022"],"deps":["Query Store or plan cache"],"flowStep":"stats"},{"key":"05_Compatibility_CE_Controls/01_Database_Scoped_CE_and_Optimizer_Controls.sql","title":"DB scoped CE / IQP bridges (Legacy CE, UDF inline)","cat":"Compat 160 Controls","tags":["CE","IQP"],"execTime":"\u003c 1 min","safety":"Test First","versions":["2016","2019","2022"],"deps":["ALTER DATABASE SCOPED CONFIGURATION","Clears plan cache if applied"],"flowStep":"hints"},{"key":"05_Compatibility_CE_Controls/02_Query_Level_Hints_CheatSheet.sql","title":"Query-level hints cheat sheet","cat":"Compat 160 Controls","tags":["CE","Hints","IQP"],"execTime":"N/A","safety":"Test First","versions":["2019","2022"],"deps":["Deploy or QS hints on 2022"],"flowStep":"hints"},{"key":"05_Compatibility_CE_Controls/03_Compatibility_Level_Change_Runbook.sql","title":"Compat level change runbook","cat":"Compat 160 Controls","tags":["Regression","Query Store"],"execTime":"\u003c 1 min","safety":"High Risk","versions":["2016","2019","2022"],"deps":["ALTER DATABASE","Change window","Rollback rehearsed"],"flowStep":"regression"},{"key":"05_Compatibility_CE_Controls/04_SQL2022_IQP_and_CE_Feedback_Notes.sql","title":"IQP skip-release notes (2016-\u003e2022)","cat":"Compat 160 Controls","tags":["IQP","CE","Query Store"],"execTime":"\u003c 1 min","safety":"Safe","versions":["2022"],"deps":["Query Store ON"],"flowStep":"iqp"},{"key":"05_Compatibility_CE_Controls/05_IQP_Feature_Isolation_Toggles.sql","title":"IQP feature isolation toggles","cat":"Compat 160 Controls","tags":["IQP","CE"],"execTime":"Per toggle","safety":"Test First","versions":["2019","2022"],"deps":["ALTER DATABASE SCOPED CONFIGURATION","UAT only for toggles"],"flowStep":"iqp"},{"key":"06_Code_Rewrite_Patterns/01_Before_After_Examples.sql","title":"T-SQL rewrite before/after examples","cat":"Code Rewrites","tags":["CE","PSP","Application"],"execTime":"N/A","safety":"Test First","versions":["2016","2019","2022"],"deps":["Code deploy / change control"],"flowStep":"application"},{"key":"07_Monitoring_Baseline/01_Capture_Before_After_Metrics.sql","title":"Before/after metrics capture","cat":"Monitoring","tags":["Baseline","Regression"],"execTime":"\u003c 1 min","safety":"Safe","versions":["2016","2019","2022"],"deps":["Query Store optional"],"flowStep":"baseline"},{"key":"07_Monitoring_Baseline/02_Post_Cutover_Health_Check.sql","title":"Post-cutover health check","cat":"Monitoring","tags":["Query Store","Regression"],"execTime":"\u003c 1 min","safety":"Safe","versions":["2016","2019","2022"],"deps":["Query Store ON"],"flowStep":"regression"}];
+
+var currentScriptKey = null;
+var activeTag = '';
+var GUIDE_KEY = 'compat160_guided_step_v1';
+var guideIndex = 0;
+
+var guidedSteps = [
+  {
+    title: 'Confirm the symptom',
+    why: 'You must prove slowness is tied to compatibility 160, not general server problems.',
+    doList: [
+      'Ask: Was the app fine at CL 130 on the new SQL 2022 server?',
+      'Ask: Did slowness start only after SET COMPATIBILITY_LEVEL = 160?',
+      'If slow even at CL 130 on the new host, this is mostly infra/config - not CE. Still run Steps 1-2, then escalate hardware/IO.',
+      'If fine at 130 and slow at 160, continue this guide in order.'
+    ],
+    pass: 'You confirmed CL 160 is the trigger (or you know you must still fix baseline first).',
+    fail: 'If the problem is unclear, gather app error times + one slow query text, then still continue to Step 2 for a baseline.',
+    scripts: ['01_Diagnostics/01_Capture_Environment_Baseline.sql']
+  },
+  {
+    title: 'Post-restore & instance baseline',
+    why: 'A 2016 backup/restore carries stale stats and row counts. New hosts often keep CTFP=5 and wrong MAXDOP. Fix this before chasing CE.',
+    doList: [
+      'Prefer UAT/copy of the database.',
+      'Run DBCC UPDATEUSAGE and plan FULLSCAN stats (maintenance window on large DBs).',
+      'Set Cost Threshold for Parallelism to 30-50 (not 5).',
+      'Set MAXDOP to physical cores per NUMA node (often 4-8 for OLTP).',
+      'Enable optimize for ad hoc workloads = 1.',
+      'Keep compatibility at 130 while doing this.'
+    ],
+    pass: 'Stats refreshed and instance settings look sane. App still slow only at CL 160 (or you have not flipped yet).',
+    fail: 'If still slow at CL 130 after baseline, investigate IO/CPU/blocking first - do not jump to hints.',
+    scripts: [
+      '04_Statistics_Indexes/05_Post_Restore_Maintenance_Before_CL160.sql',
+      '02_Configuration/01_Recommended_Instance_Settings_2022.sql'
+    ]
+  },
+  {
+    title: 'Rule out blocking & engine waits',
+    why: 'Juniors often blame the optimizer when the real issue is blocking, RESOURCE_SEMAPHORE, or storage waits.',
+    doList: [
+      'During a slow period, run the blocking chain collector.',
+      'Check top waits and top CPU queries.',
+      'If heavy LCK_* waits: fix blocking (long transactions) before CE work.',
+      'If PAGEIOLATCH_* / WRITELOG dominate: storage/log - not CL 160 alone.'
+    ],
+    pass: 'No sustained blocking; waits do not fully explain the CL 160-only slowdown.',
+    fail: 'Blocking or IO is the main story - resolve that, then re-test CL 160.',
+    scripts: [
+      '01_Diagnostics/09_Blocking_Chain_Collector.sql',
+      '01_Diagnostics/03_Wait_Stats_and_Top_Queries.sql',
+      '03_QueryStore_PlanForce/04_QueryStore_Wait_Statistics_Report.sql'
+    ]
+  },
+  {
+    title: 'Enable Query Store at CL 130',
+    why: 'Without a baseline of good plans, you cannot prove regressions or force last-good plans safely.',
+    doList: [
+      'Enable Query Store (READ_WRITE) on the database.',
+      'Enable WAIT_STATS_CAPTURE_MODE separately if SQL 2017+.',
+      'Keep CL 130. Capture production/UAT workload for 3-7 days if possible (shorter in lab is OK).',
+      'Capture a before metrics snapshot.'
+    ],
+    pass: 'Query Store is READ_WRITE and collecting. You have some history at CL 130.',
+    fail: 'If QS will not stay online, fix storage/size settings first - do not flip CL 160 yet.',
+    scripts: [
+      '03_QueryStore_PlanForce/01_Enable_QueryStore.sql',
+      '07_Monitoring_Baseline/01_Capture_Before_After_Metrics.sql'
+    ]
+  },
+  {
+    title: 'Flip CL 160 in UAT and find regressions',
+    why: 'Never invent fixes. Measure which queries got worse after CL 160.',
+    doList: [
+      'On UAT only: ALTER DATABASE ... SET COMPATIBILITY_LEVEL = 160.',
+      'ALTER DATABASE SCOPED CONFIGURATION CLEAR PROCEDURE_CACHE.',
+      'Replay the same workload (or wait for natural load).',
+      'Run the automatic regression report (duration, CPU, reads, waits).',
+      'Note top query_id values that got 50%+ worse.'
+    ],
+    pass: 'You have a short list of regressed query_ids (or confirmed widespread regression).',
+    fail: 'If nothing stands out in QS but app is slow, check blocking again and plan cache comparison.',
+    scripts: [
+      '03_QueryStore_PlanForce/05_Automatic_Regression_Report.sql',
+      '03_QueryStore_PlanForce/02_Find_Regressed_Queries.sql',
+      '01_Diagnostics/06_Plan_Cache_Comparison.sql',
+      '05_Compatibility_CE_Controls/03_Compatibility_Level_Change_Runbook.sql'
+    ]
+  },
+  {
+    title: 'Validate statistics quality',
+    why: 'Even after FULLSCAN, some columns may lack stats or have weak histograms that hurt CE 160 more than CE 130.',
+    doList: [
+      'Run statistics quality report on hot tables.',
+      'Run missing statistics detector (ColumnsWithNoStatistics warnings).',
+      'FULLSCAN any remaining critical offenders.',
+      'Re-test the top regressed queries.'
+    ],
+    pass: 'Stats look healthy; regressions remain - continue to CE/IQP.',
+    fail: 'If fixing stats resolved the app, stop here and document. Monitor.',
+    scripts: [
+      '04_Statistics_Indexes/03_Statistics_Quality_Report.sql',
+      '04_Statistics_Indexes/04_Missing_Statistics_Detector.sql'
+    ]
+  },
+  {
+    title: 'Cardinality Estimator A/B test',
+    why: 'Prove whether Legacy CE (2016-like) makes the slow query fast again.',
+    doList: [
+      'Take one top slow query.',
+      'Run Compare Plans script: Legacy CE hint vs default CE.',
+      'Check estimated vs actual rows, join type, spills, implicit conversions.',
+      'If Legacy CE is clearly faster: CE regression confirmed for that query.'
+    ],
+    pass: 'You know if the issue is CE estimates, conversions, or something else.',
+    fail: 'If Legacy CE does not help this query, go to sniffing / IQP next - do not enable whole-DB Legacy CE yet.',
+    scripts: [
+      '01_Diagnostics/02_Compare_Plans_CE130_vs_CE160.sql',
+      '01_Diagnostics/04_Find_Implicit_Conversions_and_Warnings.sql',
+      '01_Diagnostics/05_Find_IQP_and_CE_Plan_Fingerprints.sql'
+    ]
+  },
+  {
+    title: 'Parameter sniffing / PSP check',
+    why: 'Same proc can be fast for one parameter and slow for another after CL 160.',
+    doList: [
+      'Run the parameter-sensitive query detector.',
+      'In UAT, test OPTION (RECOMPILE) or OPTIMIZE FOR UNKNOWN on one suspect proc.',
+      'If RECOMPILE fixes it: sniffing confirmed - plan a permanent approach (hint, rewrite, or PSP review).'
+    ],
+    pass: 'Sniffing ruled out, or you have a confirmed sniffing fix path.',
+    fail: 'If not sniffing, continue to IQP isolation.',
+    scripts: ['01_Diagnostics/07_Parameter_Sensitive_Query_Detector.sql']
+  },
+  {
+    title: 'IQP isolation (one feature at a time)',
+    why: '2016->2022 skips 2017/2019. UDF inlining, batch mode, and PSP turn on together and can each break plans.',
+    doList: [
+      'Check memory grants and spills.',
+      'Read IQP skip-release notes.',
+      'In UAT, disable ONE scoped setting, clear proc cache, retest (e.g. TSQL_SCALAR_UDF_INLINING = OFF).',
+      'If that one feature fixes it: keep only that bridge; leave CL 160 ON.',
+      'Never turn all IQP features OFF at once.'
+    ],
+    pass: 'You found the offending IQP feature, or none of them alone explain it.',
+    fail: 'Continue to rewrites / surgical plan control.',
+    scripts: [
+      '01_Diagnostics/08_Memory_Grant_and_Spill_Analysis.sql',
+      '05_Compatibility_CE_Controls/04_SQL2022_IQP_and_CE_Feedback_Notes.sql',
+      '05_Compatibility_CE_Controls/05_IQP_Feature_Isolation_Toggles.sql'
+    ]
+  },
+  {
+    title: 'Fix the right way (branch: few vs many)',
+    why: 'Hints and Legacy CE are tools - apply the smallest change that restores service, then plan permanent cleanup.',
+    doList: [
+      'FEW queries (1-15): Query Store force last good plan OR sp_query_store_set_hints (Legacy CE / RECOMPILE / disable UDF inline). No app deploy needed on SQL 2022.',
+      'MANY queries: temporary LEGACY_CARDINALITY_ESTIMATION = ON and/or UDF inlining OFF; enable Automatic Tuning FORCE_LAST_GOOD_PLAN.',
+      'Rewrite stubborn SQL (OR->UNION, MSTVF->iTVF, SARGable dates, temp tables).',
+      'After stable: turn bridges OFF when permanent fixes exist.',
+      'Production cutover only after UAT sign-off; keep rollback to CL 130 ready.'
+    ],
+    pass: 'UAT meets SLA at CL 160. Document forced plans / scoped configs / rewrites.',
+    fail: 'If still failing after all steps: rollback UAT to CL 130, capture evidence, escalate with regression query_ids.',
+    scripts: [
+      '03_QueryStore_PlanForce/03_Force_Last_Good_Plan.sql',
+      '05_Compatibility_CE_Controls/06_Automatic_Tuning_and_QueryStore_Hints.sql',
+      '05_Compatibility_CE_Controls/01_Database_Scoped_CE_and_Optimizer_Controls.sql',
+      '06_Code_Rewrite_Patterns/01_Before_After_Examples.sql',
+      '07_Monitoring_Baseline/02_Post_Cutover_Health_Check.sql'
+    ]
+  }
+];
+
+var flowSteps = [
+  { id:'postrestore', title:'1. Post-restore baseline', desc:'DBCC UPDATEUSAGE + stats FULLSCAN; CTFP 30-50, MAXDOP per NUMA, ad hoc ON. Do before CL 160.', keys:['04_Statistics_Indexes/05_Post_Restore_Maintenance_Before_CL160.sql','02_Configuration/01_Recommended_Instance_Settings_2022.sql'] },
+  { id:'config', title:'2. Server / engine check', desc:'Confirm CU, memory, waits, blocking - rule out infra and locking.', keys:['01_Diagnostics/01_Capture_Environment_Baseline.sql','01_Diagnostics/09_Blocking_Chain_Collector.sql','01_Diagnostics/03_Wait_Stats_and_Top_Queries.sql'] },
+  { id:'baseline', title:'3. Query Store at CL 130', desc:'Capture golden plans 3-7 days before flipping UAT/prod to 160.', keys:['03_QueryStore_PlanForce/01_Enable_QueryStore.sql','07_Monitoring_Baseline/01_Capture_Before_After_Metrics.sql'] },
+  { id:'regression', title:'4. Flip CL 160 in UAT + regress report', desc:'Clear proc cache; compare duration, CPU, IO, waits before vs after.', keys:['03_QueryStore_PlanForce/05_Automatic_Regression_Report.sql','03_QueryStore_PlanForce/02_Find_Regressed_Queries.sql','01_Diagnostics/06_Plan_Cache_Comparison.sql'] },
+  { id:'stats', title:'5. Statistics quality (if still suspect)', desc:'Histogram, sample rate, missing stats - before blaming CE alone.', keys:['04_Statistics_Indexes/03_Statistics_Quality_Report.sql','04_Statistics_Indexes/04_Missing_Statistics_Detector.sql'] },
+  { id:'ce', title:'6. Cardinality Estimator', desc:'Plan compare, implicit conversions, Legacy CE A/B test.', keys:['01_Diagnostics/02_Compare_Plans_CE130_vs_CE160.sql','01_Diagnostics/04_Find_Implicit_Conversions_and_Warnings.sql','01_Diagnostics/05_Find_IQP_and_CE_Plan_Fingerprints.sql'] },
+  { id:'sniffing', title:'7. Parameter sniffing / PSP', desc:'Multiple plans, runtime variance - test RECOMPILE in UAT.', keys:['01_Diagnostics/07_Parameter_Sensitive_Query_Detector.sql'] },
+  { id:'iqp', title:'8. IQP (skipped 2017/2019 features)', desc:'UDF inlining, batch mode, MGF, CE/DOP feedback, PSP - isolate one feature.', keys:['05_Compatibility_CE_Controls/04_SQL2022_IQP_and_CE_Feedback_Notes.sql','01_Diagnostics/08_Memory_Grant_and_Spill_Analysis.sql','05_Compatibility_CE_Controls/05_IQP_Feature_Isolation_Toggles.sql'] },
+  { id:'application', title:'9. Application / T-SQL patterns', desc:'OR, UDF->TVF, temp tables, SARGable predicates.', keys:['06_Code_Rewrite_Patterns/01_Before_After_Examples.sql'] },
+  { id:'hints', title:'10. Hints & scoped bridges (last)', desc:'QS hints / plan force (few queries) OR Legacy CE / UDF inlining OFF (widespread).', keys:['05_Compatibility_CE_Controls/06_Automatic_Tuning_and_QueryStore_Hints.sql','05_Compatibility_CE_Controls/01_Database_Scoped_CE_and_Optimizer_Controls.sql','03_QueryStore_PlanForce/03_Force_Last_Good_Plan.sql'], last:true }
+];
+
+function toggleTheme(){
+  var h=document.documentElement;
+  h.setAttribute('data-theme', h.getAttribute('data-theme')==='dark'?'light':'dark');
+}
+function showPage(id){
+  document.querySelectorAll('.section-page').forEach(function(p){ p.classList.remove('active'); });
+  document.querySelectorAll('.sidebar-item').forEach(function(i){
+    i.classList.toggle('active', i.getAttribute('data-page')===id);
+  });
+  var el=document.getElementById('page-'+id);
+  if(el) el.classList.add('active');
+  document.getElementById('sidebar').classList.remove('open');
+  if(id==='flow') renderFlowchart();
+  if(id==='scripts') { renderTagFilters(); renderLibrary(); }
+  if(id==='guided') renderGuided();
+}
+function loadGuideIndex(){
+  var v=parseInt(localStorage.getItem(GUIDE_KEY)||'0',10);
+  if(isNaN(v)||v<0) v=0;
+  if(v>guidedSteps.length) v=guidedSteps.length;
+  guideIndex=v;
+}
+function saveGuideIndex(){ localStorage.setItem(GUIDE_KEY, String(guideIndex)); }
+function resetGuided(){
+  if(!confirm('Reset guided progress to Step 1?')) return;
+  guideIndex=0;
+  saveGuideIndex();
+  renderGuided();
+}
+function goGuideStep(i){
+  if(i<0) i=0;
+  if(i>guidedSteps.length) i=guidedSteps.length;
+  // Only allow going to current or earlier completed steps (synchronous order)
+  if(i>guideIndex) {
+    alert('Follow the steps in order. Finish the current step first, then click: Did not help - go to next step.');
+    return;
+  }
+  // When navigating history, show that step but keep guideIndex as furthest
+  renderGuidedAt(i);
+}
+function guideResolved(){
+  guideIndex=guidedSteps.length;
+  saveGuideIndex();
+  renderGuided();
+}
+function guideNext(){
+  if(guideIndex < guidedSteps.length){
+    guideIndex++;
+    saveGuideIndex();
+  }
+  renderGuided();
+}
+function renderGuided(){
+  loadGuideIndex();
+  var view = Math.min(guideIndex, guidedSteps.length-1);
+  if(guideIndex >= guidedSteps.length) {
+    renderGuidedDone();
+    return;
+  }
+  renderGuidedAt(view);
+}
+function renderGuidedDone(){
+  var list=document.getElementById('guideStepList');
+  var panel=document.getElementById('guidePanel');
+  var done=document.getElementById('guideDoneBox');
+  var bar=document.getElementById('guideProgressBar');
+  var lab=document.getElementById('guideProgressLabel');
+  if(bar) bar.style.width='100%';
+  if(lab) lab.textContent='Complete - issue marked resolved';
+  if(list){
+    list.innerHTML=guidedSteps.map(function(s,i){
+      return '<li class="done" onclick="goGuideStep('+i+')"><span class="gnum">'+(i+1)+'</span><span>'+s.title+'</span></li>';
+    }).join('');
+  }
+  if(panel) panel.style.display='none';
+  if(done) done.classList.add('show');
+}
+function renderGuidedAt(viewIdx){
+  var list=document.getElementById('guideStepList');
+  var panel=document.getElementById('guidePanel');
+  var done=document.getElementById('guideDoneBox');
+  var bar=document.getElementById('guideProgressBar');
+  var lab=document.getElementById('guideProgressLabel');
+  if(done) done.classList.remove('show');
+  if(panel) panel.style.display='block';
+  var pct = Math.round((guideIndex / guidedSteps.length) * 100);
+  if(bar) bar.style.width=pct+'%';
+  if(lab) lab.textContent='Step '+(viewIdx+1)+' of '+guidedSteps.length+' (furthest reached: '+(Math.min(guideIndex+1,guidedSteps.length))+')';
+
+  if(list){
+    list.innerHTML=guidedSteps.map(function(s,i){
+      var cls = i===viewIdx ? 'active' : (i<guideIndex ? 'done' : '');
+      return '<li class="'+cls+'" onclick="goGuideStep('+i+')"><span class="gnum">'+(i+1)+'</span><span>'+s.title+'</span></li>';
+    }).join('');
+  }
+
+  var s=guidedSteps[viewIdx];
+  if(!s||!panel) return;
+  var html='';
+  html+='<div class="badge badge-ver">Step '+(viewIdx+1)+' of '+guidedSteps.length+'</div>';
+  html+='<h3 style="margin-top:8px">'+s.title+'</h3>';
+  html+='<div class="guide-why"><strong>Why this step:</strong> '+s.why+'</div>';
+  html+='<div class="guide-do"><strong>What to do:</strong><ol style="margin:6px 0 0 18px">';
+  s.doList.forEach(function(d){ html+='<li style="margin:4px 0">'+d+'</li>'; });
+  html+='</ol></div>';
+  html+='<div class="guide-pass"><strong>Pass (move on only if true):</strong> '+s.pass+'</div>';
+  html+='<div class="guide-fail"><strong>If it did not help:</strong> '+s.fail+'</div>';
+  html+='<div style="margin-top:12px"><strong style="font-size:13px">Scripts for this step:</strong><div class="guide-actions">';
+  (s.scripts||[]).forEach(function(k){
+    var name=k.split('/').pop();
+    html+='<button class="btn-sm primary" onclick="viewScript(\''+k+'\')">'+name+'</button>';
+  });
+  html+='</div></div>';
+
+  html+='<div class="guide-actions" style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border)">';
+  if(viewIdx === guideIndex){
+    html+='<button class="btn-sm btn-success" onclick="guideResolved()">This fixed the issue - stop here</button>';
+    if(guideIndex < guidedSteps.length-1){
+      html+='<button class="btn-sm btn-next" onclick="guideNext()">Did not help - go to next step</button>';
+    } else {
+      html+='<button class="btn-sm btn-next" onclick="guideNext()">Finished all steps</button>';
+    }
+  } else if(viewIdx < guideIndex){
+    html+='<button class="btn-sm primary" onclick="renderGuidedAt(guideIndex)">Return to current step</button>';
+  }
+  html+='</div>';
+  panel.innerHTML=html;
+}
+function safetyClass(s){
+  if(s==='Safe') return 'badge-safe';
+  if(s==='High Risk') return 'badge-risk';
+  return 'badge-test';
+}
+function getMeta(key){ return scriptMeta.find(function(m){ return m.key===key; }); }
+function viewScript(file){
+  currentScriptKey=file;
+  var m=getMeta(file);
+  document.getElementById('viewerTitle').textContent=file;
+  var body=scriptContents[file]||('-- Not found: '+file);
+  document.getElementById('viewerCode').textContent=body;
+  var metaHtml='';
+  if(m){
+    metaHtml+='<span class="badge '+safetyClass(m.safety)+'">'+m.safety+'</span> ';
+    metaHtml+='<span class="badge badge-ver">'+m.execTime+'</span> ';
+    (m.versions||[]).forEach(function(v){ metaHtml+='<span class="badge badge-ver">'+v+'</span> '; });
+    metaHtml+='<br><strong>Dependencies:</strong> '+(m.deps||[]).join(' | ');
+    metaHtml+='<br><strong>Tags:</strong> '+(m.tags||[]).join(', ');
+    metaHtml+='<br><strong>Package path:</strong> <code>'+file+'</code> (relative to this HTML)';
+  }
+  document.getElementById('viewerMeta').innerHTML=metaHtml;
+  document.getElementById('scriptViewer').classList.add('active');
+}
+function closeViewer(){ document.getElementById('scriptViewer').classList.remove('active'); }
+function copyScript(){
+  var t=document.getElementById('viewerCode').textContent;
+  if(navigator.clipboard) navigator.clipboard.writeText(t);
+}
+function downloadScript(file){
+  var body=scriptContents[file];
+  if(!body) return;
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([body],{type:'application/sql;charset=utf-8'}));
+  a.download=file.split('/').pop();
+  a.click();
+}
+function downloadCurrent(){ if(currentScriptKey) downloadScript(currentScriptKey); }
+function allTags(){
+  var t={};
+  scriptMeta.forEach(function(m){ (m.tags||[]).forEach(function(x){ t[x]=1; }); });
+  return Object.keys(t).sort();
+}
+function renderTagFilters(){
+  var root=document.getElementById('tagFilters');
+  if(!root||root.dataset.done) return;
+  root.dataset.done='1';
+  var html='<button class="tag-btn active" data-tag="" onclick="setTag(\'\')">All</button>';
+  allTags().forEach(function(tag){
+    html+='<button class="tag-btn" data-tag="'+tag+'" onclick="setTag(\''+tag+'\')">'+tag+'</button>';
+  });
+  root.innerHTML=html;
+}
+function setTag(tag){
+  activeTag=tag;
+  document.querySelectorAll('.tag-btn').forEach(function(b){
+    b.classList.toggle('active', b.getAttribute('data-tag')===tag);
+  });
+  renderLibrary();
+}
+function filteredMeta(){
+  var q=(document.getElementById('scriptSearch')||{}).value||'';
+  q=q.toLowerCase();
+  return scriptMeta.filter(function(m){
+    if(activeTag && (m.tags||[]).indexOf(activeTag)<0) return false;
+    if(!q) return true;
+    var blob=(m.key+' '+m.title+' '+(m.tags||[]).join(' ')+(m.deps||[]).join(' ')).toLowerCase();
+    return blob.indexOf(q)>=0;
+  });
+}
+function renderLibrary(){
+  var root=document.getElementById('scriptLibrary');
+  var countEl=document.getElementById('scriptCount');
+  if(!root) return;
+  var items=filteredMeta();
+  if(countEl) countEl.textContent=items.length+' script(s)';
+  var cats=[];
+  items.forEach(function(m){ if(cats.indexOf(m.cat)<0) cats.push(m.cat); });
+  var html='';
+  cats.forEach(function(cat){
+    html+='<div class="cat-header">'+cat+'</div>';
+    items.filter(function(m){return m.cat===cat;}).forEach(function(m){
+      html+='<div class="script-row">';
+      html+='<div><span class="script-name" onclick="viewScript(\''+m.key+'\')">'+m.key.split('/').pop()+'</span>';
+      html+='<div class="script-meta-line">';
+      html+='<span class="badge '+safetyClass(m.safety)+'">'+m.safety+'</span>';
+      html+='<span class="badge badge-ver">'+m.execTime+'</span>';
+      (m.versions||[]).forEach(function(v){ html+='<span class="badge badge-ver">'+v+'</span>'; });
+      (m.tags||[]).slice(0,4).forEach(function(t){ html+='<span class="badge badge-tag">'+t+'</span>'; });
+      html+='</div></div>';
+      html+='<div><div>'+m.title+'</div><div class="deps">'+((m.deps||[]).join(' | '))+'</div></div>';
+      html+='<div><button class="btn-sm primary" onclick="viewScript(\''+m.key+'\')">View</button> ';
+      html+='<button class="btn-sm" onclick="downloadScript(\''+m.key+'\')">Download</button> ';
+      html+='<a class="btn-sm" href="'+m.key+'" download="'+m.key.split('/').pop()+'" title="Open loose .sql from package folder">Open file</a></div>';
+      html+='</div>';
+    });
+  });
+  root.innerHTML=html||'<p style="color:var(--text-secondary)">No scripts match.</p>';
+}
+function renderFlowchart(){
+  var root=document.getElementById('flowchart');
+  if(!root) return;
+  var html='';
+  flowSteps.forEach(function(step, i){
+    html+='<div class="flow-node'+(step.last?' last-resort':'')+'" onclick="openFlowStep(\''+step.id+'\')">';
+    html+='<h4>'+step.title+'</h4><p>'+step.desc+'</p>';
+    html+='<p style="margin-top:6px;font-size:10px;color:var(--accent)">'+(step.keys.length)+' script(s)  - click to open first</p>';
+    html+='</div>';
+    if(i<flowSteps.length-1) html+='<div class="flow-arrow">&#8595;</div>';
+  });
+  root.innerHTML=html;
+}
+function openFlowStep(id){
+  var step=flowSteps.find(function(s){ return s.id===id; });
+  if(step && step.keys.length) viewScript(step.keys[0]);
+}
+document.documentElement.setAttribute('data-theme','light');
+document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeViewer(); });
+renderFlowchart();
+renderTagFilters();
+renderLibrary();
+loadGuideIndex();
+</script>
+</body>
+</html>

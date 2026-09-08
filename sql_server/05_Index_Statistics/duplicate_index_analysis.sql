@@ -4,8 +4,10 @@ Duplicate Index Analysis — Production Diagnostic
 ================================================================================
 Description:
     Identifies wasteful and overlapping indexes across one or all user databases.
-    Detects exact duplicates, same-key overlaps, and redundant left-prefix
-    indexes where a narrower key list is subsumed by a wider one.
+    Detects exact duplicates, same-key overlaps (including same key columns in a
+    different ordinal order via a name-sorted signature), and redundant left-prefix
+    indexes where a narrower key list is subsumed by a wider one. PRIMARY KEY and
+    unique-constraint indexes are never suggested as drop candidates.
 
 Output:
     (1) Duplicate index pairs with usage, size, and keep/drop guidance.
@@ -16,7 +18,11 @@ Action:
     Review EXACT_DUPLICATE first — drop the candidate with lower reads or higher
     writes after change-window approval. For DUPLICATE_KEY and
     REDUNDANT_LEFT_PREFIX, validate execution plans and constraint coverage before
-    dropping. Never drop PK/unique-constraint indexes without schema review.
+    dropping. PRIMARY KEY indexes are never drop candidates (always kept).
+    Unique-constraint indexes are also kept over non-constraint duplicates.
+    Key-column matching uses a name-sorted signature so indexes with the same
+    key columns in a different ordinal order are detected as DUPLICATE_KEY.
+    Left-prefix checks still use key_ordinal order (seek semantics).
     Index usage stats reset on instance restart.
 
 Parameters (local variables — edit before execution):
@@ -191,6 +197,7 @@ CREATE TABLE #IdxEligible
     is_disabled BIT NOT NULL,
     filter_definition NVARCHAR(MAX) NULL,
     key_columns NVARCHAR(MAX) NULL,
+    key_columns_sorted NVARCHAR(MAX) NULL,
     included_columns NVARCHAR(MAX) NOT NULL,
     used_page_count BIGINT NOT NULL,
     total_reads BIGINT NOT NULL,
@@ -219,11 +226,28 @@ KeySignatures AS
     SELECT
         icp.object_id,
         icp.index_id,
+        -- Ordinal order: seek / left-prefix semantics
         STRING_AGG(
             QUOTENAME(icp.column_name)
                 + CASE WHEN icp.is_descending_key = 1 THEN N'' DESC'' ELSE N'''' END,
             N'',''
         ) WITHIN GROUP (ORDER BY icp.key_ordinal) AS key_columns
+    FROM IndexColumnParts AS icp
+    WHERE icp.is_included_column = 0
+      AND icp.key_ordinal > 0
+    GROUP BY icp.object_id, icp.index_id
+),
+KeySignaturesSorted AS
+(
+    SELECT
+        icp.object_id,
+        icp.index_id,
+        -- Sorted by column name: detect same key set regardless of key order
+        STRING_AGG(
+            QUOTENAME(icp.column_name)
+                + CASE WHEN icp.is_descending_key = 1 THEN N'' DESC'' ELSE N'''' END,
+            N'',''
+        ) WITHIN GROUP (ORDER BY icp.column_name, icp.is_descending_key) AS key_columns_sorted
     FROM IndexColumnParts AS icp
     WHERE icp.is_included_column = 0
       AND icp.key_ordinal > 0
@@ -254,6 +278,7 @@ IndexMeta AS
         i.is_disabled,
         UPPER(LTRIM(RTRIM(ISNULL(i.filter_definition, N'''')))) AS filter_definition,
         ks.key_columns,
+        kss.key_columns_sorted,
         ISNULL(inc.included_columns, N'''') AS included_columns,
         ISNULL(ps.used_page_count, 0) AS used_page_count,
         ISNULL(ust.user_seeks, 0) + ISNULL(ust.user_scans, 0) + ISNULL(ust.user_lookups, 0) AS total_reads,
@@ -271,6 +296,9 @@ IndexMeta AS
     INNER JOIN KeySignatures AS ks
         ON ks.object_id = i.object_id
        AND ks.index_id = i.index_id
+    INNER JOIN KeySignaturesSorted AS kss
+        ON kss.object_id = i.object_id
+       AND kss.index_id = i.index_id
     LEFT JOIN IncludeSignatures AS inc
         ON inc.object_id = i.object_id
        AND inc.index_id = i.index_id
@@ -305,6 +333,7 @@ Eligible AS
         is_disabled,
         filter_definition,
         key_columns,
+        key_columns_sorted,
         included_columns,
         used_page_count,
         total_reads,
@@ -330,6 +359,7 @@ INSERT INTO #IdxEligible
     is_disabled,
     filter_definition,
     key_columns,
+    key_columns_sorted,
     included_columns,
     used_page_count,
     total_reads,
@@ -350,6 +380,7 @@ SELECT
     is_disabled,
     filter_definition,
     key_columns,
+    key_columns_sorted,
     included_columns,
     used_page_count,
     total_reads,
@@ -372,6 +403,8 @@ SELECT @IndexesScanned = COUNT(*) FROM #IdxEligible;
         k2.index_name AS index_name_b,
         k1.key_columns AS key_columns_a,
         k2.key_columns AS key_columns_b,
+        k1.key_columns_sorted AS key_columns_sorted_a,
+        k2.key_columns_sorted AS key_columns_sorted_b,
         k1.included_columns AS included_columns_a,
         k2.included_columns AS included_columns_b,
         k1.filter_definition AS filter_a,
@@ -397,6 +430,7 @@ SELECT @IndexesScanned = COUNT(*) FROM #IdxEligible;
         k1.used_page_count AS pages_a,
         k2.used_page_count AS pages_b,
         CASE
+            -- Exact match on ordinal key order + includes + filter + uniqueness + type
             WHEN k1.key_columns = k2.key_columns
              AND k1.included_columns = k2.included_columns
              AND k1.filter_definition = k2.filter_definition
@@ -404,9 +438,11 @@ SELECT @IndexesScanned = COUNT(*) FROM #IdxEligible;
              AND k1.type_desc = k2.type_desc
             THEN N''EXACT_DUPLICATE''
 
-            WHEN k1.key_columns = k2.key_columns
+            -- Same key column set (order-insensitive via sorted signature)
+            WHEN k1.key_columns_sorted = k2.key_columns_sorted
             THEN N''DUPLICATE_KEY''
 
+            -- Left-prefix uses ordinal order (leading-key seek semantics)
             WHEN k1.filter_definition = k2.filter_definition
              AND LEN(k2.key_columns) > LEN(k1.key_columns)
              AND LEFT(k2.key_columns, LEN(k1.key_columns)) = k1.key_columns
@@ -453,12 +489,13 @@ Chosen AS
     SELECT
         p.*,
         CASE
-            WHEN p.duplicate_type = N''REDUNDANT_LEFT_PREFIX''
-            THEN CASE WHEN p.wider_index_id = p.index_id_a THEN p.index_name_a ELSE p.index_name_b END
+            -- PRIMARY KEY / unique constraint are never drop candidates
             WHEN p.is_pk_a = 1 OR p.is_uc_a = 1
             THEN p.index_name_a
             WHEN p.is_pk_b = 1 OR p.is_uc_b = 1
             THEN p.index_name_b
+            WHEN p.duplicate_type = N''REDUNDANT_LEFT_PREFIX''
+            THEN CASE WHEN p.wider_index_id = p.index_id_a THEN p.index_name_a ELSE p.index_name_b END
             WHEN p.is_disabled_a = 1 AND p.is_disabled_b = 0
             THEN p.index_name_b
             WHEN p.is_disabled_b = 1 AND p.is_disabled_a = 0
@@ -478,12 +515,12 @@ Chosen AS
             ELSE p.index_name_a
         END AS index_keep,
         CASE
-            WHEN p.duplicate_type = N''REDUNDANT_LEFT_PREFIX''
-            THEN CASE WHEN p.narrower_index_id = p.index_id_a THEN p.index_name_a ELSE p.index_name_b END
             WHEN p.is_pk_a = 1 OR p.is_uc_a = 1
             THEN p.index_name_b
             WHEN p.is_pk_b = 1 OR p.is_uc_b = 1
             THEN p.index_name_a
+            WHEN p.duplicate_type = N''REDUNDANT_LEFT_PREFIX''
+            THEN CASE WHEN p.narrower_index_id = p.index_id_a THEN p.index_name_a ELSE p.index_name_b END
             WHEN p.is_disabled_a = 1 AND p.is_disabled_b = 0
             THEN p.index_name_a
             WHEN p.is_disabled_b = 1 AND p.is_disabled_a = 0
@@ -504,6 +541,17 @@ Chosen AS
         END AS index_drop_candidate
     FROM Pairs AS p
     WHERE p.duplicate_type IS NOT NULL
+      -- Never suggest dropping a PK/UC as a "redundant left prefix" narrower index;
+      -- that pair is not an actionable drop (PK must remain).
+      AND NOT (
+            p.duplicate_type = N''REDUNDANT_LEFT_PREFIX''
+            AND (
+                (p.narrower_index_id = p.index_id_a AND (p.is_pk_a = 1 OR p.is_uc_a = 1))
+                OR (p.narrower_index_id = p.index_id_b AND (p.is_pk_b = 1 OR p.is_uc_b = 1))
+            )
+          )
+      -- If both sides are PK/UC, there is no valid drop candidate
+      AND NOT ((p.is_pk_a = 1 OR p.is_uc_a = 1) AND (p.is_pk_b = 1 OR p.is_uc_b = 1))
 ),
 Resolved AS
 (
@@ -516,7 +564,16 @@ Resolved AS
         CASE
             WHEN c.duplicate_type = N''REDUNDANT_LEFT_PREFIX''
             THEN CASE WHEN c.wider_index_id = c.index_id_a THEN c.key_columns_a ELSE c.key_columns_b END
-            ELSE c.key_columns_a
+            WHEN c.key_columns_a = c.key_columns_b
+            THEN c.key_columns_a
+            -- Same key set, different ordinal order: show sorted + both ordinal forms
+            WHEN c.key_columns_sorted_a = c.key_columns_sorted_b
+            THEN N''SORTED: '' + c.key_columns_sorted_a
+                + N'' | KEEP_ORD: ''
+                + CASE WHEN c.index_keep = c.index_name_a THEN c.key_columns_a ELSE c.key_columns_b END
+                + N'' | DROP_ORD: ''
+                + CASE WHEN c.index_drop_candidate = c.index_name_a THEN c.key_columns_a ELSE c.key_columns_b END
+            ELSE c.key_columns_sorted_a
         END AS key_columns,
         CASE WHEN c.index_keep = c.index_name_a THEN c.included_columns_a ELSE c.included_columns_b END AS included_columns_keep,
         CASE WHEN c.index_drop_candidate = c.index_name_a THEN c.included_columns_a ELSE c.included_columns_b END AS included_columns_drop,
@@ -528,6 +585,8 @@ Resolved AS
         CASE WHEN c.index_drop_candidate = c.index_name_a THEN c.is_pk_a ELSE c.is_pk_b END AS drop_is_primary_key,
         CASE WHEN c.index_keep = c.index_name_a THEN c.is_unique_a ELSE c.is_unique_b END AS keep_is_unique,
         CASE WHEN c.index_drop_candidate = c.index_name_a THEN c.is_unique_a ELSE c.is_unique_b END AS drop_is_unique,
+        CASE WHEN c.index_keep = c.index_name_a THEN c.is_uc_a ELSE c.is_uc_b END AS keep_is_unique_constraint,
+        CASE WHEN c.index_drop_candidate = c.index_name_a THEN c.is_uc_a ELSE c.is_uc_b END AS drop_is_unique_constraint,
         CASE WHEN c.index_keep = c.index_name_a THEN c.reads_a ELSE c.reads_b END AS keep_reads,
         CASE WHEN c.index_drop_candidate = c.index_name_a THEN c.reads_a ELSE c.reads_b END AS drop_reads,
         CASE WHEN c.index_keep = c.index_name_a THEN c.writes_a ELSE c.writes_b END AS keep_writes,
@@ -605,12 +664,15 @@ SELECT
     CAST(r.keep_pages * 8.0 / 1024.0 AS DECIMAL(18, 2)) AS keep_size_mb,
     CAST(r.drop_pages * 8.0 / 1024.0 AS DECIMAL(18, 2)) AS drop_size_mb,
     CASE
-        WHEN r.drop_is_primary_key = 1
-            THEN N''BLOCKED: Drop candidate is a PRIMARY KEY — resolve manually.''
+        WHEN r.drop_is_primary_key = 1 OR r.drop_is_unique_constraint = 1
+            THEN N''BLOCKED: Drop candidate is a PRIMARY KEY / UNIQUE constraint — never drop; resolve manually.''
         WHEN r.drop_is_unique = 1 AND r.keep_is_unique = 0
             THEN N''REVIEW: Drop candidate enforces uniqueness — confirm constraint coverage.''
         WHEN r.duplicate_type = N''EXACT_DUPLICATE''
             THEN N''DROP duplicate after validating usage stats and change approval.''
+        WHEN r.duplicate_type = N''DUPLICATE_KEY''
+             AND CHARINDEX(N''SORTED:'', r.key_columns) = 1
+            THEN N''REVIEW: Same key columns in different order — leading key affects seeks; validate before drop.''
         WHEN r.duplicate_type = N''DUPLICATE_KEY''
              AND (r.filter_keep <> r.filter_drop OR r.included_columns_keep <> r.included_columns_drop)
             THEN N''REVIEW: Same key columns with different filter/includes/uniqueness — validate before drop.''
@@ -620,12 +682,18 @@ SELECT
             THEN N''REVIEW: Narrower index may be redundant — validate plans and includes.''
         ELSE N''REVIEW: Overlapping indexes detected.''
     END AS suggested_action,
-    N''-- REVIEW BEFORE EXECUTING'' + CHAR(13) + CHAR(10)
-        + N''USE '' + QUOTENAME(DB_NAME()) + N'';'' + CHAR(13) + CHAR(10)
-        + N''DROP INDEX '' + QUOTENAME(r.index_drop_candidate) + N'' ON ''
-        + QUOTENAME(r.schema_name) + N''.'' + QUOTENAME(r.table_name) + N'';''
-    AS drop_ddl
-FROM Resolved AS r;
+    CASE
+        WHEN r.drop_is_primary_key = 1 OR r.drop_is_unique_constraint = 1
+            THEN N''-- BLOCKED: '' + QUOTENAME(r.index_drop_candidate)
+                + N'' is a PRIMARY KEY / UNIQUE constraint and must not be dropped.''
+        ELSE N''-- REVIEW BEFORE EXECUTING'' + CHAR(13) + CHAR(10)
+            + N''USE '' + QUOTENAME(DB_NAME()) + N'';'' + CHAR(13) + CHAR(10)
+            + N''DROP INDEX '' + QUOTENAME(r.index_drop_candidate) + N'' ON ''
+            + QUOTENAME(r.schema_name) + N''.'' + QUOTENAME(r.table_name) + N'';''
+    END AS drop_ddl
+FROM Resolved AS r
+WHERE r.drop_is_primary_key = 0
+  AND r.drop_is_unique_constraint = 0;
 
 SELECT @PairsFound = @@ROWCOUNT;
 
@@ -732,6 +800,20 @@ SELECT
           AND ic.is_included_column = 0
           AND ic.key_ordinal > 0
     ) AS key_sig,
+    (
+        SELECT STRING_AGG(
+                   QUOTENAME(c.name)
+                       + CASE WHEN ic.is_descending_key = 1 THEN N'' DESC'' ELSE N'''' END,
+                   N'',''
+               ) WITHIN GROUP (ORDER BY c.name, ic.is_descending_key)
+        FROM sys.index_columns AS ic
+        INNER JOIN sys.columns AS c
+            ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+        WHERE ic.object_id = i.object_id
+          AND ic.index_id = i.index_id
+          AND ic.is_included_column = 0
+          AND ic.key_ordinal > 0
+    ) AS key_sig_sorted,
     ISNULL((
         SELECT STRING_AGG(QUOTENAME(c.name), N'','') WITHIN GROUP (ORDER BY c.name)
         FROM sys.index_columns AS ic
@@ -789,6 +871,8 @@ WHERE i.type = 2            -- nonclustered rowstore only
         b.index_name AS name_b,
         a.key_sig AS key_a,
         b.key_sig AS key_b,
+        a.key_sig_sorted AS key_sorted_a,
+        b.key_sig_sorted AS key_sorted_b,
         a.include_sig AS inc_a,
         b.include_sig AS inc_b,
         a.is_unique AS uq_a,
@@ -803,7 +887,7 @@ WHERE i.type = 2            -- nonclustered rowstore only
         b.writes AS writes_b,
         a.size_mb AS size_a,
         b.size_mb AS size_b,
-        CAST(CASE WHEN a.key_sig = b.key_sig THEN 1 ELSE 0 END AS BIT) AS same_key,
+        CAST(CASE WHEN a.key_sig_sorted = b.key_sig_sorted THEN 1 ELSE 0 END AS BIT) AS same_key,
         CAST(CASE
             WHEN LEN(b.key_sig) > LEN(a.key_sig)
              AND LEFT(b.key_sig, LEN(a.key_sig)) = a.key_sig
@@ -854,17 +938,18 @@ Classified AS
             ELSE NULL
         END AS suggestion_type,
         CASE
+            -- PRIMARY KEY / unique constraint always kept
+            WHEN pk_a = 1 OR uc_a = 1 THEN id_a
+            WHEN pk_b = 1 OR uc_b = 1 THEN id_b
             WHEN same_key = 1 AND a_cov_b = 1 AND b_cov_a = 1
                 THEN CASE
-                        WHEN pk_a = 1 OR uc_a = 1 OR uq_a = 1 THEN id_a
-                        WHEN pk_b = 1 OR uc_b = 1 OR uq_b = 1 THEN id_b
+                        WHEN uq_a = 1 THEN id_a
+                        WHEN uq_b = 1 THEN id_b
                         WHEN reads_a >= reads_b THEN id_a ELSE id_b END
             WHEN same_key = 1 AND b_cov_a = 1 THEN id_a
             WHEN same_key = 1 AND a_cov_b = 1 THEN id_b
             WHEN same_key = 1
                 THEN CASE
-                        WHEN pk_a = 1 OR uc_a = 1 THEN id_a
-                        WHEN pk_b = 1 OR uc_b = 1 THEN id_b
                         WHEN uq_a = 1 AND uq_b = 0 THEN id_a
                         WHEN uq_b = 1 AND uq_a = 0 THEN id_b
                         WHEN reads_a > reads_b THEN id_a
@@ -888,6 +973,14 @@ Picked AS
         CASE WHEN c.keep_id = c.id_a THEN c.id_b ELSE c.id_a END AS drop_id
     FROM Classified AS c
     WHERE c.suggestion_type IS NOT NULL
+      -- Never emit a pair whose drop side would be a PK / unique constraint
+      AND NOT (
+            (CASE WHEN c.keep_id = c.id_a THEN c.pk_b ELSE c.pk_a END) = 1
+         OR (CASE WHEN c.keep_id = c.id_a THEN c.uc_b ELSE c.uc_a END) = 1
+          )
+      -- Narrower PK/UC is not a redundant left-prefix drop target; skip those pairs
+      AND NOT (c.a_prefix_b = 1 AND (c.pk_a = 1 OR c.uc_a = 1))
+      AND NOT (c.b_prefix_a = 1 AND (c.pk_b = 1 OR c.uc_b = 1))
 )
 INSERT INTO #IndexMergeSuggestions
 (

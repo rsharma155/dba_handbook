@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DBA Essential Scripts — Handbook Portal</title>
+<meta name="description" content="Browse, read, and download the SQL Server and PostgreSQL DBA handbook from this repository.">
+<style>
+:root {
+  --bg: #0f1419; --panel: #1a1f2e; --card: #1e2538; --hover: #263044;
+  --text: #e8edf7; --muted: #8b95a8; --accent: #3b82f6; --accent2: #22c55e;
+  --warn: #f59e0b; --danger: #ef4444; --border: #2d3748; --sidebar: 280px; --header: 60px;
+}
+[data-theme="light"] {
+  --bg: #eef2f7; --panel: #fff; --card: #fff; --hover: #f4f7fb;
+  --text: #1a2332; --muted: #5b677a; --accent: #1d4ed8; --border: #d7dee8;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background: var(--bg); color: var(--text);
+}
+a { color: var(--accent); }
+.header {
+  position: fixed; inset: 0 0 auto 0; height: var(--header);
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 0 16px; background: var(--panel); border-bottom: 1px solid var(--border); z-index: 20;
+}
+.brand { display: flex; flex-direction: column; min-width: 0; }
+.brand h1 { font-size: 16px; font-weight: 700; white-space: nowrap; }
+.brand small { color: var(--muted); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
+.header-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.btn, .btn-icon {
+  border: 1px solid var(--border); background: var(--card); color: var(--text);
+  border-radius: 8px; cursor: pointer; font-size: 13px;
+}
+.btn { padding: 7px 12px; }
+.btn-icon { width: 36px; height: 36px; }
+.btn.primary { background: var(--accent); color: #fff; border-color: transparent; }
+.layout { padding-top: var(--header); display: flex; min-height: 100%; }
+.sidebar {
+  position: sticky; top: var(--header); align-self: flex-start;
+  width: var(--sidebar); height: calc(100vh - var(--header));
+  background: var(--panel); border-right: 1px solid var(--border);
+  overflow: auto; padding: 12px 0; flex-shrink: 0;
+}
+.nav-label {
+  padding: 10px 16px 4px; font-size: 10px; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--muted);
+}
+.nav-item {
+  display: block; width: 100%; text-align: left; padding: 8px 16px; border: 0;
+  background: transparent; color: var(--text); cursor: pointer; font-size: 13px;
+}
+.nav-item:hover, .nav-item.active { background: var(--hover); color: var(--accent); }
+.main { flex: 1; min-width: 0; padding: 20px 24px 48px; }
+.panel { display: none; }
+.panel.active { display: block; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin: 16px 0 24px; }
+.kpi { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+.kpi .n { font-size: 28px; font-weight: 700; color: var(--accent); }
+.kpi .l { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin-bottom: 14px; }
+.card h3 { margin-bottom: 8px; font-size: 15px; }
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.search {
+  width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--bg); color: var(--text); margin: 8px 0 12px;
+}
+.browser { display: grid; grid-template-columns: minmax(240px, 340px) 1fr; gap: 12px; min-height: 70vh; }
+.tree, .viewer {
+  background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.tree-head, .viewer-head {
+  padding: 10px 12px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; gap: 8px; align-items: center;
+}
+.tree-body { overflow: auto; flex: 1; padding: 8px; font-size: 13px; }
+.folder { cursor: pointer; padding: 4px 6px; border-radius: 6px; }
+.folder:hover { background: var(--hover); }
+.folder-children { margin-left: 14px; border-left: 1px dashed var(--border); padding-left: 8px; }
+.file-row { display: flex; justify-content: space-between; gap: 8px; padding: 3px 6px; border-radius: 6px; cursor: pointer; }
+.file-row:hover, .file-row.active { background: var(--hover); }
+.file-row .meta { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.viewer-body { flex: 1; overflow: auto; }
+.viewer-body pre {
+  padding: 14px; font-family: Consolas, "Cascadia Mono", monospace; font-size: 12px; line-height: 1.45;
+  white-space: pre-wrap; word-break: break-word;
+}
+.handbook h1 { font-size: 26px; margin: 8px 0 12px; }
+.handbook h2 { font-size: 20px; margin: 28px 0 10px; padding-top: 8px; border-top: 1px solid var(--border); }
+.handbook h3 { font-size: 16px; margin: 18px 0 8px; }
+.handbook p, .handbook li { line-height: 1.55; margin: 6px 0; }
+.handbook ul, .handbook ol { padding-left: 22px; }
+.handbook blockquote {
+  border-left: 3px solid var(--accent); padding: 8px 12px; margin: 10px 0; color: var(--muted); background: var(--hover);
+}
+.table-wrap { overflow: auto; margin: 10px 0 16px; }
+.handbook table, .table-wrap table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.handbook th, .handbook td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; vertical-align: top; }
+.handbook th { background: var(--hover); }
+.code-block { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; overflow: auto; margin: 10px 0; font-size: 12px; }
+code { font-family: Consolas, monospace; font-size: 0.92em; }
+.muted { color: var(--muted); }
+.pill { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--hover); font-size: 11px; color: var(--muted); }
+.warn { color: var(--warn); }
+.hidden { display: none !important; }
+@media (max-width: 900px) {
+  .sidebar { display: none; }
+  .browser { grid-template-columns: 1fr; }
+  .main { padding: 16px; }
+}
+</style>
+</head>
+<body>
+<header class="header">
+  <div class="brand">
+    <h1>DBA Essential Scripts Handbook</h1>
+    <small>SQL Server + PostgreSQL production playbook · generated __GENERATED_AT__</small>
+  </div>
+  <div class="header-actions">
+    <input id="globalSearch" class="search" style="width:min(320px,40vw);margin:0" placeholder="Search files and handbook…">
+    <button class="btn-icon" id="themeBtn" title="Toggle theme">◐</button>
+    <a class="btn" id="githubLink" href="https://github.com/__GITHUB_REPO__" target="_blank" rel="noopener">GitHub</a>
+  </div>
+</header>
+<div class="layout">
+  <nav class="sidebar">
+    <div class="nav-label">Handbook</div>
+    <button class="nav-item active" data-panel="overview">Overview</button>
+    <button class="nav-item" data-panel="howto">How to use it</button>
+    <button class="nav-item" data-panel="sqlserver">SQL Server layers</button>
+    <button class="nav-item" data-panel="postgres">PostgreSQL layers</button>
+    <button class="nav-item" data-panel="assessment">Assessments &amp; extras</button>
+    <button class="nav-item" data-panel="embed">Website embed</button>
+    <div class="nav-label">Content</div>
+    <button class="nav-item" data-panel="handbook">Full handbook (README)</button>
+    <button class="nav-item" data-panel="browser">File browser &amp; download</button>
+  </nav>
+  <main class="main">
+    <section id="overview" class="panel active">
+      <h2>What this handbook is</h2>
+      <p class="muted">A modular DBA toolkit — not a single executable. Use it as a daily health playbook, an on-call first-responder kit, and a consulting deliverable.</p>
+      <div class="kpis">
+        <div class="kpi"><div class="n" id="kpiFiles">__FILE_COUNT__</div><div class="l">Browsable files</div></div>
+        <div class="kpi"><div class="n" id="kpiFolders">__FOLDER_COUNT__</div><div class="l">Folders</div></div>
+        <div class="kpi"><div class="n">2</div><div class="l">Platforms</div></div>
+        <div class="kpi"><div class="n">Read-only</div><div class="l">Diagnostics by default</div></div>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <h3>SQL Server (2016+)</h3>
+          <p>Layered T-SQL in <code>sql_server/</code>, deploy-once framework (<code>sp_DBA_HealthCheck</code>), PowerShell HTML assessments, HADR/migration checklists.</p>
+        </div>
+        <div class="card">
+          <h3>PostgreSQL (12+)</h3>
+          <p>Matching layered SQL in <code>postgres/</code>, <code>dba.sp_health_check()</code> orchestrator, and <code>postgres/shell/generate-dba-handbook.sh</code> for an offline HTML runbook.</p>
+        </div>
+        <div class="card">
+          <h3>How to start (any incident)</h3>
+          <ol>
+            <li>Capture evidence first — do not restart, kill, shrink, or rebuild yet.</li>
+            <li>Note instance / cluster start time (cumulative stats reset on restart).</li>
+            <li>SQL Server: <code>EXEC dbo.sp_DBA_HealthCheck @DeepDive = 0;</code></li>
+            <li>PostgreSQL: <code>SELECT * FROM dba.sp_health_check(deep_dive =&gt; false);</code></li>
+            <li>Follow the symptom table in the full handbook, then open the matching script here and download it.</li>
+          </ol>
+        </div>
+        <div class="card">
+          <h3>Author &amp; license</h3>
+          <p>Ravi Sharma. Copyright reserved. Scripts are production-oriented diagnostics; review any remediation SQL before you run it.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="howto" class="panel">
+      <h2>How to use this handbook effectively</h2>
+      <div class="card">
+        <h3>Junior / first responder</h3>
+        <p>Treat numbered folders as an outside-in path: OS → instance → storage → waits → indexes → HA/DR → security. Open the cheat sheet in <strong>Full handbook</strong>, then download one script at a time. Prefer read-only files; skip deploy/governance until a senior DBA has signed off.</p>
+      </div>
+      <div class="card">
+        <h3>Senior DBA / consultant</h3>
+        <p>Deploy the framework once per instance/cluster. Use the orchestrator for triage, wrappers for deep dives, and <code>sp_DBA_BaselineCapture</code> / <code>dba.sp_baseline_capture()</code> before and after change. PowerShell and assessment collectors produce shareable HTML/Excel for stakeholders.</p>
+      </div>
+      <div class="card">
+        <h3>Install once (SQL Server)</h3>
+        <pre class="code-block"><code>sqlcmd -S YourServer -d master -i "sql_server/00_Repository/DBARepository_Create.sql" -C
+sqlcmd -S YourServer -d DBARepository -i "sql_server/00_Repository/DBARepository_Deploy.sql" -C
+sqlcmd -S YourServer -d DBARepository -i "sql_server/00_Repository/DBARepository_Persistence.sql" -C
+# or: sql_server/00_Framework/00_Deploy_Framework.ps1 -ServerInstance YourServer -Database DBARepository</code></pre>
+      </div>
+      <div class="card">
+        <h3>Install once (PostgreSQL)</h3>
+        <pre class="code-block"><code>psql -h HOST -U postgres -f postgres/00_Repository/00_create_repository.sql
+psql -h HOST -U postgres -d dba_repository -f postgres/00_Framework/00_Deploy_Framework.sql</code></pre>
+      </div>
+      <div class="card">
+        <h3>Safety</h3>
+        <ul>
+          <li>Diagnostic scripts do not change data. Deploy, baseline capture, and preventive-measures jobs do write.</li>
+          <li>Never create every missing-index suggestion or drop “unused” indexes from a short uptime window.</li>
+          <li>Scope expensive scripts (<code>physical_stats</code>, bloat, fragmentation) with a database list and off-peak windows.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="sqlserver" class="panel">
+      <h2>SQL Server layers</h2>
+      <p class="muted">Paths are under <code>sql_server/</code>. Open <strong>File browser</strong> and type the folder name to jump there.</p>
+      <div class="card" id="sqlLayerCards"></div>
+    </section>
+
+    <section id="postgres" class="panel">
+      <h2>PostgreSQL layers</h2>
+      <p class="muted">Paths are under <code>postgres/</code>.</p>
+      <div class="card" id="pgLayerCards"></div>
+    </section>
+
+    <section id="assessment" class="panel">
+      <h2>Assessments and extra kits</h2>
+      <div class="card">
+        <h3>sql_server_assessment_tool</h3>
+        <p>Phase-1 architectural collector. Detailed: <code>Invoke-SqlInitialAssessment.ps1</code>. Limited: <code>Invoke-SqlInitialAssessment_minimal.ps1</code>.</p>
+        <p>Choose artifacts with <code>-OutputFormat Html | Excel | Both</code> (alias <code>-o</code>). Log is always written. Excel needs the ImportExcel module.</p>
+      </div>
+      <div class="card">
+        <h3>prod_stats_report</h3>
+        <p>Production database health, missing indexes, and duplicate indexes — complementary to the layered handbook scripts.</p>
+      </div>
+      <div class="card">
+        <h3>PowerShell / HTML generators</h3>
+        <p><code>sql_server/powershell/Invoke-SqlOptimaAssessment.ps1</code> and <code>Generate-DBAHandbook.ps1</code>. PostgreSQL: <code>postgres/shell/generate-dba-handbook.sh</code>.</p>
+      </div>
+    </section>
+
+    <section id="embed" class="panel">
+      <h2>Put this portal on your website</h2>
+      <div class="card">
+        <h3>Option A — serve the whole repo (best for browse + download)</h3>
+        <p>Copy this repository to your web root (or a subfolder) so <code>index.html</code> sits next to <code>sql_server/</code> and <code>postgres/</code>. Then:</p>
+        <pre class="code-block"><code>&lt;iframe src="https://your.site/dba-handbook/" title="DBA Handbook" style="width:100%;height:100vh;border:0"&gt;&lt;/iframe&gt;</code></pre>
+        <p>File view and download use relative URLs, so visitors can open and save scripts.</p>
+      </div>
+      <div class="card">
+        <h3>Option B — GitHub raw files (HTML on one host, files on GitHub)</h3>
+        <p>Host only <code>index.html</code>, then set the file base before other scripts (or edit the config object at the bottom of this file):</p>
+        <pre class="code-block"><code>&lt;script&gt;
+window.HANDBOOK_CONFIG = {
+  fileBase: "https://raw.githubusercontent.com/__GITHUB_REPO__/__GITHUB_BRANCH__/",
+  githubRepo: "__GITHUB_REPO__",
+  githubBranch: "__GITHUB_BRANCH__"
+};
+&lt;/script&gt;</code></pre>
+      </div>
+      <div class="card">
+        <h3>Regenerate after repo changes</h3>
+        <pre class="code-block"><code>python docs/build_handbook_portal.py --github-repo __GITHUB_REPO__ --github-branch __GITHUB_BRANCH__</code></pre>
+      </div>
+      <div class="card">
+        <h3>Local preview</h3>
+        <pre class="code-block"><code>python -m http.server 8080
+# open http://127.0.0.1:8080/</code></pre>
+        <p class="warn">Opening the file with a <code>file://</code> URL often blocks in-page preview (browser security). Downloads and GitHub links still work; use a local HTTP server for the viewer.</p>
+      </div>
+    </section>
+
+    <section id="handbook" class="panel">
+      <article class="handbook" id="handbookArticle">__HANDBOOK_HTML__</article>
+    </section>
+
+    <section id="browser" class="panel">
+      <h2>Repository file browser</h2>
+      <p class="muted">Filter the tree, open a file to preview it (when this page is served over HTTP or GitHub raw is configured), then copy or download.</p>
+      <input id="fileFilter" class="search" placeholder="Filter by path, name, or description…">
+      <div class="browser">
+        <div class="tree">
+          <div class="tree-head"><strong>Folders</strong><span class="pill" id="treeCount"></span></div>
+          <div class="tree-body" id="treeBody"></div>
+        </div>
+        <div class="viewer">
+          <div class="viewer-head">
+            <div>
+              <strong id="fileTitle">Select a file</strong>
+              <div class="muted" id="fileSub"></div>
+            </div>
+            <div>
+              <button class="btn" id="copyBtn" disabled>Copy</button>
+              <a class="btn primary" id="downloadBtn" href="#" download>Download</a>
+              <a class="btn" id="openBtn" href="#" target="_blank" rel="noopener">Open</a>
+            </div>
+          </div>
+          <div class="viewer-body"><pre id="fileView">Choose a file in the tree.</pre></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+<script>
+window.HANDBOOK_CONFIG = window.HANDBOOK_CONFIG || {
+  fileBase: "",
+  githubRepo: "__GITHUB_REPO__",
+  githubBranch: "__GITHUB_BRANCH__"
+};
+const CATALOG = __CATALOG_JSON__;
+const FOLDER_BLURB = __FOLDER_BLURB_JSON__;
+
+const sqlLayers = [
+  ["00_Framework", "Shared functions and procedures; install once"],
+  ["00_Repository", "DBARepository DDL and persistence"],
+  ["01_Server_OS", "CPU, memory, disk latency"],
+  ["02_Instance_Config", "sp_configure, IFI/LPIM, compatibility"],
+  ["03_Storage_Engine", "Files, TempDB, VLFs, inventory"],
+  ["04_Performance_Diagnostics", "Waits, blocking, top queries, plan cache"],
+  ["05_Index_Statistics", "Usage, fragmentation, stats, duplicates"],
+  ["06_HA_DR", "Always On, backups, log chain"],
+  ["07_Security", "Auth, encryption, logins"],
+  ["08_Advanced", "CDC, Query Store, replication, Agent"],
+  ["09_Maintenance", "Failed jobs, CHECKDB"],
+  ["10_Capacity_Planning", "Growth forecast"],
+  ["11_Query_Store", "Plan regressions"],
+  ["12_Extended_Events", "XE sessions, deadlocks"],
+  ["13_Resource_Governor", "Pools and groups"],
+  ["14_Baselines", "Point-in-time snapshots"],
+  ["preventive_measures", "Query governance / XE policies"],
+  ["powershell", "HTML assessments and handbook generator"],
+  ["docs", "Checklists, migration, toolkit comparison"]
+];
+const pgLayers = [
+  ["00_Framework", "dba.* functions; install once"],
+  ["00_Repository", "dba_repository bootstrap"],
+  ["01_Server_OS", "CPU, memory, disk I/O"],
+  ["02_Instance_Config", "GUCs, connections, extensions"],
+  ["03_Storage", "Size, bloat, WAL, tablespaces"],
+  ["04_Performance_Diagnostics", "Waits, blocking, top queries, vacuum"],
+  ["05_Index_Statistics", "Usage, unused, stats, duplicates"],
+  ["06_HA_DR", "Streaming/logical replication, backups"],
+  ["07_Security", "Roles, SSL, passwords"],
+  ["08_Advanced", "Autovacuum, checkpoints, pg_stat_statements"],
+  ["09_Maintenance", "Vacuum queue, long xacts, pg_cron"],
+  ["10_Capacity_Planning", "Growth"],
+  ["11_Query_Analysis", "Query regression"],
+  ["12_Extensions", "Extension health"],
+  ["13_Connection_Pooling", "Pool saturation"],
+  ["14_Baselines", "Snapshots"],
+  ["preventive_measures", "Governance alerts"],
+  ["shell", "HTML handbook generator"]
+];
+
+function fileUrl(path) {
+  let base = window.HANDBOOK_CONFIG.fileBase || "";
+  if (base && !base.endsWith("/")) base += "/";
+  return base + path.split("/").map(encodeURIComponent).join("/");
+}
+function githubUrl(path) {
+  const c = window.HANDBOOK_CONFIG;
+  return `https://github.com/${c.githubRepo}/blob/${c.githubBranch}/${path}`;
+}
+function formatSize(n) {
+  if (n < 1024) return n + " B";
+  if (n < 1048576) return (n / 1024).toFixed(1) + " KB";
+  return (n / 1048576).toFixed(1) + " MB";
+}
+
+function layerHtml(prefix, rows) {
+  return "<table><thead><tr><th>Folder</th><th>Purpose</th><th></th></tr></thead><tbody>" +
+    rows.map(([folder, why]) => {
+      const p = prefix + "/" + folder;
+      return `<tr><td><code>${p}</code></td><td>${why}</td><td><button class="btn" data-jump="${p}">Browse</button></td></tr>`;
+    }).join("") + "</tbody></table>";
+}
+document.getElementById("sqlLayerCards").innerHTML = layerHtml("sql_server", sqlLayers);
+document.getElementById("pgLayerCards").innerHTML = layerHtml("postgres", pgLayers);
+
+document.querySelectorAll(".nav-item").forEach(btn => {
+  btn.addEventListener("click", () => showPanel(btn.dataset.panel));
+});
+function showPanel(id) {
+  document.querySelectorAll(".nav-item").forEach(b => b.classList.toggle("active", b.dataset.panel === id));
+  document.querySelectorAll(".panel").forEach(p => p.classList.toggle("active", p.id === id));
+  if (id === "browser") renderTree(document.getElementById("fileFilter").value);
+}
+document.addEventListener("click", (ev) => {
+  const btn = ev.target.closest("[data-jump]");
+  if (!btn) return;
+  showPanel("browser");
+  document.getElementById("fileFilter").value = btn.getAttribute("data-jump");
+  renderTree(btn.getAttribute("data-jump"));
+});
+
+document.getElementById("themeBtn").addEventListener("click", () => {
+  const html = document.documentElement;
+  html.setAttribute("data-theme", html.getAttribute("data-theme") === "light" ? "dark" : "light");
+});
+
+function matches(file, q) {
+  if (!q) return true;
+  const hay = (file.path + " " + file.name + " " + (file.blurb || "") + " " + file.kind).toLowerCase();
+  return hay.includes(q.toLowerCase());
+}
+
+function buildTree(files) {
+  const root = {};
+  files.forEach(f => {
+    const parts = f.path.split("/");
+    let node = root;
+    parts.forEach((part, i) => {
+      const isFile = i === parts.length - 1;
+      if (isFile) {
+        node.__files = node.__files || [];
+        node.__files.push(f);
+      } else {
+        node[part] = node[part] || {};
+        node = node[part];
+      }
+    });
+  });
+  return root;
+}
+
+function renderNode(node, prefix) {
+  const wrap = document.createElement("div");
+  const folders = Object.keys(node).filter(k => k !== "__files").sort();
+  folders.forEach(name => {
+    const path = prefix ? prefix + "/" + name : name;
+    const details = document.createElement("div");
+    const head = document.createElement("div");
+    head.className = "folder";
+    const blurb = FOLDER_BLURB[path] || "";
+    head.innerHTML = `<strong>📁 ${name}</strong> ${blurb ? `<span class="muted"> — ${blurb}</span>` : ""}`;
+    const kids = document.createElement("div");
+    kids.className = "folder-children";
+    kids.appendChild(renderNode(node[name], path));
+    head.addEventListener("click", () => kids.classList.toggle("hidden"));
+    details.appendChild(head);
+    details.appendChild(kids);
+    wrap.appendChild(details);
+  });
+  (node.__files || []).sort((a, b) => a.name.localeCompare(b.name)).forEach(f => {
+    const row = document.createElement("div");
+    row.className = "file-row";
+    row.dataset.path = f.path;
+    row.innerHTML = `<span>📄 ${f.name}</span><span class="meta">${f.kind} · ${formatSize(f.size)}</span>`;
+    row.addEventListener("click", () => openFile(f, row));
+    wrap.appendChild(row);
+  });
+  return wrap;
+}
+
+function renderTree(filter) {
+  const files = CATALOG.filter(f => matches(f, filter || ""));
+  document.getElementById("treeCount").textContent = files.length + " files";
+  const body = document.getElementById("treeBody");
+  body.innerHTML = "";
+  body.appendChild(renderNode(buildTree(files), ""));
+}
+
+let currentFile = null;
+async function openFile(file, row) {
+  currentFile = file;
+  document.querySelectorAll(".file-row").forEach(r => r.classList.remove("active"));
+  if (row) row.classList.add("active");
+  document.getElementById("fileTitle").textContent = file.path;
+  document.getElementById("fileSub").textContent = `${file.kind} · ${formatSize(file.size)}${file.blurb ? " · " + file.blurb : ""}`;
+  const url = fileUrl(file.path);
+  const dl = document.getElementById("downloadBtn");
+  const open = document.getElementById("openBtn");
+  dl.href = url;
+  dl.setAttribute("download", file.name);
+  open.href = githubUrl(file.path);
+  document.getElementById("copyBtn").disabled = true;
+  const view = document.getElementById("fileView");
+  if (!file.text) {
+    view.textContent = "Binary or non-text file. Use Download or Open on GitHub.";
+    return;
+  }
+  view.textContent = "Loading…";
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const text = await res.text();
+    view.textContent = text;
+    document.getElementById("copyBtn").disabled = false;
+    document.getElementById("copyBtn").onclick = async () => {
+      await navigator.clipboard.writeText(text);
+      document.getElementById("copyBtn").textContent = "Copied";
+      setTimeout(() => document.getElementById("copyBtn").textContent = "Copy", 1200);
+    };
+  } catch (err) {
+    view.textContent =
+      "Could not preview in the page (" + err.message + ").\n\n" +
+      "Serve the repo over HTTP, or set HANDBOOK_CONFIG.fileBase to your GitHub raw URL.\n" +
+      "Use Download / Open on GitHub instead.\n\n" + url;
+  }
+}
+
+document.getElementById("fileFilter").addEventListener("input", e => renderTree(e.target.value));
+document.getElementById("globalSearch").addEventListener("input", e => {
+  const q = e.target.value.trim();
+  if (!q) return;
+  showPanel("browser");
+  document.getElementById("fileFilter").value = q;
+  renderTree(q);
+});
+
+renderTree("");
+</script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+﻿============================================================
+ SQL Server DBA Assessment - execution log
+============================================================
+Script version : 2.1
+Target server  : 192.168.1.17,1433
+Start time     : 2026-07-22 13:36:42
+PowerShell     : 5.1.26100.8894
+dbatools       : 2.8.3
+Parameters     : OutputPath=D:\Mac_bak\AI_Code\sql_optima\dba_essential_scripts\sql_server\SQL_Server_Assesment_Report\output, DaysToAnalyze=30, FullBackupSlaHours=24, LogBackupSlaMinutes=30, DeepIndexCheck=False, ExportExcel=False, OpenReport=True, WindowsCredential=not provided, Credential=[redacted]
+Report file    : D:\Mac_bak\AI_Code\sql_optima\dba_essential_scripts\sql_server\SQL_Server_Assesment_Report\output\DBA_Assessment_192.168.1.17_1433_20260722_133642.html
+Entry format   : TIMESTAMP | SEVERITY | SECTION | DATABASE | MESSAGE
+------------------------------------------------------------
+2026-07-22 13:36:42.399 | INFO  | Startup |  | Assessment run started.
+2026-07-22 13:36:44.195 | INFO  | Connection |  | Connected to '192.168.1.17,1433'.
+2026-07-22 13:36:47.104 | ERROR | Disk space analysis |  | Findings analysis failed. :: Cannot bind argument to parameter 'Item' because it is an empty string. [ExceptionType=System.Management.Automation.ParameterBindingValidationException]
+2026-07-22 13:36:51.411 | INFO  | Windows Critical Events |  | Skipped: no -WindowsCredential supplied.
+2026-07-22 13:37:00.526 | INFO  | HTML Report |  | HTML report written to 'D:\Mac_bak\AI_Code\sql_optima\dba_essential_scripts\sql_server\SQL_Server_Assesment_Report\output\DBA_Assessment_192.168.1.17_1433_20260722_133642.html'.
+2026-07-22 13:37:00.527 | INFO  | Completion |  | Assessment finished. Health=0/100 (Critical); Critical=5; Warning=16; Info=2; CollectionErrors=1; Excel='not exported'.
