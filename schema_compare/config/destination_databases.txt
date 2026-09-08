@@ -1,5 +1,0 @@
-# One destination database name per line.
-# Lines starting with # are ignored.
-Tenant_Alpha
-Tenant_Beta
-Tenant_Gamma
